@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
@@ -16,6 +16,7 @@ export class MatchesController {
   constructor(private readonly service: MatchesService) {}
 
   @Post('matches')
+  @HttpCode(202)
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', required: ['demo'], properties: { demo: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('demo', { storage: diskStorage({ destination: path.join(dataRoot, 'uploads'), filename: (_request, _file, callback) => callback(null, `${randomUUID()}.dem`) }), limits: { fileSize: maxUploadBytes, files: 1 } }))

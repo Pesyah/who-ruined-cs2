@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "id": "regular-mr12-side-switch-001",
+      "sha256": "f8ec510829e57ee5f5c3ca6bcab02cd09893b06afac09073787f744f2437e870",
+      "parserVersion": "0.42.0",
+      "normalizerVersion": "m1-0.3.0",
+      "expected": {
+        "map": "cs_office",
+        "players": 10,
+        "teams": 2,
+        "rounds": 21,
+        "deathEvents": 152,
+        "scoreAfterByReferenceTeam": [[1, 0], [1, 1], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2], [7, 2], [7, 3], [8, 3], [9, 3], [10, 3], [10, 4], [10, 5], [11, 5], [12, 5], [12, 6], [12, 7], [12, 8], [13, 8]],
+        "sortedKda": [[7, 16, 5], [9, 18, 3], [11, 15, 4], [12, 17, 5], [13, 17, 0], [14, 12, 4], [16, 18, 4], [17, 14, 5], [24, 14, 4], [29, 11, 6]]
+      }
+    }
+  ]
+}

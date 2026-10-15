@@ -2,7 +2,9 @@
 
 Local-first CS2 demo analysis. Current implementation covers the M0 scaffold and an M1 upload → SQLite job → worker → conservative normalization → round/scoreboard UI slice.
 
-> Status: **M0 real-demo probe pending; M1 golden reconciliation pending.** The repository contained no `.dem`. Synthetic fixtures test engineering invariants only and are never presented as real parser evidence.
+> Status: **M0 and M1 passed on the supplied real golden demo.** The external
+> `.dem`/`.dem.info` remain outside Git. The repository-wide parser acceptance
+> set is 1/3; M2–M4 have not started.
 
 ## Start with Docker
 
@@ -39,6 +41,15 @@ pnpm parser:probe -- C:\path\to\match.dem
 ```
 
 The command calls `parseHeader`, `parsePlayerInfo`, `listGameEvents`, `parseEvents`, and event-adjacent `parseTicks`, then overwrites `docs/compatibility.md` with sanitized column names and counts. It never stores player values. See `tests/golden/README.md` for the reconciliation gate.
+
+With an external `.dem.info` sidecar, run the real reconciliation without
+copying either file into the repository:
+
+```powershell
+$env:GOLDEN_DEMO_PATH = 'C:\external\match.dem'
+$env:GOLDEN_INFO_PATH = 'C:\external\match.dem.info'
+pnpm test:golden
+```
 
 ## Verification
 

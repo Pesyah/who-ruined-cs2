@@ -1,27 +1,66 @@
 # Milestone status
 
-## 2026-10-15 — M0 / M1 scaffold
+## 2026-10-16 — M0 complete, M1 complete
 
-### M0 — pending real-demo gate
+### M0 — capability proof: passed
 
-Implemented: pnpm/Turbo monorepo, pinned `@laihoe/demoparser2@0.42.0`, parser adapter, Zod IO boundary, executable sanitized capability probe and synthetic adapter tests.
+`pnpm parser:probe` ran against the supplied real CS2 demo with
+`@laihoe/demoparser2@0.42.0`. All five required calls succeeded:
+`parseHeader`, `parsePlayerInfo`, `listGameEvents`, `parseEvents` and
+event-adjacent `parseTicks`. The sanitized event/field matrix is recorded in
+`docs/compatibility.md`; it contains no player values.
 
-Pending: no real `.dem` was present, so the five parser calls and event/field matrix have not been verified on replay data. `docs/compatibility.md` is explicitly marked pending.
+### M1 — vertical slice: passed for the supplied golden demo
 
-### M1 — implemented slice, pending golden reconciliation
+The real demo completed upload → randomized local storage → queued worker →
+parsing → normalization → validation → SQLite metadata → atomic gzip JSON
+artifact → API → browser-rendered scoreboard.
 
-Implemented: `.dem` upload preflight, randomized storage path, SHA-256 dedup key, Prisma/SQLite metadata, job polling, sequential worker, conservative normalization, roster-derived team IDs, round/score validation, atomic gzip artifact, Russian upload/job/match UI, localhost Docker Compose definition.
+Verified facts:
 
-Pending: the match scoreboard and per-round winners have not been reconciled with a real golden demo. Therefore M1 is not declared complete and no ranking is exposed.
+- Source 2 demo on `cs_office`; two stable roster-derived teams of five players.
+- 21 valid live rounds, no validation issues, final score 13:8 and a confirmed
+  halftime side swap.
+- 152 death events assigned to live rounds.
+- Every score transition and all ten K/D/A rows match the supplied external
+  `.dem.info` scoreboard.
+- Re-upload returns HTTP 202 with `duplicate: true` for the same parser and
+  normalizer versions.
+- API result and the real-match UI both show `VALID`, 10 players, 21 rounds and
+  the 13:8 final score. No ranking or scoring algorithm is exposed.
+
+### Reconciled parser quirks
+
+- `round_officially_ended` is duplicated at each of the first 20 round-end
+  ticks and absent for the final round. Unique ticks are used; the final
+  boundary is confirmed by `cs_win_panel_match`.
+- At halftime, the round-end tick already exposes the next-half sides. A full
+  two-team swap is accepted only at the boundary; partial or inconsistent
+  mappings remain invalid.
+- Two raw death rows named an assister from the victim's stable team. These are
+  excluded from credited assists, bringing every K/D/A row into agreement with
+  `.dem.info`.
+- Upload POST is explicitly HTTP 202, including deduplicated uploads.
 
 ### Verification
 
-- `pnpm lint`: pass (8/8 tasks)
-- `pnpm typecheck`: pass (13/13 tasks including dependency builds)
-- `pnpm test`: pass (15 substantive tests across parser adapter, domain, API and worker; packages with no tests use `--passWithNoTests`)
-- `pnpm build`: pass (8/8 tasks; Vite production bundle built)
-- Local smoke: SQLite schema created; API `/api/v1/health` returned 200; empty match list returned 200; wrong upload extension returned typed 415; Vite preview returned 200.
-- `docker compose config`: pass; host ports are loopback-only.
-- `docker compose up --build`: not run because the Docker daemon was not available on the machine.
+- `pnpm lint`: pass, 8/8 workspace tasks.
+- `pnpm typecheck`: pass, 13/13 tasks including dependency builds. An earlier
+  attempt hit `EPERM` because the smoke-test API/worker held the generated
+  Prisma engine; after stopping those processes, the clean rerun passed.
+- `pnpm test`: pass, 17 synthetic/contract tests plus 1 executed real golden
+  reconciliation. The real test was not skipped.
+- `pnpm build`: pass, 8/8 workspace tasks including the Vite production bundle.
+- `docker compose config --quiet`: pass. `docker compose up --build` remains
+  unexecuted because no Docker daemon is running on this machine.
 
-Parser discrepancy: the Windows native binding panicked when directly given a 10-byte malformed file. A minimum-length + `PBDEMS2` magic preflight now rejects that input before `parseHeader`; details are in `docs/compatibility.md`.
+The real golden regression is available as `pnpm test:golden` and is skipped
+unless external `GOLDEN_DEMO_PATH` and `GOLDEN_INFO_PATH` values are supplied.
+
+The repository-wide acceptance target remains one of three real fixtures. Two
+additional demos are still required before the global three-demo parser gate:
+an overtime/expected-`PARTIAL` case and a fixture covering capabilities such as
+team damage, bomb, flash and trade attribution. This does not block the M0/M1
+milestone gates, each of which requires one real/golden demo.
+
+M2–M4 and public hosting have not started.

@@ -17,6 +17,9 @@ importers:
       '@types/node':
         specifier: 22.18.8
         version: 22.18.8
+      csgo-protobuf:
+        specifier: 4.1.12
+        version: 4.1.12
       eslint:
         specifier: 9.37.0
         version: 9.37.0(jiti@2.7.0)(supports-color@8.1.1)
@@ -313,6 +316,9 @@ packages:
 
   '@borewit/text-codec@0.2.2':
     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
+
+  '@bufbuild/protobuf@2.13.0':
+    resolution: {integrity: sha512-acq7c49vxfm1ggJ95P70TX7ABDM0vxr1SYD3BB0o0jnBLB4OAqeHyKuN+cD3w80gXEDQ2zxHpR6CUeA+O/aU9g==}
 
   '@colors/colors@1.5.0':
     resolution: {integrity: sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ==}
@@ -1653,6 +1659,9 @@ packages:
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
+
+  csgo-protobuf@4.1.12:
+    resolution: {integrity: sha512-E1fGiR7HQL96FLUEPLptAlwGL0qyKf6fVv/9+bcwZymZSfCiJL/V4BsAwI9vCMVje+MFv3mf9ZiO0EkNy55XAg==}
 
   cssesc@3.0.0:
     resolution: {integrity: sha512-/Tb/JcjK111nNScGob5MNtsntNM1aCNUDipB/TkwZFhyDrrE47SOx/18wF2bbjgc3ZzCSKW1T5nt5EbFoAz/Vg==}
@@ -3377,6 +3386,8 @@ snapshots:
 
   '@borewit/text-codec@0.2.2': {}
 
+  '@bufbuild/protobuf@2.13.0': {}
+
   '@colors/colors@1.5.0':
     optional: true
 
@@ -4674,6 +4685,10 @@ snapshots:
       path-key: 3.1.1
       shebang-command: 2.0.0
       which: 2.0.2
+
+  csgo-protobuf@4.1.12:
+    dependencies:
+      '@bufbuild/protobuf': 2.13.0
 
   cssesc@3.0.0: {}
 

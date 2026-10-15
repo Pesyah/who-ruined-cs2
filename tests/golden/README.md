@@ -1,13 +1,21 @@
 # Golden demos
 
-No real demo is currently available. This directory intentionally contains no invented replay.
+Real demos and their `.info` sidecars stay outside Git. The test contains no player names,
+Steam IDs or fixture paths and is skipped unless both paths are explicitly supplied.
 
-To continue M0/M1:
+```powershell
+$env:GOLDEN_DEMO_PATH = 'C:\external\match.dem'
+$env:GOLDEN_INFO_PATH = 'C:\external\match.dem.info'
+pnpm test:golden
+```
 
-1. Place a legally obtained CS2 `.dem` outside Git (this directory is ignored for `*.dem`).
-2. Run `pnpm parser:probe -- tests/golden/<file>.dem`.
-3. Review the generated `docs/compatibility.md`; do not commit player-identifying values.
-4. Add the SHA-256 and manually verified round/score/player counts to a manifest.
-5. Reconcile all ten scoreboards and per-round winners before marking M1 complete.
+The committed manifest contains only the demo SHA-256 and anonymous expected
+counts/score/KDA tuples. The test reconciles all ten K/D/A rows and every round
+score transition against both that manifest and the protobuf `.info` sidecar.
+It also requires a validated 10-player, two-team normalized match. This is an
+independent reference for the available scoreboard data, not proof of tactical
+blame or events absent from the sidecar.
 
-At least three real demos are required before the overall golden parser gate passes: regular MR12 with side switch, overtime or expected `PARTIAL`, and a match exercising team damage/trades/bomb/flash capabilities.
+The supplied regular MR12 fixture has passed. Two additional real fixtures remain
+required for the repository-wide parser acceptance set: overtime (or an expected
+`PARTIAL`) and a match exercising team damage/trades/bomb/flash capabilities.
