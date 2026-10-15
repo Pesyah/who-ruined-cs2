@@ -1,0 +1,15 @@
+{
+  "name": "@who-ruined/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "prisma generate --schema ../../prisma/schema.prisma && tsc -p tsconfig.json",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "prisma generate --schema ../../prisma/schema.prisma && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": { "@prisma/client": "6.17.1" }
+}

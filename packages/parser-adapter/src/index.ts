@@ -1,0 +1,88 @@
+import { createRequire } from 'node:module';
+import { z } from 'zod';
+
+const require = createRequire(import.meta.url);
+export const PARSER_LIBRARY_VERSION = '0.42.0';
+export const NORMALIZER_VERSION = 'm1-0.1.0';
+
+export type UnknownRow = Record<string, unknown>;
+export interface DemoParserPort {
+  parseHeader(path: string): unknown;
+  parsePlayerInfo(path: string): unknown;
+  listGameEvents(path: string): unknown;
+  parseEvents(path: string, eventNames: string[], extraPlayer?: string[] | null, extraOther?: string[] | null): unknown;
+  parseTicks(path: string, wantedProps: string[], wantedTicks?: number[] | null): unknown;
+}
+
+const rowsSchema = z.array(z.record(z.string(), z.unknown()));
+
+export function loadNativeParser(): DemoParserPort {
+  return require('@laihoe/demoparser2') as DemoParserPort;
+}
+
+export function toRows(value: unknown): UnknownRow[] {
+  if (Array.isArray(value)) return rowsSchema.parse(value);
+  if (value && typeof value === 'object') {
+    const columns = value as Record<string, unknown>;
+    const arrays = Object.entries(columns).filter((entry): entry is [string, unknown[]] => Array.isArray(entry[1]));
+    if (arrays.length === 0) return [];
+    const length = Math.max(...arrays.map(([, items]) => items.length));
+    return Array.from({ length }, (_, index) => Object.fromEntries(arrays.map(([key, items]) => [key, items[index] ?? null])));
+  }
+  return [];
+}
+
+export function asInteger(row: UnknownRow, aliases: string[]): number | null {
+  for (const key of aliases) {
+    const value = row[key];
+    if (typeof value === 'number' && Number.isInteger(value)) return value;
+    if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
+  }
+  return null;
+}
+
+export function asText(row: UnknownRow, aliases: string[]): string | null {
+  for (const key of aliases) {
+    const value = row[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+    if (typeof value === 'bigint') return value.toString();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+export function isSource2Header(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const header = value as Record<string, unknown>;
+  return header.demo_version_name === 'valve_demo_2' || (typeof header.demo_file_stamp === 'string' && header.demo_file_stamp.startsWith('PBDEMS2'));
+}
+
+export function sanitizeSchema(rows: UnknownRow[]): { count: number; columns: string[] } {
+  return { count: rows.length, columns: [...new Set(rows.flatMap((row) => Object.keys(row)))].sort() };
+}
+
+export interface ParsedDemoSnapshot {
+  header: Record<string, unknown>;
+  players: UnknownRow[];
+  eventNames: string[];
+  events: UnknownRow[];
+  ticks: UnknownRow[];
+}
+
+const requiredCandidates = ['round_start','round_freeze_end','round_end','round_officially_ended','player_death','player_hurt','bomb_planted','bomb_defused','bomb_exploded','player_blind'];
+
+export function parseDemoSnapshot(path: string, parser: DemoParserPort = loadNativeParser()): ParsedDemoSnapshot {
+  const rawHeader = parser.parseHeader(path);
+  const header = rawHeader && typeof rawHeader === 'object' ? rawHeader as Record<string, unknown> : {};
+  const players = toRows(parser.parsePlayerInfo(path));
+  const listed = parser.listGameEvents(path);
+  const eventNames = Array.isArray(listed) ? listed.filter((value): value is string => typeof value === 'string') : [];
+  const selected = requiredCandidates.filter((eventName) => eventNames.includes(eventName));
+  const events = selected.length ? toRows(parser.parseEvents(path, selected)) : [];
+  const ticksToRead = [...new Set(events
+    .filter((row) => ['round_start','round_freeze_end','round_end','round_officially_ended'].includes(asText(row, ['event_name','name','event']) ?? ''))
+    .map((row) => asInteger(row, ['tick']))
+    .filter((tick): tick is number => tick !== null))];
+  const ticks = ticksToRead.length ? toRows(parser.parseTicks(path, ['team_num','team_name','team_rounds_total','is_alive'], ticksToRead)) : [];
+  return { header, players, eventNames, events, ticks };
+}

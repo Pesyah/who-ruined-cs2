@@ -1,0 +1,21 @@
+{
+  "name": "@who-ruined/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@who-ruined/contracts": "workspace:*",
+    "@who-ruined/database": "workspace:*",
+    "@who-ruined/match-domain": "workspace:*",
+    "@who-ruined/parser-adapter": "workspace:*"
+  },
+  "devDependencies": { "tsx": "4.20.6" }
+}

@@ -1,0 +1,17 @@
+node_modules/
+.turbo/
+dist/
+coverage/
+.env
+*.log
+data/*.db*
+data/uploads/*
+!data/uploads/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+data/reports/*
+!data/reports/.gitkeep
+tests/golden/*.dem
+apps/web/.vite/
+packages/database/generated/
+.pnpm-store/
