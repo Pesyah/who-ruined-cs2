@@ -15,3 +15,6 @@ tests/golden/*.dem
 apps/web/.vite/
 packages/database/generated/
 .pnpm-store/
+
+**/*.dem
+**/*.tsbuildinfo
