@@ -1,61 +1,77 @@
-import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { CDataGCCStrike15_v2_MatchInfoSchema, fromBinary } from 'csgo-protobuf';
 import { describe, expect, it } from 'vitest';
 import { normalizeSnapshot, stableTeamId } from '../../packages/match-domain/dist/index.js';
-import { parseDemoSnapshot } from '../../packages/parser-adapter/dist/index.js';
+import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, parseDemoSnapshot } from '../../packages/parser-adapter/dist/index.js';
 
-const demoPath = process.env.GOLDEN_DEMO_PATH;
-const infoPath = process.env.GOLDEN_INFO_PATH;
-const hasFixture = Boolean(demoPath && infoPath);
+interface GoldenFixture {
+  id: string;
+  envPrefix: string;
+  sha256: string;
+  parserVersion: string;
+  normalizerVersion: string;
+  expected: {
+    map: string; players: number; teams: number; rounds: number; liveDeathEvents: number;
+    nonLiveDeathEvents: number; tickRate: number; scoreAfterByReferenceTeam: number[][]; sortedKda: number[][];
+  };
+}
+
+const manifest = JSON.parse(await readFile(new URL('./manifest.json', import.meta.url), 'utf8')) as { fixtures: GoldenFixture[] };
 const steamId64Base = 76_561_197_960_265_728n;
 
-describe.skipIf(!hasFixture)('real demo reconciliation', () => {
-  it('matches the external info scoreboard and every round score transition', async () => {
-    if (!demoPath || !infoPath) throw new Error('GOLDEN_DEMO_PATH and GOLDEN_INFO_PATH are required');
-    const manifest = JSON.parse(await readFile(new URL('./manifest.json', import.meta.url), 'utf8')) as {
-      fixtures: Array<{ sha256: string; expected: { map: string; players: number; teams: number; rounds: number; deathEvents: number; scoreAfterByReferenceTeam: number[][]; sortedKda: number[][] } }>;
-    };
-    const fixture = manifest.fixtures[0];
-    if (!fixture) throw new Error('Golden manifest is empty');
-    expect(createHash('sha256').update(await readFile(demoPath)).digest('hex')).toBe(fixture.sha256);
-    const match = normalizeSnapshot({
-      matchId: 'golden-local',
-      fileSha256: '0'.repeat(64),
-      normalizedAt: '2000-01-01T00:00:00.000Z',
-      snapshot: parseDemoSnapshot(demoPath)
+describe('real demo reconciliation', () => {
+  for (const fixture of manifest.fixtures) {
+    const legacyOffice = fixture.envPrefix === 'OFFICE';
+    const demoPath = process.env[`GOLDEN_${fixture.envPrefix}_DEMO_PATH`] ?? (legacyOffice ? process.env.GOLDEN_DEMO_PATH : undefined);
+    const infoPath = process.env[`GOLDEN_${fixture.envPrefix}_INFO_PATH`] ?? (legacyOffice ? process.env.GOLDEN_INFO_PATH : undefined);
+
+    it.skipIf(!demoPath || !infoPath)(`${fixture.id}: matches manifest and external info`, async () => {
+      if (!demoPath || !infoPath) throw new Error(`GOLDEN_${fixture.envPrefix}_DEMO_PATH and INFO_PATH are required`);
+      const demoBytes = await readFile(demoPath);
+      expect(createHash('sha256').update(demoBytes).digest('hex')).toBe(fixture.sha256);
+      expect(PARSER_LIBRARY_VERSION).toBe(fixture.parserVersion);
+      expect(NORMALIZER_VERSION).toBe(fixture.normalizerVersion);
+      const match = normalizeSnapshot({
+        matchId: fixture.id, fileSha256: fixture.sha256, normalizedAt: '2000-01-01T00:00:00.000Z',
+        snapshot: parseDemoSnapshot(demoPath)
+      });
+      const info = fromBinary(CDataGCCStrike15_v2_MatchInfoSchema, await readFile(infoPath));
+      const referenceRounds = info.roundstatsall; const finalReference = referenceRounds.at(-1);
+      if (!finalReference?.reservation || finalReference.reservation.accountIds.length !== 10) throw new Error('Reference info does not contain a 10-player roster');
+      const referencePlayerIds = finalReference.reservation.accountIds.map((accountId) => (BigInt(accountId) + steamId64Base).toString());
+      const referenceTeamIds = [stableTeamId(referencePlayerIds.slice(0, 5)), stableTeamId(referencePlayerIds.slice(5, 10))];
+
+      expect(match.quality).toBe('VALID');
+      expect(match.qualityIssues).toEqual([]);
+      expect(match.map).toBe(fixture.expected.map);
+      expect(match.tickRate).toBe(fixture.expected.tickRate);
+      expect(match.players).toHaveLength(fixture.expected.players);
+      expect(match.teams).toHaveLength(fixture.expected.teams);
+      expect(match.rounds).toHaveLength(fixture.expected.rounds);
+      expect(match.rounds).toHaveLength(referenceRounds.length);
+      expect(match.rounds.every((round) => round.isValid)).toBe(true);
+      expect(match.rounds[0]?.sideByTeamId).not.toEqual(match.rounds[12]?.sideByTeamId);
+      expect(new Set(match.players.map((player) => player.id)).size).toBe(10);
+      expect(match.players.every((player) => player.steamId === player.id && /^7656119\d{10}$/.test(player.id))).toBe(true);
+      expect(match.players.every((player) => player.displayName.length > 0 && !/^Игрок \d+$/.test(player.displayName))).toBe(true);
+
+      const scoreSequence = match.rounds.map((round) => referenceTeamIds.map((teamId) => round.scoreAfter[teamId]));
+      expect(scoreSequence).toEqual(referenceRounds.map((round) => round.teamScores));
+      expect(scoreSequence).toEqual(fixture.expected.scoreAfterByReferenceTeam);
+      const liveDeaths = match.events.filter((event) => event.kind === 'PLAYER_DEATH');
+      const nonLiveDeaths = match.events.filter((event) => event.kind === 'PLAYER_DEATH_NONLIVE');
+      expect(liveDeaths).toHaveLength(fixture.expected.liveDeathEvents);
+      expect(nonLiveDeaths).toHaveLength(fixture.expected.nonLiveDeathEvents);
+      expect(new Set(match.events.map((event) => event.id)).size).toBe(match.events.length);
+
+      const actualKda = referencePlayerIds.map((playerId) => {
+        const scoreboard = match.players.find((player) => player.id === playerId)?.scoreboard;
+        return [scoreboard?.kills, scoreboard?.deaths, scoreboard?.assists];
+      });
+      const expectedKda = referencePlayerIds.map((_playerId, index) => [finalReference.kills[index], finalReference.deaths[index], finalReference.assists[index]]);
+      expect(actualKda).toEqual(expectedKda);
+      expect(actualKda.toSorted((a, b) => (a[0] ?? 0) - (b[0] ?? 0) || (a[1] ?? 0) - (b[1] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0))).toEqual(fixture.expected.sortedKda);
     });
-    const info = fromBinary(CDataGCCStrike15_v2_MatchInfoSchema, await readFile(infoPath));
-    const referenceRounds = info.roundstatsall;
-    const finalReference = referenceRounds.at(-1);
-    if (!finalReference?.reservation || finalReference.reservation.accountIds.length !== 10) throw new Error('Reference info does not contain a 10-player roster');
-
-    const referencePlayerIds = finalReference.reservation.accountIds.map((accountId) => (BigInt(accountId) + steamId64Base).toString());
-    const referenceTeamIds = [stableTeamId(referencePlayerIds.slice(0, 5)), stableTeamId(referencePlayerIds.slice(5, 10))];
-    expect(match.qualityIssues).toEqual([]);
-    expect(match.quality).toBe('VALID');
-    expect(match.map).toBe(fixture.expected.map);
-    expect(match.players).toHaveLength(fixture.expected.players);
-    expect(match.teams).toHaveLength(fixture.expected.teams);
-    expect(match.rounds).toHaveLength(fixture.expected.rounds);
-    expect(match.rounds).toHaveLength(referenceRounds.length);
-
-    for (const [index, round] of match.rounds.entries()) {
-      const referenceScores = referenceRounds[index]?.teamScores;
-      expect(referenceScores).toHaveLength(2);
-      expect(referenceTeamIds.map((teamId) => round.scoreAfter[teamId])).toEqual(referenceScores);
-    }
-    expect(match.rounds.map((round) => referenceTeamIds.map((teamId) => round.scoreAfter[teamId]))).toEqual(fixture.expected.scoreAfterByReferenceTeam);
-
-    const deaths = match.events.filter((event) => event.kind === 'PLAYER_DEATH');
-    const actualKda = referencePlayerIds.map((playerId) => [
-      deaths.filter((event) => event.actorId === playerId && event.targetId !== playerId && event.attrs.friendlyFire !== true).length,
-      deaths.filter((event) => event.targetId === playerId).length,
-      deaths.filter((event) => event.assisterId === playerId).length
-    ]);
-    const expectedKda = referencePlayerIds.map((_playerId, index) => [finalReference.kills[index], finalReference.deaths[index], finalReference.assists[index]]);
-    expect(actualKda).toEqual(expectedKda);
-    expect(actualKda.toSorted((a, b) => (a[0] ?? 0) - (b[0] ?? 0) || (a[1] ?? 0) - (b[1] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0))).toEqual(fixture.expected.sortedKda);
-    expect(deaths).toHaveLength(fixture.expected.deathEvents);
-  });
+  }
 });

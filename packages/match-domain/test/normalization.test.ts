@@ -18,21 +18,25 @@ describe('conservative normalization', () => {
     for (let ordinal = 1; ordinal <= 8; ordinal += 1) {
       const start = ordinal * 1000; const end = start + 900; const swapped = ordinal >= 5;
       const sideA = swapped ? 3 : 2; const sideB = swapped ? 2 : 3;
-      for (const steamid of rosterA) ticks.push({ tick: start + 100, steamid, team_num: sideA, team_rounds_total: scoreA });
-      for (const steamid of rosterB) ticks.push({ tick: start + 100, steamid, team_num: sideB, team_rounds_total: scoreB });
+      for (const steamid of rosterA) ticks.push({ tick: start + 100, game_time: (start + 100) / 64, steamid, team_num: sideA, team_rounds_total: scoreA });
+      for (const steamid of rosterB) ticks.push({ tick: start + 100, game_time: (start + 100) / 64, steamid, team_num: sideB, team_rounds_total: scoreB });
       const aWins = ordinal <= 5; if (aWins) scoreA += 1; else scoreB += 1;
       events.push({ event_name: 'round_start', tick: start }, { event_name: 'round_freeze_end', tick: start + 100 }, { event_name: 'round_end', tick: end, winner: aWins ? sideA : sideB });
       // At halftime demoparser2 may expose the new sides on the prior round's
       // official boundary tick. A complete two-team swap is valid there.
       const endSideA = ordinal === 4 ? 3 : sideA; const endSideB = ordinal === 4 ? 2 : sideB;
-      for (const steamid of rosterA) ticks.push({ tick: end, steamid, team_num: endSideA, team_rounds_total: scoreA });
-      for (const steamid of rosterB) ticks.push({ tick: end, steamid, team_num: endSideB, team_rounds_total: scoreB });
+      for (const steamid of rosterA) ticks.push({ tick: end, game_time: end / 64, steamid, team_num: endSideA, team_rounds_total: scoreA });
+      for (const steamid of rosterB) ticks.push({ tick: end, game_time: end / 64, steamid, team_num: endSideB, team_rounds_total: scoreB });
     }
+    events.push({ event_name: 'player_death', tick: 5050, attacker_steamid: rosterA[0], user_steamid: rosterA[0], weapon: 'world' });
     const match = normalizeSnapshot({ matchId: 'm', fileSha256: 'c'.repeat(64), normalizedAt: '2026-10-15T00:00:00.000Z', snapshot: { header: { map_name: 'de_synthetic' }, players, eventNames: ['round_start','round_freeze_end','round_end'], events, ticks } });
     expect(match.quality).toBe('VALID');
     expect(match.teams).toHaveLength(2);
     expect(match.rounds).toHaveLength(8);
+    expect(match.tickRate).toBe(64);
     expect(match.rounds[3]?.sideByTeamId).not.toEqual(match.rounds[4]?.sideByTeamId);
     expect(match.rounds.every((round) => round.isValid)).toBe(true);
+    expect(match.events.filter((event) => event.kind === 'PLAYER_DEATH_NONLIVE')).toHaveLength(1);
+    expect(match.players.find((player) => player.id === rosterA[0])?.scoreboard?.deaths).toBe(1);
   });
 });

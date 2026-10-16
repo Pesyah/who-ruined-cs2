@@ -14,7 +14,15 @@ const scoreRecord = z.record(z.string(), z.number().int().nonnegative());
 const sideRecord = z.record(z.string(), sideSchema);
 
 export const teamSchema = z.object({ id, playerIds: z.array(id), label: z.string().max(160) });
-export const playerSchema = z.object({ id, steamId: z.string().nullable(), displayName: z.string().max(160), teamId: id });
+export const scoreboardStatsSchema = z.object({
+  kills: z.number().int().nonnegative(), deaths: z.number().int().nonnegative(),
+  assists: z.number().int().nonnegative(), teamKills: z.number().int().nonnegative(),
+  source: z.literal('PARSED_DEATH_EVENTS_ALL_PHASES')
+});
+export const playerSchema = z.object({
+  id, steamId: z.string().regex(/^7656119\d{10}$/).nullable(),
+  displayName: z.string().max(160), teamId: id, scoreboard: scoreboardStatsSchema.optional()
+});
 export const roundSchema = z.object({
   id,
   ordinal: z.number().int().positive(),

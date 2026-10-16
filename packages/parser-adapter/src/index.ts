@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 const require = createRequire(import.meta.url);
 export const PARSER_LIBRARY_VERSION = '0.42.0';
-export const NORMALIZER_VERSION = 'm1-0.3.0';
+export const NORMALIZER_VERSION = 'm1-0.4.0';
 
 export type UnknownRow = Record<string, unknown>;
 export interface DemoParserPort {
@@ -69,7 +69,7 @@ export interface ParsedDemoSnapshot {
   ticks: UnknownRow[];
 }
 
-const requiredCandidates = ['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match','player_death','player_hurt','bomb_planted','bomb_defused','bomb_exploded','player_blind'];
+const requiredCandidates = ['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match','player_death','player_hurt','bomb_beginplant','bomb_begindefuse','bomb_planted','bomb_defused','bomb_exploded','player_blind','flashbang_detonate','hegrenade_detonate','inferno_startburn','inferno_expire'];
 const phaseEvents = new Set(['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match']);
 
 export function parseDemoSnapshot(path: string, parser: DemoParserPort = loadNativeParser()): ParsedDemoSnapshot {
@@ -84,6 +84,6 @@ export function parseDemoSnapshot(path: string, parser: DemoParserPort = loadNat
     .filter((row) => phaseEvents.has(asText(row, ['event_name','name','event']) ?? ''))
     .map((row) => asInteger(row, ['tick']))
     .filter((tick): tick is number => tick !== null))];
-  const ticks = ticksToRead.length ? toRows(parser.parseTicks(path, ['team_num','team_name','team_rounds_total','is_alive'], ticksToRead)) : [];
+  const ticks = ticksToRead.length ? toRows(parser.parseTicks(path, ['team_num','team_name','team_rounds_total','is_alive','game_time'], ticksToRead)) : [];
   return { header, players, eventNames, events, ticks };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { syntheticValidMatch } from '@who-ruined/testkit';
-import { isCreditedAssist, stableTeamId, validateMatch } from '../src/index.js';
+import { isCreditedAssist, isSteamId64, stableTeamId, validateMatch } from '../src/index.js';
 
 describe('stable identities and round validation', () => {
   it('derives team identity from sorted roster, not side', () => {
@@ -31,5 +31,10 @@ describe('stable identities and round validation', () => {
     expect(isCreditedAssist('valid-assister', 'victim', teams)).toBe(true);
     expect(isCreditedAssist('friendly-assister', 'victim', teams)).toBe(false);
     expect(isCreditedAssist(null, 'victim', teams)).toBe(false);
+  });
+  it('validates SteamID64 as a string without numeric conversion', () => {
+    expect(isSteamId64('76561198000000123')).toBe(true);
+    expect(isSteamId64('7656119800000012')).toBe(false);
+    expect(isSteamId64(null)).toBe(false);
   });
 });

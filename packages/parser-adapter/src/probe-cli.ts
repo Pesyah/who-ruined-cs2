@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { asText, isSource2Header, loadNativeParser, PARSER_LIBRARY_VERSION, sanitizeSchema, toRows } from './index.js';
 
-const candidateEvents = ['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match','player_death','player_hurt','bomb_planted','bomb_defused','bomb_exploded','player_blind','smokegrenade_detonate','flashbang_detonate','hegrenade_detonate','molotov_detonate'];
+const candidateEvents = ['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match','player_death','player_hurt','bomb_beginplant','bomb_begindefuse','bomb_planted','bomb_defused','bomb_exploded','player_blind','smokegrenade_detonate','flashbang_detonate','hegrenade_detonate','inferno_startburn','inferno_expire','molotov_detonate'];
 const demoArgument = process.argv.slice(2).find((argument) => argument !== '--');
 if (!demoArgument) throw new Error('Использование: pnpm parser:probe -- path/to/demo.dem');
 const demoPath = path.resolve(process.env.INIT_CWD ?? process.cwd(), demoArgument);
@@ -23,7 +23,7 @@ const allPhaseTicks = [...new Set(events
   .filter((tick): tick is number => typeof tick === 'number' && Number.isInteger(tick)))].sort((a, b) => a - b);
 const eventTicks = [...new Set([...allPhaseTicks.slice(0, 4), ...allPhaseTicks.slice(-4)])];
 // These properties are explicitly documented by demoparser2. We query only event-adjacent ticks.
-const ticks = eventTicks.length ? toRows(parser.parseTicks(demoPath, ['team_num','team_name','team_rounds_total','is_alive'], eventTicks)) : [];
+const ticks = eventTicks.length ? toRows(parser.parseTicks(demoPath, ['team_num','team_name','team_rounds_total','is_alive','game_time','current_equip_value','inventory','armor_value','has_helmet','has_defuser'], eventTicks)) : [];
 const eventMatrix = availableCandidates.map((eventName) => ({ eventName, ...sanitizeSchema(events.filter((row) => asText(row, ['event_name','name','event']) === eventName)) }));
 
 const report = {

@@ -115,6 +115,22 @@ function asBoolean(row: UnknownRow, aliases: string[]): boolean | null {
   return null;
 }
 
+export function isSteamId64(value: string | null): value is string {
+  return value !== null && /^7656119\d{10}$/.test(value);
+}
+
+export function deriveTickRate(tickRows: UnknownRow[]): number | null {
+  const samples = [...new Map(tickRows.flatMap((row) => {
+    const tick = asInteger(row, ['tick']); const gameTime = row.game_time;
+    return tick !== null && typeof gameTime === 'number' && Number.isFinite(gameTime) ? [[tick, gameTime] as const] : [];
+  })).entries()].sort(([a], [b]) => a - b);
+  const first = samples[0]; const last = samples.at(-1);
+  if (!first || !last || first[0] === last[0] || first[1] === last[1]) return null;
+  const rate = (last[0] - first[0]) / (last[1] - first[1]);
+  const rounded = Math.round(rate);
+  return Number.isFinite(rate) && rounded > 0 && Math.abs(rate - rounded) < 0.001 ? rounded : null;
+}
+
 export function isCreditedAssist(assisterId: string | null, targetId: string | null, playerToTeam: ReadonlyMap<string, string>): boolean {
   return assisterId !== null && targetId !== null && playerToTeam.get(assisterId) !== undefined && playerToTeam.get(assisterId) !== playerToTeam.get(targetId);
 }
@@ -122,7 +138,8 @@ export function isCreditedAssist(assisterId: string | null, targetId: string | n
 export function normalizeSnapshot(input: NormalizeInput): MatchData {
   const issues: MatchData['qualityIssues'] = [];
   const parsedPlayers = input.snapshot.players.map((row, index) => {
-    const steamId = asText(row, ['steamid','steam_id','user_steamid']);
+    const candidateSteamId = asText(row, ['steamid','steam_id','user_steamid']);
+    const steamId = isSteamId64(candidateSteamId) ? candidateSteamId : null;
     const sideNumber = asInteger(row, ['team_number','team_num']);
     return { id: steamId ?? `anon_${index + 1}`, steamId, displayName: asText(row, ['name','player_name']) ?? `Игрок ${index + 1}`, sideNumber };
   });
@@ -136,7 +153,22 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
   if (rosterGroups.length !== 2 || parsedPlayers.length !== 10) issues.push({ code: 'ROSTER_UNVERIFIED', message: 'Парсер не подтвердил два стабильных состава 5×5.' });
   const teams = rosterGroups.map(([, roster], index) => ({ id: stableTeamId(roster.map((p) => p.id)), playerIds: roster.map((p) => p.id).sort(), label: `Команда ${index + 1}` }));
   const playerToTeam = new Map(teams.flatMap((team) => team.playerIds.map((playerId) => [playerId, team.id] as const)));
-  const players = parsedPlayers.filter((player) => playerToTeam.has(player.id)).map((player) => ({ id: player.id, steamId: player.steamId, displayName: player.displayName, teamId: playerToTeam.get(player.id) ?? '' }));
+  if (parsedPlayers.some((player) => player.steamId === null)) issues.push({ code: 'PLAYER_IDENTITY_UNVERIFIED', message: 'Не для всех игроков подтверждён SteamID64.' });
+  const scoreboardByPlayer = new Map(parsedPlayers.map((player) => [player.id, { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_ALL_PHASES' as const }]));
+  for (const row of input.snapshot.events) {
+    if (asText(row, ['event_name','event','name']) !== 'player_death') continue;
+    const actorId = asText(row, ['attacker_steamid']); const targetId = asText(row, ['user_steamid','victim_steamid']); const assisterId = asText(row, ['assister_steamid']);
+    const actor = actorId ? scoreboardByPlayer.get(actorId) : undefined; const target = targetId ? scoreboardByPlayer.get(targetId) : undefined; const assister = assisterId ? scoreboardByPlayer.get(assisterId) : undefined;
+    if (target) target.deaths += 1;
+    if (actor && targetId && actorId !== targetId) {
+      if (playerToTeam.get(actorId ?? '') === playerToTeam.get(targetId)) actor.teamKills += 1; else actor.kills += 1;
+    }
+    if (assister && isCreditedAssist(assisterId, targetId, playerToTeam)) assister.assists += 1;
+  }
+  const players = parsedPlayers.filter((player) => playerToTeam.has(player.id)).map((player) => ({
+    id: player.id, steamId: player.steamId, displayName: player.displayName, teamId: playerToTeam.get(player.id) ?? '',
+    scoreboard: scoreboardByPlayer.get(player.id) ?? { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_ALL_PHASES' as const }
+  }));
   const byKind = (name: string): UnknownRow[] => input.snapshot.events.filter((row) => asText(row, ['event_name','event','name']) === name);
   const explicitStarts = uniqueTicks([...byKind('round_prestart'), ...byKind('round_start')]);
   const freezes = uniqueTicks(byKind('round_freeze_end'));
@@ -191,8 +223,9 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     if (eventName !== 'player_death') return;
     const tick = asInteger(row, ['tick']);
     if (tick === null) { unassignedDeaths += 1; return; }
-    const round = rounds.find((candidate) => tick >= (candidate.freezeEndTick ?? candidate.startTick) && tick <= candidate.endTick);
-    if (!round) { unassignedDeaths += 1; return; }
+    const liveRound = rounds.find((candidate) => tick >= (candidate.freezeEndTick ?? candidate.startTick) && tick <= candidate.endTick);
+    const phaseRound = liveRound ?? rounds.find((candidate) => tick >= candidate.startTick && tick <= candidate.endTick);
+    if (!phaseRound) { unassignedDeaths += 1; return; }
     const rawActor = asText(row, ['attacker_steamid']);
     const rawTarget = asText(row, ['user_steamid','victim_steamid']);
     const rawAssister = asText(row, ['assister_steamid']);
@@ -202,15 +235,15 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     const assisterId = isCreditedAssist(candidateAssisterId, targetId, playerToTeam) ? candidateAssisterId : null;
     const friendlyFire = actorId !== null && targetId !== null && actorId !== targetId && playerToTeam.get(actorId) === playerToTeam.get(targetId);
     normalizedEvents.push({
-      id: eventId(round.ordinal, eventName, parserRowIndex), kind: 'PLAYER_DEATH', roundId: round.id, tick, actorId, targetId, assisterId,
-      attrs: { friendlyFire, suicide: actorId !== null && actorId === targetId, headshot: asBoolean(row, ['headshot']), assistedFlash: asBoolean(row, ['assistedflash']), weapon: asText(row, ['weapon']) },
+      id: eventId(phaseRound.ordinal, eventName, parserRowIndex), kind: liveRound ? 'PLAYER_DEATH' : 'PLAYER_DEATH_NONLIVE', roundId: phaseRound.id, tick, actorId, targetId, assisterId,
+      attrs: { friendlyFire, suicide: actorId !== null && actorId === targetId, headshot: asBoolean(row, ['headshot']), assistedFlash: asBoolean(row, ['assistedflash']), weapon: asText(row, ['weapon']), excludedFromLiveFeatures: liveRound === undefined },
       source: { eventName, rowIndex: parserRowIndex }
     });
   });
   if (unassignedDeaths > 0) issues.push({ code: 'UNASSIGNED_DEATH_EVENTS', message: `${unassignedDeaths} событий смерти не удалось однозначно привязать к live-раунду.` });
   const match: MatchData = {
     schemaVersion: '1', matchId: input.matchId, fileSha256: input.fileSha256,
-    map: asText(input.snapshot.header, ['map_name']), tickRate: null, teams, players, rounds, events: normalizedEvents, quality: 'PARTIAL', qualityIssues: issues,
+    map: asText(input.snapshot.header, ['map_name']), tickRate: deriveTickRate(input.snapshot.ticks), teams, players, rounds, events: normalizedEvents, quality: 'PARTIAL', qualityIssues: issues,
     provenance: { parser: '@laihoe/demoparser2', parserVersion: PARSER_LIBRARY_VERSION, normalizedAt: input.normalizedAt ?? new Date().toISOString() }
   };
   const validation = validateMatch(match);

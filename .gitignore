@@ -17,4 +17,5 @@ packages/database/generated/
 .pnpm-store/
 
 **/*.dem
+**/*.dem.info
 **/*.tsbuildinfo

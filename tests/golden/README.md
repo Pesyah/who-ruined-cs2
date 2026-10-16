@@ -1,21 +1,32 @@
 # Golden demos
 
-Real demos and their `.info` sidecars stay outside Git. The test contains no player names,
-Steam IDs or fixture paths and is skipped unless both paths are explicitly supplied.
+The three real `.dem` files and their `.dem.info` sidecars stay outside Git.
+The committed manifest contains only SHA-256 values and anonymous expected
+counts, score sequences and sorted K/D/A tuples—never names, SteamID64 values or
+local fixture paths.
+
+Set the paths that are available and run:
 
 ```powershell
-$env:GOLDEN_DEMO_PATH = 'C:\external\match.dem'
-$env:GOLDEN_INFO_PATH = 'C:\external\match.dem.info'
+$env:GOLDEN_OFFICE_DEMO_PATH = 'C:\external\office.dem'
+$env:GOLDEN_OFFICE_INFO_PATH = 'C:\external\office.dem.info'
+$env:GOLDEN_DUST2_DEMO_PATH = 'C:\external\dust2.dem'
+$env:GOLDEN_DUST2_INFO_PATH = 'C:\external\dust2.dem.info'
+$env:GOLDEN_TRAIN_DEMO_PATH = 'C:\external\train.dem'
+$env:GOLDEN_TRAIN_INFO_PATH = 'C:\external\train.dem.info'
 pnpm test:golden
 ```
 
-The committed manifest contains only the demo SHA-256 and anonymous expected
-counts/score/KDA tuples. The test reconciles all ten K/D/A rows and every round
-score transition against both that manifest and the protobuf `.info` sidecar.
-It also requires a validated 10-player, two-team normalized match. This is an
-independent reference for the available scoreboard data, not proof of tactical
-blame or events absent from the sidecar.
+Each configured fixture is checked independently for SHA-256, Source 2
+normalization, map, tick rate, stable 5v5 teams, side swap, all valid rounds,
+every score transition, live/non-live death coverage, unique event IDs and all
+ten K/D/A rows. Names and SteamID64 values are validated in memory but never
+written into snapshots or reports.
 
-The supplied regular MR12 fixture has passed. Two additional real fixtures remain
-required for the repository-wide parser acceptance set: overtime (or an expected
-`PARTIAL`) and a match exercising team damage/trades/bomb/flash capabilities.
+If a fixture's demo or info variable is missing, Vitest reports that fixture as
+`SKIPPED`. It is not counted as a successful golden reconciliation. The legacy
+`GOLDEN_DEMO_PATH`/`GOLDEN_INFO_PATH` aliases remain accepted for Office only.
+
+Office, Dust2 and Train currently pass. The minimum three-real-demo count is
+met, but an overtime/expected-`PARTIAL` fixture, a team-kill positive fixture
+and the M4 corrupt/truncated rejection fixture remain open.
