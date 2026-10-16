@@ -10,6 +10,6 @@ await Promise.all(['uploads','cache','reports'].map((name) => mkdir(new URL(name
 const app = await NestFactory.create(AppModule);
 app.setGlobalPrefix('api/v1');
 app.useGlobalFilters(new SafeExceptionFilter());
-const config = new DocumentBuilder().setTitle('Who Ruined CS2 local API').setVersion('0.1.0').build();
+const config = new DocumentBuilder().setTitle('Who Ruined CS2 local API').setVersion('0.2.0').build();
 SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
 await app.listen(Number(process.env.PORT ?? 3000), '0.0.0.0');

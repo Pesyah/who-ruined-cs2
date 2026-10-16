@@ -28,7 +28,11 @@ describe('conservative normalization', () => {
       for (const steamid of rosterA) ticks.push({ tick: end, game_time: end / 64, steamid, team_num: endSideA, team_rounds_total: scoreA });
       for (const steamid of rosterB) ticks.push({ tick: end, game_time: end / 64, steamid, team_num: endSideB, team_rounds_total: scoreB });
     }
-    events.push({ event_name: 'player_death', tick: 5050, attacker_steamid: rosterA[0], user_steamid: rosterA[0], weapon: 'world' });
+    events.push(
+      { event_name: 'player_death', tick: 5050, attacker_steamid: rosterA[0], user_steamid: rosterA[0], weapon: 'world' },
+      { event_name: 'player_hurt', tick: 5200, attacker_steamid: rosterA[1], user_steamid: rosterB[1], dmg_health: 37, health: 63, weapon: 'hegrenade' },
+      { event_name: 'smokegrenade_detonate', tick: 5300, user_steamid: rosterA[2], entityid: 42 }
+    );
     const match = normalizeSnapshot({ matchId: 'm', fileSha256: 'c'.repeat(64), normalizedAt: '2026-10-15T00:00:00.000Z', snapshot: { header: { map_name: 'de_synthetic' }, players, eventNames: ['round_start','round_freeze_end','round_end'], events, ticks } });
     expect(match.quality).toBe('VALID');
     expect(match.teams).toHaveLength(2);
@@ -37,6 +41,11 @@ describe('conservative normalization', () => {
     expect(match.rounds[3]?.sideByTeamId).not.toEqual(match.rounds[4]?.sideByTeamId);
     expect(match.rounds.every((round) => round.isValid)).toBe(true);
     expect(match.events.filter((event) => event.kind === 'PLAYER_DEATH_NONLIVE')).toHaveLength(1);
+    expect(match.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'PLAYER_HURT', attrs: expect.objectContaining({ rawHealthDamage: 37, weapon: 'hegrenade' }), context: expect.objectContaining({ phase: 'LIVE' }) }),
+      expect.objectContaining({ kind: 'SMOKE_DETONATE', actorId: rosterA[2] })
+    ]));
+    expect(match.events.filter((event) => event.kind === 'ECONOMY_SNAPSHOT')).toHaveLength(80);
     expect(match.players.find((player) => player.id === rosterA[0])?.scoreboard?.deaths).toBe(1);
   });
 });

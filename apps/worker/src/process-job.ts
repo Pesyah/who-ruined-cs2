@@ -3,7 +3,8 @@ import { promisify } from 'node:util';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { prisma } from '@who-ruined/database';
-import { matchDataSchema } from '@who-ruined/contracts';
+import { matchArtifactSchema, matchDataSchema } from '@who-ruined/contracts';
+import { computeMatchAnalytics } from '@who-ruined/features';
 import { normalizeSnapshot } from '@who-ruined/match-domain';
 import { parseDemoSnapshot } from '@who-ruined/parser-adapter';
 import { resolveDataPath } from './storage.js';
@@ -25,9 +26,12 @@ export async function processJob(jobId: string, matchId: string): Promise<void> 
     const normalized = normalizeSnapshot({ matchId, fileSha256: match.fileSha256, snapshot });
     await stage(jobId, 'VALIDATING');
     const validated = matchDataSchema.parse(normalized);
+    await stage(jobId, 'FEATURIZING');
+    const analytics = computeMatchAnalytics(validated);
+    const artifact = matchArtifactSchema.parse({ schemaVersion: 'm2-artifact-1', match: validated, analytics });
     const relative = `cache/${matchId}.json.gz`; const finalPath = safePath(relative); const temporary = `${finalPath}.${jobId}.tmp`;
     await mkdir(path.dirname(finalPath), { recursive: true });
-    await writeFile(temporary, await zip(Buffer.from(JSON.stringify(validated))));
+    await writeFile(temporary, await zip(Buffer.from(JSON.stringify(artifact))));
     await rename(temporary, finalPath);
     const terminal = validated.quality === 'VALID' ? 'COMPLETED' : 'PARTIAL';
     await prisma.$transaction([

@@ -9,7 +9,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test && vitest run tests/golden/real-demo.test.ts",
-    "test:golden": "pnpm --filter @who-ruined/match-domain... build && vitest run tests/golden/real-demo.test.ts",
+    "test:golden": "pnpm --filter @who-ruined/features... build && pnpm --filter @who-ruined/match-domain... build && vitest run tests/golden/real-demo.test.ts",
     "parser:probe": "pnpm --filter @who-ruined/parser-adapter probe",
     "db:generate": "prisma generate",
     "db:push": "prisma db push"

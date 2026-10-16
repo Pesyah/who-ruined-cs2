@@ -2,8 +2,8 @@
 
 The three real `.dem` files and their `.dem.info` sidecars stay outside Git.
 The committed manifest contains only SHA-256 values and anonymous expected
-counts, score sequences and sorted K/D/A tuples—never names, SteamID64 values or
-local fixture paths.
+counts, score sequences, sorted K/D/A tuples and non-identifying M2 aggregates—
+never names, SteamID64 values or local fixture paths.
 
 Set the paths that are available and run:
 
@@ -20,8 +20,11 @@ pnpm test:golden
 Each configured fixture is checked independently for SHA-256, Source 2
 normalization, map, tick rate, stable 5v5 teams, side swap, all valid rounds,
 every score transition, live/non-live death coverage, unique event IDs and all
-ten K/D/A rows. Names and SteamID64 values are validated in memory but never
-written into snapshots or reports.
+ten K/D/A rows. M2 additionally checks exact normalized event totals, actual
+HP-capped enemy/team damage, openings, one-to-one trades, bomb facts and grenade
+throw counts. These derived M2 aggregates are regression baselines from the
+demo itself, not independent external truth. Names and SteamID64 values are
+validated in memory but never written into snapshots or reports.
 
 If a fixture's demo or info variable is missing, Vitest reports that fixture as
 `SKIPPED`. It is not counted as a successful golden reconciliation. The legacy

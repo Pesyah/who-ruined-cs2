@@ -4,6 +4,7 @@ import { CDataGCCStrike15_v2_MatchInfoSchema, fromBinary } from 'csgo-protobuf';
 import { describe, expect, it } from 'vitest';
 import { normalizeSnapshot, stableTeamId } from '../../packages/match-domain/dist/index.js';
 import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, parseDemoSnapshot } from '../../packages/parser-adapter/dist/index.js';
+import { computeMatchAnalytics } from '../../packages/features/dist/index.js';
 
 interface GoldenFixture {
   id: string;
@@ -14,6 +15,7 @@ interface GoldenFixture {
   expected: {
     map: string; players: number; teams: number; rounds: number; liveDeathEvents: number;
     nonLiveDeathEvents: number; tickRate: number; scoreAfterByReferenceTeam: number[][]; sortedKda: number[][];
+    m2: { events: number; kills: number; deaths: number; assists: number; enemyDamage: number; teamDamage: number; trades: number; openings: number; plants: number; defuses: number; explosions: number; flashThrows: number; heThrows: number; infernos: number; smokes: number };
   };
 }
 
@@ -72,6 +74,23 @@ describe('real demo reconciliation', () => {
       const expectedKda = referencePlayerIds.map((_playerId, index) => [finalReference.kills[index], finalReference.deaths[index], finalReference.assists[index]]);
       expect(actualKda).toEqual(expectedKda);
       expect(actualKda.toSorted((a, b) => (a[0] ?? 0) - (b[0] ?? 0) || (a[1] ?? 0) - (b[1] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0))).toEqual(fixture.expected.sortedKda);
+
+      const analytics = computeMatchAnalytics(match, '2000-01-01T00:00:00.000Z');
+      expect(analytics.players).toHaveLength(10);
+      expect(analytics.availability.damage).toBe('AVAILABLE');
+      expect(analytics.availability.flashes).toBe('AVAILABLE');
+      expect(analytics.availability.economy).toBe('AVAILABLE');
+      expect(analytics.players.every((player) => player.roundsPlayed === fixture.expected.rounds)).toBe(true);
+      expect(analytics.players.reduce((sum, player) => sum + (player.deaths ?? 0), 0)).toBe(fixture.expected.liveDeathEvents);
+      expect(analytics.players.every((player) => player.enemyDamage !== null && player.adr !== null && player.kastPercent !== null)).toBe(true);
+      const sum = (pick: (player: typeof analytics.players[number]) => number | null): number => analytics.players.reduce((total, player) => total + (pick(player) ?? 0), 0);
+      expect({
+        events: match.events.length, kills: sum((player) => player.kills), deaths: sum((player) => player.deaths), assists: sum((player) => player.assists),
+        enemyDamage: sum((player) => player.enemyDamage), teamDamage: sum((player) => player.teamDamage), trades: sum((player) => player.tradeKills), openings: sum((player) => player.openingKills),
+        plants: sum((player) => player.bomb.plants), defuses: sum((player) => player.bomb.defuses), explosions: sum((player) => player.bomb.explosions),
+        flashThrows: sum((player) => player.grenades.flashesThrown), heThrows: sum((player) => player.grenades.heThrown), infernos: sum((player) => player.grenades.infernosStarted), smokes: sum((player) => player.grenades.smokesThrown)
+      }).toEqual(fixture.expected.m2);
+      expect(sum((player) => player.tradeKills)).toBe(sum((player) => player.deathsTraded));
     });
   }
 });

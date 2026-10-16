@@ -1,6 +1,6 @@
 import { Controller, Get, HttpCode, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -29,4 +29,10 @@ export class MatchesController {
   @Get('matches') list(@Query('cursor') cursor?: string) { return this.service.list(cursor); }
   @Get('matches/:id') match(@Param('id') id: string) { return this.service.match(id); }
   @Get('matches/:id/rounds') rounds(@Param('id') id: string) { return this.service.rounds(id); }
+  @Get('matches/:id/analytics')
+  @ApiOperation({ summary: 'Versioned factual M2 analytics without scores or blame labels' })
+  analytics(@Param('id') id: string) { return this.service.analytics(id); }
+  @Get('matches/:id/players/:playerId/analytics')
+  @ApiOperation({ summary: 'Factual M2 analytics for one match participant' })
+  playerAnalytics(@Param('id') id: string, @Param('playerId') playerId: string) { return this.service.playerAnalytics(id, playerId); }
 }

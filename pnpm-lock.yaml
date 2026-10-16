@@ -139,6 +139,9 @@ importers:
       '@who-ruined/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@who-ruined/features':
+        specifier: workspace:*
+        version: link:../../packages/features
       '@who-ruined/match-domain':
         specifier: workspace:*
         version: link:../../packages/match-domain
@@ -161,6 +164,16 @@ importers:
       '@prisma/client':
         specifier: 6.17.1
         version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
+
+  packages/features:
+    dependencies:
+      '@who-ruined/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@who-ruined/testkit':
+        specifier: workspace:*
+        version: link:../testkit
 
   packages/match-domain:
     dependencies:

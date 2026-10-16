@@ -115,6 +115,15 @@ function asBoolean(row: UnknownRow, aliases: string[]): boolean | null {
   return null;
 }
 
+function asNumber(row: UnknownRow, aliases: string[]): number | null {
+  for (const key of aliases) {
+    const value = row[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
 export function isSteamId64(value: string | null): value is string {
   return value !== null && /^7656119\d{10}$/.test(value);
 }
@@ -218,32 +227,85 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
   if (rounds.length !== freezes.length) issues.push({ code: 'ROUND_COVERAGE', message: `Восстановлено ${rounds.length} из ${freezes.length} live-раундов.` });
   const normalizedEvents: MatchEvent[] = [];
   let unassignedDeaths = 0;
-  input.snapshot.events.forEach((row, parserRowIndex) => {
+  const tickRate = deriveTickRate(input.snapshot.ticks);
+  const factualKinds: Record<string, string> = {
+    player_death: 'PLAYER_DEATH', player_hurt: 'PLAYER_HURT', player_blind: 'PLAYER_BLIND',
+    bomb_beginplant: 'BOMB_BEGIN_PLANT', bomb_begindefuse: 'BOMB_BEGIN_DEFUSE', bomb_planted: 'BOMB_PLANTED', bomb_defused: 'BOMB_DEFUSED', bomb_exploded: 'BOMB_EXPLODED',
+    flashbang_detonate: 'FLASH_DETONATE', hegrenade_detonate: 'HE_DETONATE', smokegrenade_detonate: 'SMOKE_DETONATE', inferno_startburn: 'INFERNO_START', inferno_expire: 'INFERNO_EXPIRE'
+  };
+  const orderedRows = input.snapshot.events.map((row, rowIndex) => ({ row, rowIndex })).sort((a, b) => (asInteger(a.row, ['tick']) ?? Number.MAX_SAFE_INTEGER) - (asInteger(b.row, ['tick']) ?? Number.MAX_SAFE_INTEGER) || a.rowIndex - b.rowIndex);
+  const bombStateByRound = new Map<string, 'NOT_PLANTED'|'PLANTED'|'DEFUSED'|'EXPLODED'>();
+  for (const { row, rowIndex: parserRowIndex } of orderedRows) {
     const eventName = asText(row, ['event_name','event','name']);
-    if (eventName !== 'player_death') return;
+    if (!eventName || !factualKinds[eventName]) continue;
     const tick = asInteger(row, ['tick']);
-    if (tick === null) { unassignedDeaths += 1; return; }
+    if (tick === null) { if (eventName === 'player_death') unassignedDeaths += 1; continue; }
     const liveRound = rounds.find((candidate) => tick >= (candidate.freezeEndTick ?? candidate.startTick) && tick <= candidate.endTick);
     const phaseRound = liveRound ?? rounds.find((candidate) => tick >= candidate.startTick && tick <= candidate.endTick);
-    if (!phaseRound) { unassignedDeaths += 1; return; }
-    const rawActor = asText(row, ['attacker_steamid']);
-    const rawTarget = asText(row, ['user_steamid','victim_steamid']);
+    if (!phaseRound) { if (eventName === 'player_death') unassignedDeaths += 1; continue; }
+    const rawActor = asText(row, ['attacker_steamid','user_steamid','userid_steamid','thrower_steamid']);
+    const rawTarget = asText(row, ['victim_steamid','user_steamid']);
     const rawAssister = asText(row, ['assister_steamid']);
     const actorId = rawActor && playerToTeam.has(rawActor) ? rawActor : null;
-    const targetId = rawTarget && playerToTeam.has(rawTarget) ? rawTarget : null;
+    const targetId = eventName.startsWith('player_') && rawTarget && playerToTeam.has(rawTarget) ? rawTarget : null;
     const candidateAssisterId = rawAssister && playerToTeam.has(rawAssister) ? rawAssister : null;
     const assisterId = isCreditedAssist(candidateAssisterId, targetId, playerToTeam) ? candidateAssisterId : null;
-    const friendlyFire = actorId !== null && targetId !== null && actorId !== targetId && playerToTeam.get(actorId) === playerToTeam.get(targetId);
+    const actorTeamId = actorId ? playerToTeam.get(actorId) ?? null : null;
+    const targetTeamId = targetId ? playerToTeam.get(targetId) ?? null : null;
+    const friendlyFire = actorId !== null && targetId !== null && actorId !== targetId && actorTeamId === targetTeamId;
+    const tickRows = input.snapshot.ticks.filter((item) => asInteger(item, ['tick']) === tick);
+    const aliveByTeamId = tickRows.length > 0 ? Object.fromEntries(teams.map((team) => [team.id, tickRows.filter((item) => {
+      const idAtTick = asText(item, ['steamid','steam_id']);
+      return idAtTick && playerToTeam.get(idAtTick) === team.id && asBoolean(item, ['is_alive']) === true;
+    }).length])) : null;
+    const actorTick = actorId ? tickRows.find((item) => asText(item, ['steamid','steam_id']) === actorId) : undefined;
+    let bombState = bombStateByRound.get(phaseRound.id) ?? 'NOT_PLANTED';
+    if (eventName === 'bomb_planted') bombState = 'PLANTED';
+    if (eventName === 'bomb_defused') bombState = 'DEFUSED';
+    if (eventName === 'bomb_exploded') bombState = 'EXPLODED';
+    bombStateByRound.set(phaseRound.id, bombState);
+    const kind = eventName === 'player_death' && !liveRound ? 'PLAYER_DEATH_NONLIVE' : factualKinds[eventName] ?? eventName.toUpperCase();
     normalizedEvents.push({
-      id: eventId(phaseRound.ordinal, eventName, parserRowIndex), kind: liveRound ? 'PLAYER_DEATH' : 'PLAYER_DEATH_NONLIVE', roundId: phaseRound.id, tick, actorId, targetId, assisterId,
-      attrs: { friendlyFire, suicide: actorId !== null && actorId === targetId, headshot: asBoolean(row, ['headshot']), assistedFlash: asBoolean(row, ['assistedflash']), weapon: asText(row, ['weapon']), excludedFromLiveFeatures: liveRound === undefined },
+      id: eventId(phaseRound.ordinal, eventName, parserRowIndex), kind, roundId: phaseRound.id, tick, actorId, targetId, assisterId,
+      attrs: {
+        friendlyFire, suicide: eventName === 'player_death' ? actorId !== null && actorId === targetId : null,
+        headshot: asBoolean(row, ['headshot']), assistedFlash: asBoolean(row, ['assistedflash']), weapon: asText(row, ['weapon']),
+        healthAfter: asInteger(row, ['health']), armorAfter: asInteger(row, ['armor']), rawHealthDamage: asInteger(row, ['dmg_health']), rawArmorDamage: asInteger(row, ['dmg_armor']),
+        hitgroup: asInteger(row, ['hitgroup']), blindDuration: asNumber(row, ['blind_duration']), entityId: asInteger(row, ['entityid']),
+        site: asText(row, ['site']), hasKit: asBoolean(row, ['haskit']), x: asNumber(row, ['x']), y: asNumber(row, ['y']), z: asNumber(row, ['z']),
+        excludedFromLiveFeatures: liveRound === undefined
+      },
+      context: {
+        phase: liveRound ? 'LIVE' : tick < (phaseRound.freezeEndTick ?? phaseRound.startTick) ? 'PRE_FREEZE' : 'POST_ROUND',
+        actorTeamId, targetTeamId, actorSide: actorTeamId ? phaseRound.sideByTeamId[actorTeamId] ?? null : null, targetSide: targetTeamId ? phaseRound.sideByTeamId[targetTeamId] ?? null : null,
+        aliveByTeamId, secondsFromFreezeEnd: phaseRound.freezeEndTick !== null && tickRate !== null ? (tick - phaseRound.freezeEndTick) / tickRate : null,
+        bombState, actorEquipmentValue: actorTick ? asInteger(actorTick, ['current_equip_value']) : null, actorMoney: actorTick ? asInteger(actorTick, ['cash']) : null
+      },
       source: { eventName, rowIndex: parserRowIndex }
     });
-  });
+  }
+  for (const round of rounds) {
+    if (round.freezeEndTick === null) continue;
+    const freezeTick = round.freezeEndTick;
+    input.snapshot.ticks.forEach((row, tickRowIndex) => {
+      if (asInteger(row, ['tick']) !== freezeTick) return;
+      const playerId = asText(row, ['steamid','steam_id']);
+      if (!playerId || !playerToTeam.has(playerId)) return;
+      const rawInventory = row.inventory;
+      const inventory = Array.isArray(rawInventory) ? rawInventory.filter((item): item is string => typeof item === 'string') : [];
+      normalizedEvents.push({
+        id: eventId(round.ordinal, 'economy_snapshot', tickRowIndex), kind: 'ECONOMY_SNAPSHOT', roundId: round.id, tick: freezeTick,
+        actorId: playerId, targetId: null, assisterId: null,
+        attrs: { equipmentValue: asInteger(row, ['current_equip_value']), armor: asInteger(row, ['armor_value']), hasHelmet: asBoolean(row, ['has_helmet']), hasDefuser: asBoolean(row, ['has_defuser']), money: asInteger(row, ['cash']), inventory },
+        context: { phase: 'LIVE', actorTeamId: playerToTeam.get(playerId) ?? null, targetTeamId: null, actorSide: round.sideByTeamId[playerToTeam.get(playerId) ?? ''] ?? null, targetSide: null, aliveByTeamId: null, secondsFromFreezeEnd: 0, bombState: 'NOT_PLANTED', actorEquipmentValue: asInteger(row, ['current_equip_value']), actorMoney: asInteger(row, ['cash']) },
+        source: { eventName: 'parseTicks:economy', rowIndex: tickRowIndex }
+      });
+    });
+  }
   if (unassignedDeaths > 0) issues.push({ code: 'UNASSIGNED_DEATH_EVENTS', message: `${unassignedDeaths} событий смерти не удалось однозначно привязать к live-раунду.` });
   const match: MatchData = {
     schemaVersion: '1', matchId: input.matchId, fileSha256: input.fileSha256,
-    map: asText(input.snapshot.header, ['map_name']), tickRate: deriveTickRate(input.snapshot.ticks), teams, players, rounds, events: normalizedEvents, quality: 'PARTIAL', qualityIssues: issues,
+    map: asText(input.snapshot.header, ['map_name']), tickRate, teams, players, rounds, events: normalizedEvents, quality: 'PARTIAL', qualityIssues: issues,
     provenance: { parser: '@laihoe/demoparser2', parserVersion: PARSER_LIBRARY_VERSION, normalizedAt: input.normalizedAt ?? new Date().toISOString() }
   };
   const validation = validateMatch(match);
