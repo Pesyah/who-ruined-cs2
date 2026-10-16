@@ -1,11 +1,14 @@
 # Who Ruined CS2
 
-Local-first CS2 demo analysis. Current implementation covers the M0 scaffold and an M1 upload → SQLite job → worker → conservative normalization → round/scoreboard UI slice.
+Local-first CS2 demo analysis. The repository contains the validated M0/M1
+vertical slice and an M2 backend analytics candidate: parser → normalized facts
+→ deterministic features → versioned API. M3 scoring is not implemented.
 
 > Status: **M0 and M1 passed on three external real golden demos:** Office,
 > Dust2 and Train. The `.dem`/`.dem.info` files remain outside Git. The required
 > three-demo count is met; overtime and team-kill positive-case gates remain
-> open. M2–M4 have not started.
+> open. M2 derived metrics pass unit tests and real-demo consistency checks,
+> but independent ADR/KAST/trade ground truth is not available.
 
 ## Start with Docker
 
@@ -64,6 +67,16 @@ The M1 scoreboard displays the parsed nickname and keeps a separate Steam
 profile link for every validated SteamID64. SteamID64 is always handled as a
 string.
 
+## M2 API
+
+- `GET /api/v1/matches/:id/analytics` returns schema `m2-1`.
+- `GET /api/v1/matches/:id/players/:playerId/analytics` returns one player's
+  factual metrics and contribution/error/neutral facts without a score.
+- `tests/fixtures/m2-match-analytics.json` is an anonymized synthetic fixture
+  for frontend integration; it is not real-demo evidence.
+
+See `docs/api-m2.md` for availability/null semantics and metric definitions.
+
 ## Verification
 
 ```bash
@@ -73,4 +86,5 @@ pnpm test
 pnpm build
 ```
 
-M2 features, M3 scoring/reports and M4 robustness/E2E are deliberately outside the current verified gate. No public deployment is configured.
+M3 scoring/ranking and M4 robustness remain outside this gate. No public
+deployment is configured.

@@ -64,7 +64,7 @@ describe("parser boundary", () => {
       "parsePlayerInfo",
       "listGameEvents",
       "parseEvents:round_end,player_death",
-      "parseTicks:team_num,team_name,team_rounds_total,is_alive,game_time:200",
+      "parseTicks:team_num,team_name,team_rounds_total,is_alive,game_time,current_equip_value,inventory,armor_value,has_helmet,has_defuser,cash:150,200",
     ]);
   });
 });

@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 const require = createRequire(import.meta.url);
 export const PARSER_LIBRARY_VERSION = '0.42.0';
-export const NORMALIZER_VERSION = 'm1-0.4.0';
+export const NORMALIZER_VERSION = 'm2-0.1.0';
 
 export type UnknownRow = Record<string, unknown>;
 export interface DemoParserPort {
@@ -69,9 +69,7 @@ export interface ParsedDemoSnapshot {
   ticks: UnknownRow[];
 }
 
-const requiredCandidates = ['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match','player_death','player_hurt','bomb_beginplant','bomb_begindefuse','bomb_planted','bomb_defused','bomb_exploded','player_blind','flashbang_detonate','hegrenade_detonate','inferno_startburn','inferno_expire'];
-const phaseEvents = new Set(['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match']);
-
+const requiredCandidates = ['round_prestart','round_poststart','round_start','round_freeze_end','round_end','round_officially_ended','cs_win_panel_match','player_death','player_hurt','bomb_beginplant','bomb_begindefuse','bomb_planted','bomb_defused','bomb_exploded','player_blind','flashbang_detonate','hegrenade_detonate','smokegrenade_detonate','inferno_startburn','inferno_expire'];
 export function parseDemoSnapshot(path: string, parser: DemoParserPort = loadNativeParser()): ParsedDemoSnapshot {
   const rawHeader = parser.parseHeader(path);
   const header = rawHeader && typeof rawHeader === 'object' ? rawHeader as Record<string, unknown> : {};
@@ -81,9 +79,9 @@ export function parseDemoSnapshot(path: string, parser: DemoParserPort = loadNat
   const selected = requiredCandidates.filter((eventName) => eventNames.includes(eventName));
   const events = selected.length ? toRows(parser.parseEvents(path, selected)) : [];
   const ticksToRead = [...new Set(events
-    .filter((row) => phaseEvents.has(asText(row, ['event_name','name','event']) ?? ''))
     .map((row) => asInteger(row, ['tick']))
-    .filter((tick): tick is number => tick !== null))];
-  const ticks = ticksToRead.length ? toRows(parser.parseTicks(path, ['team_num','team_name','team_rounds_total','is_alive','game_time'], ticksToRead)) : [];
+    .filter((tick): tick is number => tick !== null))].sort((a, b) => a - b);
+  const tickProps = ['team_num','team_name','team_rounds_total','is_alive','game_time','current_equip_value','inventory','armor_value','has_helmet','has_defuser','cash'];
+  const ticks = ticksToRead.length ? toRows(parser.parseTicks(path, tickProps, ticksToRead)) : [];
   return { header, players, eventNames, events, ticks };
 }

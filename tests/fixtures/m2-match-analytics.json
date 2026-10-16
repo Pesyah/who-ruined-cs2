@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "m2-1",
+  "featureVersion": "m2-0.1.0",
+  "matchId": "synthetic_frontend_fixture",
+  "generatedAt": "2000-01-01T00:00:00.000Z",
+  "tradeWindowSeconds": 5,
+  "availability": { "damage": "AVAILABLE", "flashes": "AVAILABLE", "economy": "PARTIAL", "aliveContext": "AVAILABLE" },
+  "players": [
+    {
+      "playerId": "player_alpha", "teamId": "team_alpha", "roundsPlayed": 24,
+      "kills": 20, "deaths": 16, "assists": 5, "kdaRatio": 1.5625,
+      "enemyDamage": 1920, "teamDamage": 12, "adr": 80,
+      "kastRounds": 18, "kastPercent": 75, "survivedRounds": 8,
+      "openingKills": 4, "openingDeaths": 3, "tradeKills": 3, "deathsTraded": 8, "untradedDeaths": 8, "tradeParticipation": 11,
+      "multiKills": { "two": 4, "three": 1, "four": 0, "five": 0 }, "clutches": { "1v1": 1 },
+      "killsWithAdvantage": 7, "killsAtDisadvantage": 6, "teamKills": 0, "suicides": 0,
+      "bomb": { "plants": 2, "defuses": 0, "explosions": 1 },
+      "grenades": {
+        "flashesThrown": 12, "enemiesFlashed": 9, "teammatesFlashed": 1, "enemyBlindSeconds": 18.5, "teamBlindSeconds": 0.8,
+        "heThrown": 7, "heEnemyDamage": 142, "heTeamDamage": 0, "infernosStarted": 5, "infernoEnemyDamage": 91, "infernoTeamDamage": 12,
+        "smokesThrown": 10, "smokeEffectiveness": null
+      },
+      "economy": { "availability": "PARTIAL", "freezeEquipmentValueTotal": 87400, "freezeRoundsObserved": 24, "money": null },
+      "facts": [
+        { "category": "POSITIVE_CONTRIBUTION", "kind": "TRADE_KILL", "roundId": "round_3", "eventId": "3:player_death:7", "value": null },
+        { "category": "ERROR", "kind": "TEAM_DAMAGE", "roundId": "round_8", "eventId": "8:player_hurt:44", "value": 12 },
+        { "category": "NEUTRAL", "kind": "DEATH", "roundId": "round_8", "eventId": "8:player_death:45", "value": null }
+      ]
+    }
+  ],
+  "limitations": [
+    "Synthetic anonymized frontend fixture; it is not evidence from a real demo.",
+    "Smoke effectiveness and player cash are unavailable."
+  ]
+}

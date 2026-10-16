@@ -14,6 +14,7 @@
   "dependencies": {
     "@who-ruined/contracts": "workspace:*",
     "@who-ruined/database": "workspace:*",
+    "@who-ruined/features": "workspace:*",
     "@who-ruined/match-domain": "workspace:*",
     "@who-ruined/parser-adapter": "workspace:*"
   },

@@ -7,4 +7,8 @@ describe('health contract', () => {
   it('keeps the asynchronous upload contract at HTTP 202', () => {
     expect(Reflect.getMetadata('__httpCode__', MatchesController.prototype.upload)).toBe(202);
   });
+  it('exposes match and per-player M2 analytics handlers without changing the upload route', () => {
+    expect(typeof MatchesController.prototype.analytics).toBe('function');
+    expect(typeof MatchesController.prototype.playerAnalytics).toBe('function');
+  });
 });

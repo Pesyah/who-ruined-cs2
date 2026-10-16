@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { Injectable } from '@nestjs/common';
 import { prisma } from '@who-ruined/database';
 import { isSource2Header, loadNativeParser, NORMALIZER_VERSION, PARSER_LIBRARY_VERSION } from '@who-ruined/parser-adapter';
-import { matchDataSchema, type MatchData } from '@who-ruined/contracts';
+import { matchAnalyticsSchema, matchArtifactSchema, matchDataSchema, type MatchAnalytics, type MatchData } from '@who-ruined/contracts';
 import { ApiError } from './safe-exception.filter.js';
 import { dataRoot, safeDataPath } from './storage.js';
 import path from 'node:path';
@@ -30,6 +30,16 @@ async function hasSource2Magic(filePath: string): Promise<boolean> {
 
 @Injectable()
 export class MatchesService {
+  private async artifact(id: string): Promise<{ match: MatchData; analytics: MatchAnalytics | null }> {
+    const stored = await prisma.match.findUnique({ where: { id } });
+    if (!stored) throw new ApiError('MATCH_NOT_FOUND', 'Матч не найден.', 404);
+    if (!stored.normalizedFilePath) throw new ApiError('INCOMPLETE_MATCH', 'Анализ матча ещё не завершён.', 409);
+    const raw = await unzip(await readFile(safeDataPath(stored.normalizedFilePath)));
+    const decoded: unknown = JSON.parse(raw.toString('utf8'));
+    const artifact = matchArtifactSchema.safeParse(decoded);
+    if (artifact.success) return { match: artifact.data.match, analytics: artifact.data.analytics };
+    return { match: matchDataSchema.parse(decoded), analytics: null };
+  }
   async ingest(file: Express.Multer.File): Promise<{ matchId: string; jobId: string; duplicate: boolean }> {
     if (!file.originalname.toLowerCase().endsWith('.dem')) { await rm(file.path, { force: true }); throw new ApiError('INVALID_DEMO', 'Поддерживаются только файлы .dem.', 415); }
     if (file.size === 0) { await rm(file.path, { force: true }); throw new ApiError('INVALID_DEMO', 'Файл пуст.', 422); }
@@ -62,12 +72,19 @@ export class MatchesService {
   }
 
   async match(id: string): Promise<MatchData> {
-    const match = await prisma.match.findUnique({ where: { id } });
-    if (!match) throw new ApiError('MATCH_NOT_FOUND', 'Матч не найден.', 404);
-    if (!match.normalizedFilePath) throw new ApiError('INCOMPLETE_MATCH', 'Анализ матча ещё не завершён.', 409);
-    const raw = await unzip(await readFile(safeDataPath(match.normalizedFilePath)));
-    return matchDataSchema.parse(JSON.parse(raw.toString('utf8')));
+    return (await this.artifact(id)).match;
   }
 
   async rounds(id: string) { return { items: (await this.match(id)).rounds }; }
+  async analytics(id: string): Promise<MatchAnalytics> {
+    const analytics = (await this.artifact(id)).analytics;
+    if (!analytics) throw new ApiError('INCOMPLETE_MATCH', 'M2-аналитика для этого артефакта отсутствует; требуется повторный разбор.', 409);
+    return matchAnalyticsSchema.parse(analytics);
+  }
+  async playerAnalytics(id: string, playerId: string) {
+    const analytics = await this.analytics(id);
+    const player = analytics.players.find((item) => item.playerId === playerId);
+    if (!player) throw new ApiError('PLAYER_NOT_FOUND', 'Игрок не найден в матче.', 404);
+    return { schemaVersion: analytics.schemaVersion, featureVersion: analytics.featureVersion, matchId: id, player };
+  }
 }

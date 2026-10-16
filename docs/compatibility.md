@@ -1,94 +1,81 @@
-# Parser compatibility
+# Parser and M2 compatibility
 
-> Real-demo capability probe for `@laihoe/demoparser2@0.42.0`. Only maps,
-> versions, counts and field names are committed. Player names and SteamID64
-> values are deliberately excluded.
+> Real-demo validation for `@laihoe/demoparser2@0.42.0`. Only maps,
+> versions, counts, field names and anonymous aggregates are committed.
 
-## Golden fixtures
+## Real fixtures
 
-| Fixture | Map | Patch | Listed events | Players | Rounds | Raw deaths | `player_hurt` |
+| Fixture | Map | Patch | Players | Rounds | Raw deaths | Live deaths | `player_hurt` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Office | `cs_office` | 14191 | 40 | 10 | 21 | 152 | 635 |
-| Dust2 | `de_dust2` | 14191 | 50 | 10 | 16 | 111 | 491 |
-| Train | `de_train` | 14190 | 51 | 10 | 23 | 181 | 729 |
+| Office | `cs_office` | 14191 | 10 | 21 | 152 | 152 | 635 |
+| Dust2 | `de_dust2` | 14191 | 10 | 16 | 111 | 111 | 491 |
+| Train | `de_train` | 14190 | 10 | 23 | 181 | 180 | 729 |
 
-All three headers are Source 2 (`valve_demo_2`). `parseHeader`,
-`parsePlayerInfo`, `listGameEvents`, `parseEvents` and selected `parseTicks`
-completed on every fixture. Player info exposes `name`, `steamid` and
-`team_number`; all three fixtures contain ten valid unique SteamID64 strings
-and non-placeholder display names.
+All headers are Source 2 (`valve_demo_2`). `parseHeader`, `parsePlayerInfo`,
+`listGameEvents`, `parseEvents` and `parseTicks` completed on every fixture.
+Player info provides `name`, `steamid` and `team_number`; identity remains a
+string through side changes. The Train-only extra death is a pre-freeze suicide
+kept in the M1 scoreboard but excluded from live M2 features.
 
-## Event/field matrix
+## Observed event fields
 
-Counts are shown as Office / Dust2 / Train. Zero means the event is absent in
-that fixture, not necessarily unsupported by the parser.
+Counts are Office / Dust2 / Train. Zero means absent in that match, not parser
+incompatibility.
 
-| Event | Count | Observed fields |
+| Event | Count | Fields used by M2 |
 | --- | ---: | --- |
-| `round_prestart` | 21 / 16 / 23 | `event_name`, `tick` |
-| `round_poststart` | 21 / 16 / 23 | `event_name`, `tick` |
-| `round_freeze_end` | 21 / 16 / 23 | `event_name`, `tick` |
-| `round_officially_ended` | 40 / 30 / 44 | `event_name`, `tick` |
-| `cs_win_panel_match` | 1 / 1 / 1 | `event_name`, `tick` |
-| `player_death` | 152 / 111 / 181 | actor/victim/assister name and SteamID, `assistedflash`, weapon, headshot and combat flags, `tick` |
-| `player_hurt` | 635 / 491 / 729 | actor/victim name and SteamID, `health`, `armor`, `dmg_health`, `dmg_armor`, `weapon`, `hitgroup`, `tick` |
-| `bomb_beginplant` | 0 / 10 / 18 | actor name/SteamID, `site`, `tick` |
-| `bomb_begindefuse` | 0 / 2 / 7 | actor name/SteamID, `haskit`, `tick` |
-| `bomb_planted` | 0 / 10 / 15 | actor name/SteamID, `site`, `c4`, `tick` |
-| `bomb_defused` | 0 / 2 / 2 | actor name/SteamID, `site`, `c4`, `tick` |
-| `bomb_exploded` | 0 / 2 / 1 | actor name/SteamID, `site`, `c4`, `tick` |
-| `player_blind` | 53 / 123 / 158 | thrower/victim name and SteamID, `blind_duration`, `entityid`, `tick` |
-| `flashbang_detonate` | 46 / 82 / 88 | thrower name/SteamID, `entityid`, position, `tick` |
-| `hegrenade_detonate` | 63 / 49 / 49 | thrower name/SteamID, `entityid`, position, `tick` |
-| `inferno_startburn` | 49 / 49 / 42 | thrower name/SteamID, `entityid`, position, `tick` |
-| `inferno_expire` | 49 / 49 / 42 | thrower name/SteamID, `entityid`, position, `tick` |
-| `smokegrenade_detonate` | 49 / 52 / 78 | thrower name/SteamID, `entityid`, position, `tick` |
+| `player_death` | 152 / 111 / 181 | actor/victim/assister SteamID, `assistedflash`, weapon, headshot, tick |
+| `player_hurt` | 635 / 491 / 729 | actor/victim SteamID, remaining health/armor, raw health/armor damage, weapon, hitgroup, tick |
+| `player_blind` | 53 / 123 / 158 | thrower/victim SteamID, duration, entity ID, tick |
+| `flashbang_detonate` | 46 / 82 / 88 | thrower SteamID, entity ID, position, tick |
+| `hegrenade_detonate` | 63 / 49 / 49 | thrower SteamID, entity ID, position, tick |
+| `inferno_startburn` / `expire` | 49 / 49 / 42 | thrower SteamID, entity ID, position, tick |
+| `smokegrenade_detonate` | 49 / 52 / 78 | thrower SteamID, entity ID, position, tick |
+| `bomb_beginplant` | 0 / 10 / 18 | actor SteamID, site, tick |
+| `bomb_begindefuse` | 0 / 2 / 7 | actor SteamID, kit flag, tick |
+| `bomb_planted` | 0 / 10 / 15 | actor SteamID, site, C4, tick |
+| `bomb_defused` | 0 / 2 / 2 | actor SteamID, site, C4, tick |
+| `bomb_exploded` | 0 / 2 / 1 | actor SteamID, site, C4, tick |
 
-`round_start` and `round_end` are not listed in these demos. Each of the first
-N−1 official round-end ticks appears twice; the final round is instead closed
-by `cs_win_panel_match`. The normalizer deduplicates ticks and validates every
-winner against the stable-team score transition.
+Every selected event tick is sampled for `team_num`, `team_rounds_total`,
+`is_alive`, `game_time`, `current_equip_value`, `inventory`, armor, helmet and
+defuser. Ten player rows were returned at sampled real ticks. `cash` is omitted
+by this parser version and therefore stays `null`.
 
-## Tick properties
+`item_pickup` exists (1059 / 871 / 1299 rows) with player, item, defindex,
+silent and tick, but has no donor/source and does not distinguish purchase from
+pickup. It cannot support a truthful drop-given/drop-received metric.
 
-Event-adjacent `parseTicks` returned ten rows per sampled tick with:
+## Derived feature support
 
-- identity/side/score: `name`, `steamid`, `team_name`, `team_num`,
-  `team_rounds_total`;
-- state/time: `is_alive`, `game_time`, `tick`;
-- partial economy: `current_equip_value`, `inventory`, `armor_value`,
-  `has_helmet`, `has_defuser`.
-
-`cash` was requested separately and was omitted by this parser version. The
-ratio between tick deltas and `game_time` deltas is consistently 64 tick/s in
-all three fixtures. Normalized `tickRate` is therefore 64, derived from observed
-data rather than assumed.
-
-## M2 capability assessment (no M2 implementation yet)
-
-| Capability | Status | Evidence and limitation |
+| Feature | Status | Constraint |
 | --- | --- | --- |
-| Round boundaries, sides, winners, score | Confirmed | Three exact `.info` reconciliations; all round transitions match. Full side swap at halftime can appear on the preceding end tick. |
-| Plant/defuse/explosion | Confirmed on Dust2/Train | Actor, site and tick are direct. All observed bomb events fall inside one live round. Office has no bomb events because it is a hostage map. |
-| Opening kill/death | Reliably derivable | Ordered enemy-vs-enemy deaths exist for every live round in Dust2 and Train. World, suicide and team deaths can be excluded explicitly. |
-| Trades | Derivable with explicit matching | Stable teams, ordered ticks and observed 64 tick/s support the SPEC 5-second rule. Simultaneous events and one-to-one victim matching still require M2 unit/golden tests. Candidate pairs are not yet product metrics. |
-| Flash blindness | Confirmed | `player_blind` directly identifies thrower/victim and duration. Friendly and enemy blinds are both present. Detonation `entityid` is available. |
-| Flash assists | Confirmed | `player_death` exposes assister plus `assistedflash`. Dust2 has 3 and Train 2 observed flash-assist deaths. Victim-team assister rows must remain excluded. |
-| HE damage | Reliably derivable with HP cap | `player_hurt.weapon=hegrenade` includes attacker, victim, damage and remaining health. Detonation-to-hurt entity linkage is absent, but damage attribution is direct. |
-| Molotov/incendiary damage | Partially derivable | `player_hurt.weapon=inferno` and burn start/expire events are present. Damage attribution is available, but startburn alone does not reliably distinguish Molotov from Incendiary. |
-| Enemy/team damage | Derivable with chronology | Stable teams plus hurt rows identify friendly/enemy relations. `dmg_health` includes overkill in some rows, so actual HP loss must be capped using chronological health state; raw sums are not valid ADR/team-damage totals. |
-| Team kills | Parser fields supported; positive fixture absent | Attacker/victim IDs make detection deterministic, but Dust2 and Train contain zero team kills. Do not claim a real positive-case golden validation yet. |
-| Alive-player count | Confirmed | `is_alive` returned complete 10-player snapshots at every death tick checked; death chronology also supplies deterministic transitions. |
-| Economy | Partial | Freeze-time inventory, equipment value, armor, helmet and defuser are available. Cash is unavailable; exact spend/buy-quality analysis cannot be claimed. |
+| K/D/A, survival, multikills, openings | Available | Live rounds only; scoreboard K/D/A remains all-phase for `.info` reconciliation. |
+| Enemy/team damage and ADR | Available | Chronological remaining-HP cap; raw `dmg_health` overkill is not summed. |
+| KAST | Available | Kill, credited assist, survival or matched traded death. |
+| Trades/untraded/trade participation | Available | Deterministic one-to-one match, inclusive 5-second window, no future event. |
+| 1vX clutch facts | Available | Stable roster, live death sequence and validated winner; no intent claim. |
+| Advantage/disadvantage kill facts | Available | Uses event-tick alive counts when present; availability is explicit. |
+| Team damage, team kills, suicides | Available | Team damage and suicide paths have synthetic regression tests; no real positive team-kill fixture. |
+| Bomb facts | Available on bomb maps | Office correctly has none; begin/complete events remain distinct. |
+| Flash analytics | Available | Enemy/friendly victims and duration; flash assists come from death rows. |
+| HE damage | Available | Direct hurt attribution plus actual-HP cap. |
+| Molotov/incendiary damage | Partial | Reliable combined `inferno`; grenade subtype cannot be distinguished. |
+| Smoke effectiveness | Unavailable | Detonation is factual; usefulness requires a spatial/tactical model. |
+| Economy | Partial | Freeze inventory/equipment/armor/kit available; cash/spend/drop attribution unavailable. |
 
-## Reconciled edge cases and open gates
+## Anonymous M2 regression aggregates
 
-- Train contains one pre-freeze suicide between `round_prestart` and
-  `round_freeze_end`. It is retained as `PLAYER_DEATH_NONLIVE`, included in the
-  all-phase scoreboard, and excluded from live-round feature input.
-- All three `.dem.info` sidecars independently match every K/D/A row and every
-  round score transition. No names or identifiers from them are committed.
-- None of the three fixtures has overtime. Overtime/expected-`PARTIAL` remains
-  an open golden gate.
-- No tactical intent, causal blame, cash economy, exact incendiary-vs-Molotov
-  classification or team-kill positive case is established by these probes.
+These values are exact outputs from the demos and protect determinism. They are
+not an independent performance-statistics reference.
+
+| Map | Events | Kills/deaths/assists | Enemy/team damage | Trades | Openings | Plant/defuse/explode | Flash/HE/inferno/smoke throws |
+| --- | ---: | --- | --- | ---: | ---: | --- | --- |
+| `cs_office` | 1306 | 152 / 152 / 40 | 16986 / 330 | 20 | 21 | 0 / 0 / 0 | 46 / 63 / 49 / 49 |
+| `de_dust2` | 1192 | 111 / 111 / 43 | 12114 / 33 | 12 | 16 | 10 / 2 / 2 | 82 / 49 / 49 / 52 |
+| `de_train` | 1640 | 179 / 180 / 62 | 19387 / 72 | 26 | 23 | 15 / 2 / 1 | 88 / 49 / 42 / 78 |
+
+All three still match `.dem.info` independently for every player K/D/A and
+every score transition. No external ground truth was supplied for ADR, KAST,
+trades, clutches or utility damage, so those checks are explicitly internal.
+No fixture contains overtime or a positive team-kill case.

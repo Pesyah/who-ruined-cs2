@@ -1,92 +1,69 @@
 # Milestone status
 
-## 2026-10-16 — M0/M1 validated on three real demos
+## M0/M1 — accepted on three real demos
 
-### M0 — capability proof: passed
+Office (`cs_office`, 13:8), Dust2 (`de_dust2`, 3:13) and Train
+(`de_train`, 10:13) still pass the real golden suite. All have ten players, two
+stable roster-derived teams, exact side changes, valid round winners and exact
+score transitions. Every K/D/A row matches the external `.dem.info` sidecar.
+The Train pre-freeze suicide remains an all-phase scoreboard fact and is not
+leaked into live analytics.
 
-`pnpm parser:probe` completed for Office, Dust2 and Train using
-`@laihoe/demoparser2@0.42.0`. All five required parser APIs work on patches
-14190–14191. The sanitized cross-fixture event/field matrix and M2 capability
-assessment are in `docs/compatibility.md`.
+## M2 — implementation complete, independent validation partial
 
-### M1 — vertical slice: passed
+Implemented without M3 scoring:
 
-All three external fixtures completed upload → randomized storage → worker →
-parser → normalization → validation → SQLite → atomic JSON.gz → API → browser
-UI. Re-upload deduplication returned the same match/job with HTTP 202.
+- normalized hurt, blind, grenade, bomb and freeze-economy facts with event
+  context (phase, stable team, side, time, alive counts, bomb state, equipment;
+  unavailable money is `null`);
+- deterministic K/D/A, ADR, actual HP damage, KAST, openings, multikills,
+  trades/untraded deaths/trade participation, survival, 1vX and alive-state
+  advantage/disadvantage facts;
+- flash, HE, inferno and smoke factual analytics, friendly utility and team
+  damage, team kills and suicides;
+- versioned `m2-1` contract, worker `FEATURIZING` stage, gzip artifact, match
+  and per-player API endpoints, OpenAPI routes and an anonymized frontend JSON
+  fixture;
+- factual categories `POSITIVE_CONTRIBUTION`, `ERROR` and `NEUTRAL`. Ordinary
+  deaths are neutral facts; no score or blame verdict exists.
 
-| Map | Final score | Players | Rounds | Live deaths | Non-live deaths | Quality | Independent reference |
-| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| `cs_office` | 13:8 | 10 | 21 | 152 | 0 | `VALID` | 10/10 K/D/A and 21/21 score transitions match `.dem.info` |
-| `de_dust2` | 3:13 | 10 | 16 | 111 | 0 | `VALID` | 10/10 K/D/A and 16/16 score transitions match `.dem.info` |
-| `de_train` | 10:13 | 10 | 23 | 180 | 1 | `VALID` | 10/10 K/D/A and 23/23 score transitions match `.dem.info` |
+The three real demos pass exact deterministic M2 aggregate regression checks.
+An isolated Dust2 upload completed upload → SQLite → worker → parser →
+normalization → validation → feature computation → JSON.gz → API. The match,
+analytics and per-player endpoints returned valid versioned payloads; a second
+upload returned the same match/job with `duplicate: true`.
 
-Scores are shown in stable reference-team order, not as a claim about which
-team belongs to the user. Confirming “my team won/lost” independently requires
-the user's SteamID64; map identity and winning/losing squads themselves are
-unambiguous.
+M2 is **not declared fully acceptance-closed** because no independent external
+reference for ADR/KAST/trades/clutches/utility damage was supplied. Internal
+consistency and deterministic regression are passed; independent metric
+reconciliation remains open. Positive real team-kill and overtime fixtures are
+also still open.
 
-All three fixtures have two stable roster-derived teams, five unique players
-per team, a validated side swap, no invalid rounds and no quality issues. Real
-display names and SteamID64 strings survive side changes and are exposed by the
-normalized model/API. The UI renders the real display name and a separate
-Steam profile link; identifiers are never converted to JS numbers.
+## Acceptance gates
 
-### Defects fixed during three-demo reconciliation
+| Gate | Status |
+| --- | --- |
+| Parser capability on 3 real Source 2 demos | PASS |
+| M0/M1 K/D/A and score reconciliation against `.dem.info` | PASS (3/3) |
+| Stable roster teams and side swap | PASS (3/3) |
+| M2 deterministic unit tests, missing/null semantics and 5-second trade boundary | PASS |
+| M2 real-demo internal aggregate golden tests | PASS (3/3) |
+| Worker/SQLite/JSON.gz/API integration and SHA dedup | PASS (Dust2 isolated run) |
+| Independent ADR/KAST/trade/utility reference | OPEN — reference unavailable |
+| Positive real team-kill fixture | OPEN |
+| Overtime/expected-`PARTIAL` fixture | OPEN |
+| Docker Compose startup | OPEN — Docker daemon unavailable on this host |
+| M3 scoring/ranking | NOT STARTED |
 
-- A Train suicide during pre-freeze was previously dropped and made K/D/A
-  disagree with the reference. It is now retained as a non-live death and kept
-  out of live feature input.
-- Scoreboard K/D/A is now derived from all parsed death phases, while live
-  events remain governed by the one-death-per-player-per-round invariant.
-- Tick rate is derived from observed `tick`/`game_time` deltas (64 on all three
-  fixtures) instead of remaining unavailable.
-- SteamID64 format is validated as a string; malformed/missing identity makes
-  identity quality partial. UI Steam links are constructed only for valid IDs.
-- The capability probe now covers bomb begin/complete events, inferno lifecycle
-  and selected time/economy tick fields.
-
-### Golden acceptance status
-
-- At least three real, external demos: **passed (3/3)**.
-- Exact 10-player K/D/A and all round score transitions: **passed (3/3)**.
-- Regular MR12 with stable side switch: **passed (3 fixtures)**.
-- Bomb, flash, HE/inferno, friendly damage and trade-source coverage:
-  **capability confirmed** on Dust2/Train; M2 metrics are not implemented.
-- Team-kill positive fixture: **open**; both new matches contain zero team kills.
-- Overtime or expected-`PARTIAL` fixture: **open**; none has overtime.
-- Corrupt/truncated rejection fixture and full E2E robustness: **deferred to M4**.
-- Docker Compose configuration: valid; container startup remains unverified on
-  this host while the Docker daemon is unavailable.
-
-M0/M1 remain complete. M2–M4 and scoring have not started.
+Final gate: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` all
+completed successfully. The full run executed 31 tests, including 3 configured
+real-demo golden tests; skipped tests: 0.
 
 ## Recorded future requirements
 
-### M2
-
-Prepare typed, availability-aware gameplay metrics and contextual per-player
-analysis from only the capabilities confirmed in `docs/compatibility.md`.
-Damage must use chronological actual-HP-loss caps; trades require deterministic
-one-to-one matching and the SPEC 5-second boundary.
-
-### M3
-
-- Show match MVP and the primary Who Ruined result simultaneously.
-- Make player names open internal per-player analysis pages.
-- Analyze contribution to victory for the winning team and contribution to
-  defeat for the losing team.
-- Add the player-analysis filter “Положительный вклад / Ошибки / Все действия”.
-- Keep Steam profile links separate from internal name navigation.
-
-### Future milestone (not implemented)
-
-Investigate match ingestion by Steam share code, `steam://` links and, only if
-technically and legally available, FACEIT links. URL download remains disabled
-for the local MVP and requires a separate security/privacy design.
-
-## Verification
-
-Final lint/typecheck/test/build counts are recorded after the closing gate run
-for this iteration. Golden tests explicitly report `SKIPPED` when their external
-path variables are missing; a skipped fixture is never counted as passed.
+M3 must show MVP and Who Ruined simultaneously, provide internal clickable
+player analysis, distinguish contribution to victory from contribution to
+defeat, support “Положительный вклад / Ошибки / Все действия”, and keep Steam
+profile links separate. A later milestone may investigate Steam share codes,
+`steam://` and technically/legal available FACEIT links. None is implemented
+here.

@@ -1,0 +1,16 @@
+{
+  "name": "@who-ruined/features",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": { "@who-ruined/contracts": "workspace:*" },
+  "devDependencies": { "@who-ruined/testkit": "workspace:*" }
+}
