@@ -56,7 +56,7 @@ pickup. It cannot support a truthful drop-given/drop-received metric.
 | Trades/untraded/trade participation | Available | Deterministic one-to-one match, inclusive 5-second window, no future event. |
 | 1vX clutch facts | Available | Stable roster, live death sequence and validated winner; no intent claim. |
 | Advantage/disadvantage kill facts | Available | Uses event-tick alive counts when present; availability is explicit. |
-| Team damage, team kills, suicides | Available | Team damage and suicide paths have synthetic regression tests; no real positive team-kill fixture. |
+| Team damage, team kills, suicides | Available | Synthetic regressions cover all paths; the expanded nine-demo batch contains two real team kills. |
 | Bomb facts | Available on bomb maps | Office correctly has none; begin/complete events remain distinct. |
 | Flash analytics | Available | Enemy/friendly victims and duration; flash assists come from death rows. |
 | HE damage | Available | Direct hurt attribution plus actual-HP cap. |
@@ -78,4 +78,19 @@ not an independent performance-statistics reference.
 All three still match `.dem.info` independently for every player K/D/A and
 every score transition. No external ground truth was supplied for ADR, KAST,
 trades, clutches or utility damage, so those checks are explicitly internal.
-No fixture contains overtime or a positive team-kill case.
+The original three pinned fixtures contain neither overtime nor a positive
+team-kill case. The expanded batch below adds real team-kill coverage.
+
+## M2.5 batch expansion
+
+The validator later expanded coverage to 9 real demos: `de_mirage` (1),
+`de_train` (5), `de_dust2` (2) and `cs_office` (1), covering 16–24 rounds and
+final scores from 13:6 through 11:13. All 9 adjacent `.dem.info` references
+match every K/D/A row and round score transition after the terminal-death phase
+fix. Two real team kills are now positively covered. Seven reconnect sequences
+were detected from ordered disconnect/connect events. Overtime remains absent.
+
+The committed report is intentionally not stored because it is a generated
+runtime artifact; `data/reports/` is Git-ignored. Its schema exports only a hash
+prefix, map, stable-team-order score, anonymous counts, check statuses and
+explanations.

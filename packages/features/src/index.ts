@@ -67,7 +67,7 @@ export function computeMatchAnalytics(match: MatchData, generatedAt = new Date()
   const tickRate = match.tickRate;
   if (tickRate !== null) {
     for (const original of deaths.filter(enemyDeath)) {
-      const revenge = deaths.find((candidate) => !usedTradeKills.has(candidate.id) && enemyDeath(candidate) && candidate.tick >= original.tick && (candidate.tick - original.tick) / tickRate <= TRADE_WINDOW_SECONDS && candidate.actorId !== null && candidate.targetId === original.actorId && original.targetId !== null && teamByPlayer.get(candidate.actorId) === teamByPlayer.get(original.targetId));
+      const revenge = deaths.find((candidate) => !usedTradeKills.has(candidate.id) && enemyDeath(candidate) && (candidate.tick > original.tick || candidate.tick === original.tick && candidate.source.rowIndex > original.source.rowIndex) && (candidate.tick - original.tick) / tickRate <= TRADE_WINDOW_SECONDS && candidate.actorId !== null && candidate.targetId === original.actorId && original.targetId !== null && teamByPlayer.get(candidate.actorId) === teamByPlayer.get(original.targetId));
       if (!revenge) continue;
       usedTradeKills.add(revenge.id); tradedDeaths.add(original.id);
     }

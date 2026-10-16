@@ -36,8 +36,8 @@ upload returned the same match/job with `duplicate: true`.
 M2 is **not declared fully acceptance-closed** because no independent external
 reference for ADR/KAST/trades/clutches/utility damage was supplied. Internal
 consistency and deterministic regression are passed; independent metric
-reconciliation remains open. Positive real team-kill and overtime fixtures are
-also still open.
+reconciliation remains open. The expanded M2.5 batch positively covers real
+team kills; the overtime fixture is still open.
 
 ## Acceptance gates
 
@@ -50,14 +50,13 @@ also still open.
 | M2 real-demo internal aggregate golden tests | PASS (3/3) |
 | Worker/SQLite/JSON.gz/API integration and SHA dedup | PASS (Dust2 isolated run) |
 | Independent ADR/KAST/trade/utility reference | OPEN — reference unavailable |
-| Positive real team-kill fixture | OPEN |
+| Positive real team-kill fixture | PASS (2 events in the 9-demo M2.5 batch) |
 | Overtime/expected-`PARTIAL` fixture | OPEN |
 | Docker Compose startup | OPEN — Docker daemon unavailable on this host |
 | M3 scoring/ranking | NOT STARTED |
 
-Final gate: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` all
-completed successfully. The full run executed 31 tests, including 3 configured
-real-demo golden tests; skipped tests: 0.
+The original M2 gate completed successfully with 31 tests. The M2.5 gate below
+supersedes that count with the expanded regression suite.
 
 ## Recorded future requirements
 
@@ -67,3 +66,26 @@ defeat, support “Положительный вклад / Ошибки / Все
 profile links separate. A later milestone may investigate Steam share codes,
 `steam://` and technically/legal available FACEIT links. None is implemented
 here.
+
+## M2.5 — validation infrastructure
+
+`pnpm validate:demos "F:\CS2 Demos"` processed all 9 discovered demos in
+isolated child processes. All 9 had matching `.dem.info` files and finished
+`PASS`: exact 10-player K/D/A, every round score transition, M1 invariants and
+M2 mathematical checks passed. Exported JSON was scanned for paths, filenames,
+SteamID patterns and display-name fields; no personal-data match was found.
+
+The expanded real batch contains 2 team kills, 4 live suicides, 10 non-live
+suicides and 7 detected reconnect sequences. It contains no overtime. Synthetic
+tests therefore cover overtime side switches, corrupt/truncated native-parser
+failure isolation, simultaneous event ordering, exact trade-window boundaries,
+team/world deaths, post-round exclusion, clutch, utility and economy math.
+
+The batch exposed and fixed incorrect scoreboard treatment of deaths after a
+terminal event. The correct deterministic distinction is based on objective
+terminal ordering, duplicate round deaths and delayed C4 death behavior; the
+fix reconciles all 9 matches without changing expected reference data.
+
+M2.5 final gate: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`
+completed successfully. The full run executed 38 tests, including 3 configured
+real-demo golden tests; skipped tests: 0.

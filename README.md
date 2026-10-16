@@ -6,8 +6,8 @@ vertical slice and an M2 backend analytics candidate: parser → normalized fact
 
 > Status: **M0 and M1 passed on three external real golden demos:** Office,
 > Dust2 and Train. The `.dem`/`.dem.info` files remain outside Git. The required
-> three-demo count is met; overtime and team-kill positive-case gates remain
-> open. M2 derived metrics pass unit tests and real-demo consistency checks,
+> three-demo count is met. A later nine-demo batch contains two real team-kill
+> cases; the overtime gate remains open. M2 derived metrics pass unit tests and real-demo consistency checks,
 > but independent ADR/KAST/trade ground truth is not available.
 
 ## Start with Docker
@@ -76,6 +76,19 @@ string.
   for frontend integration; it is not real-demo evidence.
 
 See `docs/api-m2.md` for availability/null semantics and metric definitions.
+
+## Batch validation
+
+```powershell
+pnpm validate:demos "F:\CS2 Demos"
+```
+
+The validator recursively discovers arbitrary `.dem` names, matches adjacent
+`.dem.info` sidecars, isolates each native parse in a child process, and writes
+an anonymized JSON report under `data/reports/`. A failed or truncated demo is
+reported as `FAIL` without stopping the remaining batch. The exported report
+contains SHA-256 prefixes and anonymous aggregates, not paths, filenames,
+nicknames or SteamID values.
 
 ## Verification
 

@@ -207,6 +207,31 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  packages/validation:
+    dependencies:
+      '@who-ruined/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@who-ruined/features':
+        specifier: workspace:*
+        version: link:../features
+      '@who-ruined/match-domain':
+        specifier: workspace:*
+        version: link:../match-domain
+      '@who-ruined/parser-adapter':
+        specifier: workspace:*
+        version: link:../parser-adapter
+      csgo-protobuf:
+        specifier: 4.1.12
+        version: 4.1.12
+    devDependencies:
+      '@who-ruined/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      tsx:
+        specifier: 4.20.6
+        version: 4.20.6
+
 packages:
 
   '@alloc/quick-lru@5.3.0':

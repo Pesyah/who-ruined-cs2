@@ -6,7 +6,7 @@
       "envPrefix": "OFFICE",
       "sha256": "f8ec510829e57ee5f5c3ca6bcab02cd09893b06afac09073787f744f2437e870",
       "parserVersion": "0.42.0",
-      "normalizerVersion": "m2-0.1.0",
+      "normalizerVersion": "m2.5-0.2.0",
       "expected": {
         "map": "cs_office", "players": 10, "teams": 2, "rounds": 21,
         "liveDeathEvents": 152, "nonLiveDeathEvents": 0, "tickRate": 64,
@@ -20,7 +20,7 @@
       "envPrefix": "DUST2",
       "sha256": "6b12ad8573d790c5215c6ee7f91da152087061bf113aaf153d0df7a278d614ee",
       "parserVersion": "0.42.0",
-      "normalizerVersion": "m2-0.1.0",
+      "normalizerVersion": "m2.5-0.2.0",
       "expected": {
         "map": "de_dust2", "players": 10, "teams": 2, "rounds": 16,
         "liveDeathEvents": 111, "nonLiveDeathEvents": 0, "tickRate": 64,
@@ -34,7 +34,7 @@
       "envPrefix": "TRAIN",
       "sha256": "c8b0551fa26ad6dd10af182efc8277e43fb741e80d29105e79f23db897b2bd18",
       "parserVersion": "0.42.0",
-      "normalizerVersion": "m2-0.1.0",
+      "normalizerVersion": "m2.5-0.2.0",
       "expected": {
         "map": "de_train", "players": 10, "teams": 2, "rounds": 23,
         "liveDeathEvents": 180, "nonLiveDeathEvents": 1, "tickRate": 64,

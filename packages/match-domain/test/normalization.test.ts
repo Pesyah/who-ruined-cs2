@@ -11,7 +11,7 @@ describe('conservative normalization', () => {
   it('preserves stable roster identities across a synthetic side switch and validates score transitions', () => {
     const rosterA = Array.from({ length: 5 }, (_, index) => `7656119800000010${index}`);
     const rosterB = Array.from({ length: 5 }, (_, index) => `7656119800000020${index}`);
-    const players = [...rosterA.map((steamid, index) => ({ steamid, name: `A${index}`, team_number: 2 })), ...rosterB.map((steamid, index) => ({ steamid, name: `B${index}`, team_number: 3 }))];
+    const players = [...rosterA.map((steamid, index) => ({ steamid, name: `A${index}`, team_number: 2 })), ...rosterB.map((steamid, index) => ({ steamid, name: `B${index}`, team_number: 3 })), { steamid: rosterA[0], name: 'A0-reconnected', team_number: 2 }];
     const events: Array<Record<string, unknown>> = [];
     const ticks: Array<Record<string, unknown>> = [];
     let scoreA = 0; let scoreB = 0;
@@ -30,6 +30,9 @@ describe('conservative normalization', () => {
     }
     events.push(
       { event_name: 'player_death', tick: 5050, attacker_steamid: rosterA[0], user_steamid: rosterA[0], weapon: 'world' },
+      { event_name: 'player_disconnect', tick: 5400, user_steamid: rosterA[0] },
+      { event_name: 'player_connect_full', tick: 5450, user_steamid: rosterA[0] },
+      { event_name: 'player_death', tick: 5950, attacker_steamid: rosterB[0], user_steamid: rosterB[0], weapon: 'world' },
       { event_name: 'player_hurt', tick: 5200, attacker_steamid: rosterA[1], user_steamid: rosterB[1], dmg_health: 37, health: 63, weapon: 'hegrenade' },
       { event_name: 'smokegrenade_detonate', tick: 5300, user_steamid: rosterA[2], entityid: 42 }
     );
@@ -40,12 +43,41 @@ describe('conservative normalization', () => {
     expect(match.tickRate).toBe(64);
     expect(match.rounds[3]?.sideByTeamId).not.toEqual(match.rounds[4]?.sideByTeamId);
     expect(match.rounds.every((round) => round.isValid)).toBe(true);
-    expect(match.events.filter((event) => event.kind === 'PLAYER_DEATH_NONLIVE')).toHaveLength(1);
+    expect(match.players).toHaveLength(10);
+    expect(match.events.filter((event) => event.kind === 'PLAYER_DEATH_NONLIVE')).toHaveLength(2);
+    expect(match.events.filter((event) => event.kind === 'PLAYER_DEATH_NONLIVE').map((event) => event.context?.phase)).toEqual(['PRE_FREEZE', 'POST_ROUND']);
     expect(match.events).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'PLAYER_HURT', attrs: expect.objectContaining({ rawHealthDamage: 37, weapon: 'hegrenade' }), context: expect.objectContaining({ phase: 'LIVE' }) }),
       expect.objectContaining({ kind: 'SMOKE_DETONATE', actorId: rosterA[2] })
     ]));
     expect(match.events.filter((event) => event.kind === 'ECONOMY_SNAPSHOT')).toHaveLength(80);
     expect(match.players.find((player) => player.id === rosterA[0])?.scoreboard?.deaths).toBe(1);
+    expect(match.players.find((player) => player.id === rosterB[0])?.scoreboard?.deaths).toBe(0);
+  });
+
+  it('marks rounds after a 12:12 regulation tie as overtime and preserves roster teams across side switches', () => {
+    const rosterA = Array.from({ length: 5 }, (_, index) => `7656119800000030${index}`);
+    const rosterB = Array.from({ length: 5 }, (_, index) => `7656119800000040${index}`);
+    const players = [...rosterA.map((steamid) => ({ steamid, name: 'A', team_number: 2 })), ...rosterB.map((steamid) => ({ steamid, name: 'B', team_number: 3 }))];
+    const events: Array<Record<string, unknown>> = []; const ticks: Array<Record<string, unknown>> = [];
+    let scoreA = 0; let scoreB = 0;
+    for (let ordinal = 1; ordinal <= 25; ordinal += 1) {
+      const start = ordinal * 1000; const end = start + 900;
+      const sideA = ordinal <= 12 || ordinal >= 25 ? 2 : 3; const sideB = sideA === 2 ? 3 : 2;
+      for (const steamid of rosterA) ticks.push({ tick: start + 100, game_time: (start + 100) / 64, steamid, team_num: sideA, team_rounds_total: scoreA });
+      for (const steamid of rosterB) ticks.push({ tick: start + 100, game_time: (start + 100) / 64, steamid, team_num: sideB, team_rounds_total: scoreB });
+      const aWins = ordinal <= 24 ? ordinal % 2 === 1 : true; if (aWins) scoreA += 1; else scoreB += 1;
+      events.push({ event_name: 'round_start', tick: start }, { event_name: 'round_freeze_end', tick: start + 100 }, { event_name: 'round_end', tick: end });
+      const nextSideA = ordinal === 12 || ordinal === 24 ? (sideA === 2 ? 3 : 2) : sideA; const nextSideB = nextSideA === 2 ? 3 : 2;
+      for (const steamid of rosterA) ticks.push({ tick: end, game_time: end / 64, steamid, team_num: nextSideA, team_rounds_total: scoreA });
+      for (const steamid of rosterB) ticks.push({ tick: end, game_time: end / 64, steamid, team_num: nextSideB, team_rounds_total: scoreB });
+    }
+    const match = normalizeSnapshot({ matchId: 'ot', fileSha256: 'd'.repeat(64), normalizedAt: '2026-10-16T00:00:00.000Z', snapshot: { header: { map_name: 'de_synthetic' }, players, eventNames: [], events, ticks } });
+    expect(match.quality).toBe('VALID');
+    expect(match.rounds).toHaveLength(25);
+    expect(match.rounds[23]?.isOvertime).toBe(false);
+    expect(match.rounds[24]?.isOvertime).toBe(true);
+    expect(match.rounds[11]?.sideByTeamId).not.toEqual(match.rounds[12]?.sideByTeamId);
+    expect(match.rounds[23]?.sideByTeamId).not.toEqual(match.rounds[24]?.sideByTeamId);
   });
 });
