@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "scoring-config-1",
+  "version": "scoring-v1-compat@1.0.0",
+  "model": "V1_COMPAT",
+  "alpha": 0.75,
+  "beta": 0.25,
+  "weights": { "enemyKill": 1, "openingKill": 0.4, "tradeKill": 0.25, "enemyDamage": 0.35, "bombDefuse": 0.3, "bombPlantWin": 0.15, "teamKill": 2.5, "teamDamage": 1, "teamFlash": 0.4, "teamFlashConfidence": 0.9, "liveSuicide": 0, "flashSupport": 0 },
+  "thresholds": { "v1Spread": 0.15, "v1TopMargin": 0.1, "closeGap": 0.1, "mvpCloseGap": 0.05 },
+  "policies": { "bundleLethalTeamDamage": false, "alwaysAssignWhoRuinedOnEligibleSuccessor": false }
+}

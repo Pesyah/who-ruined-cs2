@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "m3-score-1",
+  "matchId": "match_fixture_anonymous",
+  "scorerVersion": "scoring-successor@0.1.0-alpha75-beta25",
+  "configHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "model": "SUCCESSOR",
+  "experimental": true,
+  "status": "COMPLETED",
+  "quality": "VALID",
+  "winningTeamId": "team_1",
+  "losingTeamId": "team_2",
+  "coverage": { "score": 1, "rounds": 1, "identities": 1, "deaths": 1, "enemyDamage": 1, "teamDamage": 1, "eligible": true, "reasons": [] },
+  "mvp": { "playerId": "player_01", "rate": 1.25, "tied": false, "close": false, "tiedPlayerIds": ["player_01"], "margin": 0.2, "reason": "highest-net-per-valid-round" },
+  "whoRuined": { "playerId": "player_02", "ruinRaw": 0.2, "relativeIndex": 100, "primaryScoreTied": false, "close": false, "tiedPlayerIds": ["player_02"], "margin": 0.12, "noConfirmedHarm": false, "reason": "highest-successor-ruin-raw" },
+  "v1ClearRuinerPlayerId": null,
+  "players": [
+    {
+      "playerId": "player_01", "teamId": "team_1", "validRounds": 12,
+      "positive": 15, "negative": 0, "net": 15, "positiveRate": 1.25, "performanceRate": 1.25,
+      "contextContributionRate": 0.2, "confirmedHarmRate": 0, "teamReference": null, "positiveShortfall": null,
+      "ruinRaw": null, "relativeIndex": null,
+      "components": {
+        "performance": { "kills": 18, "assists": 4, "enemyDamage": 1200, "adr": 100, "kastPercent": 75, "survivedRounds": 6, "multiKillRounds": 2, "flashAssists": 1, "enemyBlindSeconds": 8.5 },
+        "contextContribution": { "points": 2.4, "openingKills": 3, "tradeKills": 2, "killsWithAdvantage": 7, "killsAtDisadvantage": 4, "bombPlantsWon": 0, "bombDefuses": 1 },
+        "confirmedHarm": { "points": 0, "teamDamage": 0, "teamKills": 0, "teamBlindSeconds": 0, "liveSuicides": 0 }
+      },
+      "findings": [], "episodeIds": []
+    },
+    {
+      "playerId": "player_02", "teamId": "team_2", "validRounds": 12,
+      "positive": 8.4, "negative": 2.5, "net": 5.9, "positiveRate": 0.7, "performanceRate": 0.491667,
+      "contextContributionRate": 0.1, "confirmedHarmRate": 0.208333, "teamReference": 0.9, "positiveShortfall": 0.2,
+      "ruinRaw": 0.202083, "relativeIndex": 100,
+      "components": {
+        "performance": { "kills": 10, "assists": 3, "enemyDamage": 840, "adr": 70, "kastPercent": 58.333333, "survivedRounds": 4, "multiKillRounds": 1, "flashAssists": 0, "enemyBlindSeconds": 2 },
+        "contextContribution": { "points": 1.2, "openingKills": 1, "tradeKills": 1, "killsWithAdvantage": 4, "killsAtDisadvantage": 2, "bombPlantsWon": 1, "bombDefuses": 0 },
+        "confirmedHarm": { "points": 2.5, "teamDamage": 100, "teamKills": 1, "teamBlindSeconds": 0, "liveSuicides": 0 }
+      },
+      "findings": [
+        { "id": "finding_team_kill", "code": "TEAM_KILL", "category": "NEGATIVE", "scorerVersion": "scoring-successor@0.1.0-alpha75-beta25", "configHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "playerId": "player_02", "roundId": "round_03", "tick": 3200, "magnitude": 1, "confidence": 1, "weight": 2.5, "weightedValue": 2.5, "evidenceEventIds": ["event_17"], "evidenceStrength": "DIRECT", "explanationKey": "scoring.team_kill" }
+      ],
+      "episodeIds": ["episode_team_kill"]
+    }
+  ],
+  "episodes": [
+    {
+      "id": "episode_team_kill", "kind": "ANTI_HIGHLIGHT", "type": "TEAM_KILL_EPISODE",
+      "scorerVersion": "scoring-successor@0.1.0-alpha75-beta25", "configHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "playerId": "player_02", "roundId": "round_03", "startTick": 3199, "endTick": 3200,
+      "evidenceEventIds": ["event_16", "event_17"], "observedFacts": ["teamKill=true", "linkedFriendlyDamageHP=100"],
+      "significance": 2.5, "confidence": 1, "evidenceStrength": "DIRECT", "explanationKey": "episode.team_kill",
+      "supportingFindingCodes": ["TEAM_KILL", "TEAM_DAMAGE"],
+      "context": { "phase": "LIVE", "side": "T", "weapon": "ak47", "bombState": "NOT_PLANTED", "secondsFromFreezeEnd": 12.5, "equipmentValue": 3900, "aliveByTeamId": { "team_1": 5, "team_2": 4 } },
+      "research": null
+    }
+  ],
+  "rounds": [
+    { "roundId": "round_03", "ordinal": 3, "players": [
+      { "playerId": "player_01", "positive": 0, "negative": 0, "net": 0, "findingIds": [], "episodeIds": [] },
+      { "playerId": "player_02", "positive": 0, "negative": 2.5, "net": -2.5, "findingIds": ["finding_team_kill"], "episodeIds": ["episode_team_kill"] }
+    ] }
+  ],
+  "warnings": ["Экспериментальный относительный индекс: не вероятность поражения и не доказательство намеренного вреда."],
+  "limitations": ["Обычная смерть не является автоматической ошибкой."]
+}

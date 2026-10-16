@@ -11,4 +11,10 @@ describe('health contract', () => {
     expect(typeof MatchesController.prototype.analytics).toBe('function');
     expect(typeof MatchesController.prototype.playerAnalytics).toBe('function');
   });
+  it('exposes versioned report, player evidence, and asynchronous artifact-only rescore handlers', () => {
+    expect(typeof MatchesController.prototype.report).toBe('function');
+    expect(typeof MatchesController.prototype.playerReport).toBe('function');
+    expect(typeof MatchesController.prototype.rescore).toBe('function');
+    expect(Reflect.getMetadata('__httpCode__', MatchesController.prototype.rescore)).toBe(202);
+  });
 });

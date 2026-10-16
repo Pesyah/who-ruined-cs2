@@ -19,6 +19,7 @@
     "@who-ruined/contracts": "workspace:*",
     "@who-ruined/database": "workspace:*",
     "@who-ruined/parser-adapter": "workspace:*",
+    "@who-ruined/scoring": "workspace:*",
     "multer": "2.0.2",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2"

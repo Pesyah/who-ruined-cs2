@@ -1,8 +1,9 @@
 # M3-A scoring proposal
 
-Status: design proposal for owner review. No scoring engine implements this
-document. `SPEC.md` 1.0.0 remains normative; its numeric constants are initial
-product policy, not validated truths.
+Status: M3-A design retained as rationale; M3-B implements the approved
+decisions recorded in `m3-decisions.md`. `SPEC.md` 1.0.0 remains the immutable
+v1 compatibility baseline; its numeric constants are product policy, not
+validated truths.
 
 ## 1. Decision hierarchy
 
@@ -65,7 +66,7 @@ verdict. This index is neither probability nor cross-match player quality.
 | --- | --- | --- | --- |
 | Analytical entities | One positive/negative/net stream | Separate Performance, Impact, Mistakes | Preserve v1 as baseline; design three separate ledgers for the next version |
 | MVP | Not formally defined in section 7 | Best player across both teams | Add a separate all-player MVP rule; never derive MVP from Who Ruined order |
-| Who Ruined | Losing-team relative shortfall plus harm | Negative contribution plus insufficient positive contribution, with abstention | Retain losing-team scope and abstention; expose the two reasons separately |
+| Who Ruined | Losing-team relative shortfall plus harm, with abstention | Separate positive shortfall and confirmed harm; mandatory leader for eligible successor input | Keep v1 abstention unchanged; successor assigns with explicit close/tie and uncertainty warnings |
 | Harm in shortfall | `negative` lowers `net`, then `harmRate` is added | Avoid double counting correlated evidence | Candidate shortfall uses positive contribution only; harm is a separate term |
 | Team kill and damage | Deliberately both score | Prevent one episode appearing as several independent reasons | v1 math remains; candidate bundles the episode and calibrates one aggregate severity |
 | Deaths | Never a separate penalty | Poor stats are not proof of fault | No change; deaths/opening deaths/untraded deaths remain facts |
@@ -236,11 +237,13 @@ This retains v1's provisional 75/25 product policy but removes verified harm
 from the shortfall term. It is the smallest explainable change that satisfies
 the later separation requirement. The 75/25 split remains a hypothesis to test.
 
-A named candidate is forbidden when the match is tied/partial, coverage fails,
-the losing roster is not stable, the margin/spread abstention gate fails, or
-the result is unstable under reasonable coefficient perturbation. If there are
-no confirmed harmful findings, the explanation must say that ordering is based
-on relative positive contribution, not proven mistakes.
+A successor leader is forbidden when the match is tied/partial, coverage fails
+or the losing roster is not stable. On eligible input a leader is assigned even
+when the margin is tiny, the primary score ties or sensitivity variants change
+the ordering; those conditions are exposed as warnings instead of silently
+abstaining. v1 retains its original margin/spread abstention. If there are no
+confirmed harmful findings, the explanation says that ordering is based on
+relative positive contribution, not proven mistakes.
 
 The system never calls a player an intentional ruiner or griefer.
 
@@ -311,22 +314,18 @@ role norms into amateur matches, or forcing a zero-sum blame verdict.
 - Stable arithmetic order is `(roundOrdinal, tick, eventId, code)` with finite
   JS doubles and six-decimal persistence, matching SPEC.
 
-## 10. Decisions required before M3-B
+## 10. M3-B decisions (resolved)
 
-1. Keep v1 as the shipped first scorer, or implement it only as a compatibility
-   baseline while a separated successor remains experimental?
-2. Approve the minimal candidate formula that applies 75/25 to positive
-   shortfall and Mistakes separately, or select another policy after evaluation?
-3. Should live suicide enter the first successor, and what reviewed severity
-   should it receive?
-4. Should a team kill and its lethal damage remain mathematically cumulative,
-   as v1 says, or become one bundled severity in the successor?
-5. Is MVP initially `net / rounds`, or should a unique MVP wait for calibrated
-   Performance/Impact families?
-6. What margin/coverage threshold permits a unique MVP? v1 only defines the
-   Who Ruined threshold.
-7. Should an uncalibrated deterministic Impact ledger be user-visible as
-   “Impact,” or only as “context contribution” to avoid probability semantics?
-8. Confirm that an empirical win-probability model is outside M3-B until a
-   sufficiently large, legally acquired corpus and calibration report exist.
+1. v1 is a separately versioned exact compatibility baseline.
+2. The successor separates positive shortfall and confirmed harm; 75/25 is one
+   experiment, compared with predeclared alternatives rather than approved.
+3. Live suicide enters successor at configurable baseline severity 2.5; the
+   severity remains experimental and live-phase only.
+4. Successor bundles team kill with linked lethal friendly damage; v1 remains
+   cumulative.
+5. MVP starts as `net / validRounds` across all ten players.
+6. Eligible successor always assigns Who Ruined; close/tie/sensitivity are
+   warnings. v1 retains abstention.
+7. The ledger is named Context Contribution, not probabilistic Impact.
+8. Win probability, ML and closed third-party formulas remain out of scope.
 

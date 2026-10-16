@@ -19,3 +19,17 @@ Prisma + SQLite stores job metadata. One worker claims jobs using a conditional 
 ## ADR-005: preflight before native parsing
 
 The pinned Windows binding panicked on a 10-byte malformed input during an actual automated test. Ingestion now checks minimum header length and `PBDEMS2` magic before `parseHeader`. The native parser remains the authoritative validation step for candidates that pass this cheap safety gate.
+
+## ADR-006: scoring compatibility and successor separation
+
+The normative v1 formula is implemented unchanged under its own version. A
+separate experimental successor computes positive shortfall and bundled
+confirmed harm, always assigns a losing-team leader only on eligible complete
+input, and exposes close/tie/sensitivity instead of applying v1 abstention.
+Configuration is immutable, Zod-validated and SHA-256 hashed.
+
+## ADR-007: artifact-only rescore
+
+Scoring consumes the persisted `m2-artifact-1` gzip artifact. `RESCORE` jobs
+enter `SCORING` directly and never invoke the native demo parser. Reports are
+atomically written and uniquely keyed by match, scorer version and config hash.
