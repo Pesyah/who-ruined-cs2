@@ -11,6 +11,8 @@ data/cache/*
 !data/cache/.gitkeep
 data/reports/*
 !data/reports/.gitkeep
+data/research/*
+!data/research/.gitkeep
 tests/golden/*.dem
 apps/web/.vite/
 packages/database/generated/

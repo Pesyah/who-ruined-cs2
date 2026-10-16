@@ -53,7 +53,7 @@ team kills; the overtime fixture is still open.
 | Positive real team-kill fixture | PASS (2 events in the 9-demo M2.5 batch) |
 | Overtime/expected-`PARTIAL` fixture | OPEN |
 | Docker Compose startup | OPEN — Docker daemon unavailable on this host |
-| M3 scoring/ranking | NOT STARTED |
+| M3-B exact v1 scorer and experimental successor | IMPLEMENTED — calibration gates remain open |
 
 The original M2 gate completed successfully with 31 tests. The M2.5 gate below
 supersedes that count with the expanded regression suite.
@@ -101,3 +101,40 @@ the owner decisions listed in `docs/m3-scoring-proposal.md` section 10.
 
 M3-A gate: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` passed;
 38 tests passed, including 3 configured real-demo golden tests, with 0 skipped.
+
+## M3-B — experimental scoring engine
+
+Implemented without frontend changes:
+
+- exact `scoring-v1-compat@1.0.0`, including all nine findings, original
+  cumulative team-kill damage policy, thresholds and SPEC §11.2 fixture;
+- separately versioned successor with positive shortfall and bundled confirmed
+  harm, mandatory eligible-match leader, all-player MVP, close/tie warnings,
+  live-suicide policy and score-neutral friendly-fire research episodes;
+- immutable hashed configurations for 75/25, 50/50, 25/75, low/high harm
+  severity and flash-support sensitivity;
+- gzip report persistence, `SCORING` worker stage, stored-artifact `RESCORE`,
+  versioned match/player report endpoints, per-round evidence ledgers and an
+  anonymized frontend fixture;
+- `pnpm score:demos "F:\CS2 Demos"` isolated comparison and a Git-ignored
+  anonymous research journal.
+
+The M3-B real run parsed and scored all 9 discovered demos with 0 failures.
+The baseline successor assigned one losing-team leader in every eligible
+match; v1 produced a clear leader in 5/9 and abstained in 4/9. Three matches
+changed leader under at least one predeclared sensitivity variant. These nine
+matches were not used to fit coefficients. They independently confirm only the
+existing `.dem.info` K/D/A and score transitions; derived score correctness is
+mathematical/internal, not externally labelled.
+
+Open gates: real overtime input, independent ADR/KAST/trade/utility ground
+truth, human-labelled episode review and holdout calibration. Until those are
+closed, every M3 result remains `experimental` and non-causal.
+
+M3-B gate: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` passed.
+The final test run executed 56 tests: 53 automated unit/contract/integration
+tests plus 3 real golden-demo reconciliations; failures 0, skipped 0. The
+separate M2.5 batch returned 9 PASS / 0 PARTIAL / 0 FAIL / 0 SKIPPED, and the
+M3 comparison scored 9/9 with 0 file failures. A real Train worker → SQLite →
+JSON.gz → rescore → HTTP API/OpenAPI check completed; frontend source was not
+changed.

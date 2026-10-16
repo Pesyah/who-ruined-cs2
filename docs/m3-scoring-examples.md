@@ -3,6 +3,24 @@
 All examples are synthetic scoring fixtures. They are not evidence that the
 model identifies causes of defeat in real matches.
 
+M3-B note: examples describing successor abstention were M3-A proposals and
+are superseded by the approved rule below. The normative v1 examples and
+thresholds remain unchanged.
+
+## M3-B successor assignment example
+
+If five eligible losing-team players have identical `ruinRaw=0`, successor
+still selects the first stable player ID, sets `primaryScoreTied=true`, lists
+all tied IDs and warns that the choice is a deterministic presentation policy.
+The same inputs under v1 return no clear ruiner. If the top two successor values
+are `0.202083` and `0.200000`, the leader is returned with `close=true`; the
+0–100 relative scale must not hide the absolute `0.002083` margin.
+
+For a linked 100-HP team kill, v1 negative is `2.5 + 1.0 = 3.5`.
+Baseline successor preserves both source facts but the episode severity is
+`2.5`, so no accidental double count occurs. A pre-freeze or post-round suicide
+adds zero; a live suicide adds the configured experimental baseline `2.5`.
+
 ## 1. Exact normative v1 golden example
 
 This reproduces `SPEC.md` section 11.2 without modification. Five losing-team

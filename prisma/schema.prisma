@@ -40,6 +40,8 @@ model Job {
   leaseUntil   DateTime?
   errorCode    String?
   errorMessage String?
+  requestedScoringVersion String?
+  requestedConfigHash     String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   match        Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)

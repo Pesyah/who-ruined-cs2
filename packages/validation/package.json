@@ -10,13 +10,15 @@
     "lint": "eslint src test --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "validate": "tsx src/cli.ts"
+    "validate": "tsx src/cli.ts",
+    "score": "tsx src/score-cli.ts"
   },
   "dependencies": {
     "@who-ruined/contracts": "workspace:*",
     "@who-ruined/features": "workspace:*",
     "@who-ruined/match-domain": "workspace:*",
     "@who-ruined/parser-adapter": "workspace:*",
+    "@who-ruined/scoring": "workspace:*",
     "csgo-protobuf": "4.1.12"
   },
   "devDependencies": { "@who-ruined/testkit": "workspace:*", "tsx": "4.20.6" }

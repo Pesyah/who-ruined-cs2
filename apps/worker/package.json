@@ -16,7 +16,8 @@
     "@who-ruined/database": "workspace:*",
     "@who-ruined/features": "workspace:*",
     "@who-ruined/match-domain": "workspace:*",
-    "@who-ruined/parser-adapter": "workspace:*"
+    "@who-ruined/parser-adapter": "workspace:*",
+    "@who-ruined/scoring": "workspace:*"
   },
-  "devDependencies": { "tsx": "4.20.6" }
+  "devDependencies": { "@who-ruined/testkit": "workspace:*", "tsx": "4.20.6" }
 }

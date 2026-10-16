@@ -1,6 +1,6 @@
 # M3 scoring validation and calibration plan
 
-This plan is a gate for M3-B implementation and later product claims. The nine
+This plan governs the implemented experimental M3-B engine and later product claims. The nine
 real demos validate parsing and internal arithmetic; they are not a statistical
 calibration corpus and contain no real overtime.
 
@@ -10,7 +10,7 @@ calibration corpus and contain no real overtime.
 | --- | --- | --- |
 | Parser reconciliation | Were players, rounds, scores and K/D/A reconstructed? | 9/9 real demos pass `.dem.info` reconciliation |
 | Feature arithmetic | Are ADR/KAST/trades/utility and phase filters deterministic? | Unit/property tests and nine-demo internal checks pass |
-| Scoring arithmetic | Does a version implement its documented formula exactly? | Must be added in M3-B; v1 §11.2 is mandatory |
+| Scoring arithmetic | Does a version implement its documented formula exactly? | Implemented unit coverage includes exact v1 §11.2; broader calibration remains open |
 | Episode validity | Are claimed findings present and attributed correctly? | Requires blinded human review |
 | Ranking usefulness | Does ordering align with predeclared expert judgment? | Not tested |
 | Fairness/stability | Is result robust across side, map, match length and weights? | Not tested; real overtime absent |
@@ -161,19 +161,10 @@ Until sampled reconciliation is complete, they may inform an experimental score
 only with an explicit internal-validation label. They cannot support a claim of
 external accuracy.
 
-## 10. Admission criteria for M3-B
+## 10. Admission decisions and gates beyond M3-B
 
-Implementation may begin after the owner approves:
-
-1. whether v1 ships or remains a compatibility baseline;
-2. the exact Performance/Impact/Mistakes boundaries;
-3. treatment of suicide and team-kill/damage episode overlap;
-4. MVP rule and abstention threshold;
-5. Who Ruined formula and stability gate;
-6. API versioning and names that cannot be mistaken for probabilities;
-7. confirmation that empirical win probability remains out of scope.
-
-Before any non-experimental or causal claim, additionally require:
+The implementation decisions are recorded in `m3-decisions.md`. Before any
+non-experimental or causal claim, additionally require:
 
 - the 30-demo/150–200 episode review;
 - predeclared holdout results;
@@ -191,6 +182,10 @@ Before any non-experimental or causal claim, additionally require:
 - [x] numerical and boundary examples documented.
 - [x] external systems separated into public facts and closed elements.
 - [x] calibration and abstention plan documented.
-- [ ] owner decisions in `m3-scoring-proposal.md` section 10 approved.
-- [ ] M3-B scoring code implemented — intentionally not started.
+- [x] owner M3-B decisions recorded and conflicts with v1 documented.
+- [x] exact v1 and separately versioned successor implemented.
+- [x] nine-demo anonymous sensitivity comparison executed.
+- [ ] real overtime scorer fixture.
+- [ ] independent ADR/KAST/trade/utility reference.
+- [ ] human-labelled 30-demo/150–200 episode calibration and holdout study.
 

@@ -1,8 +1,8 @@
 # M3 scoring inputs
 
-This document inventories factual M2 inputs that may be considered by a future
-M3 scoring model. It does not define a rating, role assignment, MVP or
-Who Ruined verdict.
+This document inventories factual M2 inputs consumed by the experimental M3-B
+models. Formula and policy live in `scoring.md`; this inventory remains factual
+and does not assign roles or turn missing opportunities into mistakes.
 
 ## Evidence classes
 
