@@ -89,3 +89,15 @@ fix reconciles all 9 matches without changing expected reference data.
 M2.5 final gate: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build`
 completed successfully. The full run executed 38 tests, including 3 configured
 real-demo golden tests; skipped tests: 0.
+
+## M3-A — scoring model design
+
+Design only; no scoring engine or ranking API is implemented. The restored
+`SPEC.md` 1.0.0 v1 formula is retained verbatim as a compatibility baseline.
+The proposal separates Performance, Impact and Mistakes, documents explicit
+conflicts with later requirements, supplies numerical examples, and defines
+calibration, fairness, abstention and false-positive gates. M3-B is blocked on
+the owner decisions listed in `docs/m3-scoring-proposal.md` section 10.
+
+M3-A gate: `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` passed;
+38 tests passed, including 3 configured real-demo golden tests, with 0 skipped.
