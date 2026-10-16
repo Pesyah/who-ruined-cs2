@@ -12,3 +12,12 @@
 - `cash` is unavailable in demoparser2 0.42.0. `item_pickup` does not identify a
   donor or distinguish purchase from pickup, so exact spend/drop metrics remain
   unavailable. Molotov and Incendiary damage is combined as `inferno`.
+- An authoritative game-mode field is absent from both the observed Source 2
+  headers and the supported `.dem.info` schema. The validator reports mode as
+  unavailable rather than inferring it from map or score.
+- No real overtime demo was found in the nine-match validation batch. Overtime
+  and side-switch logic is covered by an explicitly synthetic regression test,
+  not claimed as real-demo validation.
+- Independent `.dem.info` validation covers K/D/A and round score transitions.
+  ADR, KAST, trades, clutches and utility aggregates have mathematical and
+  cross-demo consistency checks but still lack an independent reference source.

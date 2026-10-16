@@ -30,7 +30,7 @@ describe("parser boundary", () => {
       columns: ["name", "tick"],
     });
   });
-  it("calls the five required APIs and limits tick reads to phase-event ticks", () => {
+  it("calls the five required APIs once and limits tick reads to selected event ticks", () => {
     const calls: string[] = [];
     const parser: DemoParserPort = {
       parseHeader: () => {
@@ -59,6 +59,7 @@ describe("parser boundary", () => {
     };
     const snapshot = parseDemoSnapshot("synthetic.dem", parser);
     expect(snapshot.events).toHaveLength(2);
+    expect(snapshot.ticks.every((row) => row.cash === undefined)).toBe(true);
     expect(calls).toEqual([
       "parseHeader",
       "parsePlayerInfo",

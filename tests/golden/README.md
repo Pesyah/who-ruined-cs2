@@ -31,5 +31,11 @@ If a fixture's demo or info variable is missing, Vitest reports that fixture as
 `GOLDEN_DEMO_PATH`/`GOLDEN_INFO_PATH` aliases remain accepted for Office only.
 
 Office, Dust2 and Train currently pass. The minimum three-real-demo count is
-met, but an overtime/expected-`PARTIAL` fixture, a team-kill positive fixture
-and the M4 corrupt/truncated rejection fixture remain open.
+met. Overtime/expected-`PARTIAL` remains open; team kills are positively
+covered by the separate nine-demo M2.5 batch. Corrupt/truncated inputs have an
+isolated synthetic regression but no real corrupt golden fixture.
+
+The M2.5 batch validator supplements, but does not replace, these pinned golden
+fixtures. It discovers every external demo dynamically and never rewrites this
+manifest. Corrupt/truncated inputs are tested synthetically in an isolated
+child process so a native parser panic cannot terminate the remaining batch.

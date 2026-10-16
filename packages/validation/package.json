@@ -1,0 +1,23 @@
+{
+  "name": "@who-ruined/validation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./dist/index.js" },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "validate": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@who-ruined/contracts": "workspace:*",
+    "@who-ruined/features": "workspace:*",
+    "@who-ruined/match-domain": "workspace:*",
+    "@who-ruined/parser-adapter": "workspace:*",
+    "csgo-protobuf": "4.1.12"
+  },
+  "devDependencies": { "@who-ruined/testkit": "workspace:*", "tsx": "4.20.6" }
+}

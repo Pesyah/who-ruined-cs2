@@ -146,12 +146,13 @@ export function isCreditedAssist(assisterId: string | null, targetId: string | n
 
 export function normalizeSnapshot(input: NormalizeInput): MatchData {
   const issues: MatchData['qualityIssues'] = [];
-  const parsedPlayers = input.snapshot.players.map((row, index) => {
+  const playerCandidates = input.snapshot.players.map((row, index) => {
     const candidateSteamId = asText(row, ['steamid','steam_id','user_steamid']);
     const steamId = isSteamId64(candidateSteamId) ? candidateSteamId : null;
     const sideNumber = asInteger(row, ['team_number','team_num']);
     return { id: steamId ?? `anon_${index + 1}`, steamId, displayName: asText(row, ['name','player_name']) ?? `Игрок ${index + 1}`, sideNumber };
   });
+  const parsedPlayers = [...new Map(playerCandidates.map((player) => [player.id, player])).values()];
   const groups = new Map<number, typeof parsedPlayers>();
   for (const player of parsedPlayers) {
     if (player.sideNumber === null) continue;
@@ -163,20 +164,23 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
   const teams = rosterGroups.map(([, roster], index) => ({ id: stableTeamId(roster.map((p) => p.id)), playerIds: roster.map((p) => p.id).sort(), label: `Команда ${index + 1}` }));
   const playerToTeam = new Map(teams.flatMap((team) => team.playerIds.map((playerId) => [playerId, team.id] as const)));
   if (parsedPlayers.some((player) => player.steamId === null)) issues.push({ code: 'PLAYER_IDENTITY_UNVERIFIED', message: 'Не для всех игроков подтверждён SteamID64.' });
-  const scoreboardByPlayer = new Map(parsedPlayers.map((player) => [player.id, { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_ALL_PHASES' as const }]));
-  for (const row of input.snapshot.events) {
-    if (asText(row, ['event_name','event','name']) !== 'player_death') continue;
+  const scoreboardByPlayer = new Map(parsedPlayers.map((player) => [player.id, { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_SCOREBOARD_PHASES' as const }]));
+  const adjustScoreboard = (row: UnknownRow, delta: 1 | -1): void => {
     const actorId = asText(row, ['attacker_steamid']); const targetId = asText(row, ['user_steamid','victim_steamid']); const assisterId = asText(row, ['assister_steamid']);
     const actor = actorId ? scoreboardByPlayer.get(actorId) : undefined; const target = targetId ? scoreboardByPlayer.get(targetId) : undefined; const assister = assisterId ? scoreboardByPlayer.get(assisterId) : undefined;
-    if (target) target.deaths += 1;
+    if (target) target.deaths += delta;
     if (actor && targetId && actorId !== targetId) {
-      if (playerToTeam.get(actorId ?? '') === playerToTeam.get(targetId)) actor.teamKills += 1; else actor.kills += 1;
+      if (playerToTeam.get(actorId ?? '') === playerToTeam.get(targetId)) actor.teamKills += delta; else actor.kills += delta;
     }
-    if (assister && isCreditedAssist(assisterId, targetId, playerToTeam)) assister.assists += 1;
+    if (assister && isCreditedAssist(assisterId, targetId, playerToTeam)) assister.assists += delta;
+  };
+  for (const row of input.snapshot.events) {
+    if (asText(row, ['event_name','event','name']) !== 'player_death') continue;
+    adjustScoreboard(row, 1);
   }
   const players = parsedPlayers.filter((player) => playerToTeam.has(player.id)).map((player) => ({
     id: player.id, steamId: player.steamId, displayName: player.displayName, teamId: playerToTeam.get(player.id) ?? '',
-    scoreboard: scoreboardByPlayer.get(player.id) ?? { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_ALL_PHASES' as const }
+    scoreboard: scoreboardByPlayer.get(player.id) ?? { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_SCOREBOARD_PHASES' as const }
   }));
   const byKind = (name: string): UnknownRow[] => input.snapshot.events.filter((row) => asText(row, ['event_name','event','name']) === name);
   const explicitStarts = uniqueTicks([...byKind('round_prestart'), ...byKind('round_start')]);
@@ -220,7 +224,7 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     const scoreChanged = teams.length === 2 && teams.every((team) => (scoreAfter[team.id] ?? 0) - (priorScore[team.id] ?? 0) === (team.id === winnerTeamId ? 1 : 0));
     if (!scoreChanged) roundIssues.push('SCORE_TRANSITION_UNVERIFIED');
     const uniqueRoundIssues = [...new Set(roundIssues)];
-    rounds.push({ id: `round_${ordinal}`, ordinal, startTick, freezeEndTick: freezeTick, endTick, winnerTeamId, winnerSide, sideByTeamId: beforeState.sideByTeamId, scoreBefore: { ...priorScore }, scoreAfter: { ...scoreAfter }, isValid: uniqueRoundIssues.length === 0, issues: uniqueRoundIssues });
+    rounds.push({ id: `round_${ordinal}`, ordinal, startTick, freezeEndTick: freezeTick, endTick, winnerTeamId, winnerSide, sideByTeamId: beforeState.sideByTeamId, scoreBefore: { ...priorScore }, scoreAfter: { ...scoreAfter }, isOvertime: Object.values(priorScore).reduce((sum, score) => sum + score, 0) >= 24, isValid: uniqueRoundIssues.length === 0, issues: uniqueRoundIssues });
     for (const team of teams) priorScore[team.id] = scoreAfter[team.id] ?? priorScore[team.id] ?? 0;
   }
   if (rounds.length === 0) issues.push({ code: 'ROUNDS_MISSING', message: 'Не удалось восстановить игровые раунды.' });
@@ -234,14 +238,54 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     flashbang_detonate: 'FLASH_DETONATE', hegrenade_detonate: 'HE_DETONATE', smokegrenade_detonate: 'SMOKE_DETONATE', inferno_startburn: 'INFERNO_START', inferno_expire: 'INFERNO_EXPIRE'
   };
   const orderedRows = input.snapshot.events.map((row, rowIndex) => ({ row, rowIndex })).sort((a, b) => (asInteger(a.row, ['tick']) ?? Number.MAX_SAFE_INTEGER) - (asInteger(b.row, ['tick']) ?? Number.MAX_SAFE_INTEGER) || a.rowIndex - b.rowIndex);
+  const terminalByRound = new Map<string, { tick: number; rowIndex: number; type: 'OBJECTIVE' | 'ELIMINATION' }>();
+  for (const round of rounds) {
+    const freezeTick = round.freezeEndTick ?? round.startTick;
+    const objectiveCandidates: Array<{ row: UnknownRow; rowIndex: number; terminalType: 'OBJECTIVE' | 'ELIMINATION' }> = orderedRows.filter(({ row }) => {
+      const tick = asInteger(row, ['tick']); const name = asText(row, ['event_name','event','name']);
+      return tick !== null && tick >= freezeTick && tick <= round.endTick && (name === 'bomb_defused' || name === 'bomb_exploded');
+    }).map((item) => ({ ...item, terminalType: 'OBJECTIVE' as const }));
+    const candidates = [...objectiveCandidates];
+    const alive = new Map(teams.map((team) => [team.id, new Set(team.playerIds)]));
+    for (const item of orderedRows) {
+      const tick = asInteger(item.row, ['tick']); const name = asText(item.row, ['event_name','event','name']);
+      if (tick === null || tick < freezeTick || tick > round.endTick || name !== 'player_death') continue;
+      const targetId = asText(item.row, ['user_steamid','victim_steamid']); const teamId = targetId ? playerToTeam.get(targetId) : undefined;
+      if (targetId && teamId) alive.get(teamId)?.delete(targetId);
+      if ([...alive.values()].some((playersAlive) => playersAlive.size === 0)) {
+        if (objectiveCandidates.length === 0) candidates.push({ ...item, terminalType: 'ELIMINATION' });
+        break;
+      }
+    }
+    candidates.sort((a, b) => (asInteger(a.row, ['tick']) ?? 0) - (asInteger(b.row, ['tick']) ?? 0) || a.rowIndex - b.rowIndex);
+    const terminal = candidates[0]; const terminalTick = terminal ? asInteger(terminal.row, ['tick']) : null;
+    if (terminal && terminalTick !== null) terminalByRound.set(round.id, { tick: terminalTick, rowIndex: terminal.rowIndex, type: terminal.terminalType });
+  }
   const bombStateByRound = new Map<string, 'NOT_PLANTED'|'PLANTED'|'DEFUSED'|'EXPLODED'>();
+  const seenLiveDeathKeys = new Set<string>();
   for (const { row, rowIndex: parserRowIndex } of orderedRows) {
     const eventName = asText(row, ['event_name','event','name']);
     if (!eventName || !factualKinds[eventName]) continue;
     const tick = asInteger(row, ['tick']);
     if (tick === null) { if (eventName === 'player_death') unassignedDeaths += 1; continue; }
-    const liveRound = rounds.find((candidate) => tick >= (candidate.freezeEndTick ?? candidate.startTick) && tick <= candidate.endTick);
-    const phaseRound = liveRound ?? rounds.find((candidate) => tick >= candidate.startTick && tick <= candidate.endTick);
+    const candidateLiveRound = rounds.find((candidate) => tick >= (candidate.freezeEndTick ?? candidate.startTick) && tick <= candidate.endTick);
+    const terminal = candidateLiveRound ? terminalByRound.get(candidateLiveRound.id) : undefined;
+    const afterTerminalPosition = terminal ? tick > terminal.tick || tick === terminal.tick && parserRowIndex > terminal.rowIndex : false;
+    const rawActorForPhase = asText(row, ['attacker_steamid']); const rawTargetForPhase = asText(row, ['user_steamid','victim_steamid']);
+    const afterEliminationSuicide = eventName === 'player_death' && (rawActorForPhase === rawTargetForPhase || rawActorForPhase === null);
+    const deathKey = candidateLiveRound && rawTargetForPhase ? `${candidateLiveRound.id}:${rawTargetForPhase}` : null;
+    const duplicateRoundDeath = deathKey !== null && seenLiveDeathKeys.has(deathKey);
+    const deathWeapon = asText(row, ['weapon']);
+    const sameTickObjectiveSuicide = terminal?.type === 'OBJECTIVE' && tick === terminal.tick && afterEliminationSuicide && deathWeapon === 'planted_c4';
+    const postEliminationWorldDeath = terminal?.type === 'ELIMINATION' && afterTerminalPosition && afterEliminationSuicide && deathWeapon === 'world';
+    const afterTerminal = terminal !== undefined && afterTerminalPosition && afterEliminationSuicide && (duplicateRoundDeath || sameTickObjectiveSuicide || postEliminationWorldDeath);
+    const liveRound = afterTerminal ? undefined : candidateLiveRound;
+    if (eventName === 'player_death' && liveRound && deathKey) seenLiveDeathKeys.add(deathKey);
+    const intervalRound = rounds.find((candidate) => tick >= candidate.startTick && tick <= candidate.endTick);
+    const priorRound = [...rounds].reverse().find((candidate) => candidate.endTick < tick);
+    const nextRound = priorRound ? rounds.find((candidate) => candidate.ordinal === priorRound.ordinal + 1) : undefined;
+    const postRound = priorRound && (!nextRound || tick < nextRound.startTick) ? priorRound : undefined;
+    const phaseRound = liveRound ?? intervalRound ?? postRound;
     if (!phaseRound) { if (eventName === 'player_death') unassignedDeaths += 1; continue; }
     const rawActor = asText(row, ['attacker_steamid','user_steamid','userid_steamid','thrower_steamid']);
     const rawTarget = asText(row, ['victim_steamid','user_steamid']);
@@ -283,6 +327,7 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
       },
       source: { eventName, rowIndex: parserRowIndex }
     });
+    if (eventName === 'player_death' && !liveRound && tick >= (phaseRound.freezeEndTick ?? phaseRound.startTick)) adjustScoreboard(row, -1);
   }
   for (const round of rounds) {
     if (round.freezeEndTick === null) continue;

@@ -19,7 +19,7 @@ export const teamSchema = z.object({ id, playerIds: z.array(id), label: z.string
 export const scoreboardStatsSchema = z.object({
   kills: z.number().int().nonnegative(), deaths: z.number().int().nonnegative(),
   assists: z.number().int().nonnegative(), teamKills: z.number().int().nonnegative(),
-  source: z.literal('PARSED_DEATH_EVENTS_ALL_PHASES')
+  source: z.literal('PARSED_DEATH_EVENTS_SCOREBOARD_PHASES')
 });
 export const playerSchema = z.object({
   id, steamId: z.string().regex(/^7656119\d{10}$/).nullable(),
