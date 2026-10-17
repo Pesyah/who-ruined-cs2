@@ -101,3 +101,10 @@ pnpm build
 
 M3 scoring/ranking and M4 robustness remain outside this gate. No public
 deployment is configured.
+
+## Frontend and translations
+
+See [docs/frontend.md](docs/frontend.md) for Windows setup, routes, API integration,
+design previews, localization checks and backend requirements. Translation instructions
+are in [AGENTS.md](AGENTS.md). Start with `npm.cmd run setup:windows`, then
+`npm.cmd run dev:web` (http://localhost:5173, Ctrl+C to stop).
