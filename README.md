@@ -1,8 +1,8 @@
 # Who Ruined CS2
 
 Local-first CS2 demo analysis. The repository contains the validated M0/M1
-vertical slice and an M2 backend analytics candidate: parser → normalized facts
-→ deterministic features → versioned API. M3 scoring is not implemented.
+vertical slice, M2 factual analytics and an experimental M3-B backend:
+parser → normalized facts → deterministic features → versioned scoring reports.
 
 > Status: **M0 and M1 passed on three external real golden demos:** Office,
 > Dust2 and Train. The `.dem`/`.dem.info` files remain outside Git. The required
@@ -77,10 +77,22 @@ string.
 
 See `docs/api-m2.md` for availability/null semantics and metric definitions.
 
+## M3-B scoring API
+
+- `GET /api/v1/matches/:id/report?version=...&configHash=...`
+- `GET /api/v1/matches/:id/players/:playerId/report?version=...&configHash=...`
+- `POST /api/v1/matches/:id/rescore` with `{ "scoringVersion": "...", "configHash": "..." }`
+
+Rescore reads the stored `m2-artifact-1` and never reparses the demo. Reports
+are deterministic, versioned and explicitly experimental. See
+`docs/frontend-backend-contract.md`; `tests/fixtures/m3-scoring-report.json` is
+the anonymous frontend fixture.
+
 ## Batch validation
 
 ```powershell
 pnpm validate:demos "F:\CS2 Demos"
+pnpm score:demos "F:\CS2 Demos"
 ```
 
 The validator recursively discovers arbitrary `.dem` names, matches adjacent
@@ -99,12 +111,12 @@ pnpm test
 pnpm build
 ```
 
-M3 scoring/ranking and M4 robustness remain outside this gate. No public
-deployment is configured.
+M3-C scoring calibration and M4 robustness remain outside this gate.
+No public deployment is configured.
 
 ## Frontend and translations
 
 See [docs/frontend.md](docs/frontend.md) for Windows setup, routes, API integration,
 design previews, localization checks and backend requirements. Translation instructions
-are in [AGENTS.md](AGENTS.md). Start with `npm.cmd run setup:windows`, then
-`npm.cmd run dev:web` (http://localhost:5173, Ctrl+C to stop).
+are in [AGENTS.md](AGENTS.md). Start with `pnpm.cmd run setup:windows`, then
+`pnpm.cmd run dev:web` (http://localhost:5173, Ctrl+C to stop).

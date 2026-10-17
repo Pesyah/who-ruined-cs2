@@ -71,6 +71,9 @@ importers:
       '@who-ruined/parser-adapter':
         specifier: workspace:*
         version: link:../../packages/parser-adapter
+      '@who-ruined/scoring':
+        specifier: workspace:*
+        version: link:../../packages/scoring
       multer:
         specifier: 2.0.2
         version: 2.0.2
@@ -169,7 +172,13 @@ importers:
       '@who-ruined/parser-adapter':
         specifier: workspace:*
         version: link:../../packages/parser-adapter
+      '@who-ruined/scoring':
+        specifier: workspace:*
+        version: link:../../packages/scoring
     devDependencies:
+      '@who-ruined/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
       tsx:
         specifier: 4.20.6
         version: 4.20.6
@@ -222,6 +231,19 @@ importers:
         specifier: 4.20.6
         version: 4.20.6
 
+  packages/scoring:
+    dependencies:
+      '@who-ruined/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@who-ruined/features':
+        specifier: workspace:*
+        version: link:../features
+      '@who-ruined/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+
   packages/testkit:
     dependencies:
       '@who-ruined/contracts':
@@ -242,6 +264,9 @@ importers:
       '@who-ruined/parser-adapter':
         specifier: workspace:*
         version: link:../parser-adapter
+      '@who-ruined/scoring':
+        specifier: workspace:*
+        version: link:../scoring
       csgo-protobuf:
         specifier: 4.1.12
         version: 4.1.12

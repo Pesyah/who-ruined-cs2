@@ -6,7 +6,8 @@ import { promisify } from 'node:util';
 import { Injectable } from '@nestjs/common';
 import { prisma } from '@who-ruined/database';
 import { isSource2Header, loadNativeParser, NORMALIZER_VERSION, PARSER_LIBRARY_VERSION } from '@who-ruined/parser-adapter';
-import { matchAnalyticsSchema, matchArtifactSchema, matchDataSchema, type MatchAnalytics, type MatchData } from '@who-ruined/contracts';
+import { matchAnalyticsSchema, matchArtifactSchema, matchDataSchema, rescoreRequestSchema, scoringReportSchema, type MatchAnalytics, type MatchData, type ScoringConfig, type ScoringReport } from '@who-ruined/contracts';
+import { SCORING_CONFIGS, scoringConfigHash, SUCCESSOR_75_25_CONFIG } from '@who-ruined/scoring';
 import { ApiError } from './safe-exception.filter.js';
 import { dataRoot, safeDataPath } from './storage.js';
 import path from 'node:path';
@@ -38,7 +39,9 @@ export class MatchesService {
     const decoded: unknown = JSON.parse(raw.toString('utf8'));
     const artifact = matchArtifactSchema.safeParse(decoded);
     if (artifact.success) return { match: artifact.data.match, analytics: artifact.data.analytics };
-    return { match: matchDataSchema.parse(decoded), analytics: null };
+    const legacy = matchDataSchema.safeParse(decoded);
+    if (legacy.success) return { match: legacy.data, analytics: null };
+    throw new ApiError('INCOMPLETE_MATCH', 'Артефакт создан несовместимой версией; требуется повторный разбор исходного демо.', 409);
   }
   async ingest(file: Express.Multer.File): Promise<{ matchId: string; jobId: string; duplicate: boolean }> {
     if (!file.originalname.toLowerCase().endsWith('.dem')) { await rm(file.path, { force: true }); throw new ApiError('INVALID_DEMO', 'Поддерживаются только файлы .dem.', 415); }
@@ -86,5 +89,46 @@ export class MatchesService {
     const player = analytics.players.find((item) => item.playerId === playerId);
     if (!player) throw new ApiError('PLAYER_NOT_FOUND', 'Игрок не найден в матче.', 404);
     return { schemaVersion: analytics.schemaVersion, featureVersion: analytics.featureVersion, matchId: id, player };
+  }
+
+  private scoringConfig(version?: string, configHash?: string): ScoringConfig {
+    const selectedVersion = version ?? SUCCESSOR_75_25_CONFIG.version;
+    const config = SCORING_CONFIGS.find((candidate) => candidate.version === selectedVersion && (configHash === undefined || scoringConfigHash(candidate) === configHash));
+    if (!config) throw new ApiError('UNSUPPORTED_MODE', 'Запрошенная версия scoring-конфигурации не поддерживается.', 422);
+    return config;
+  }
+
+  async report(id: string, version?: string, configHash?: string): Promise<ScoringReport> {
+    const match = await prisma.match.findUnique({ where: { id } });
+    if (!match) throw new ApiError('MATCH_NOT_FOUND', 'Матч не найден.', 404);
+    const config = this.scoringConfig(version, configHash);
+    const hash = scoringConfigHash(config);
+    const stored = await prisma.report.findUnique({ where: { matchId_scoringVersion_configHash: { matchId: id, scoringVersion: config.version, configHash: hash } } });
+    if (!stored) throw new ApiError('INCOMPLETE_MATCH', 'Scoring-отчёт ещё не построен; запросите rescore для сохранённого M2-артефакта.', 409);
+    const raw = await unzip(await readFile(safeDataPath(stored.jsonFilePath)));
+    return scoringReportSchema.parse(JSON.parse(raw.toString('utf8')) as unknown);
+  }
+
+  async playerReport(id: string, playerId: string, version?: string, configHash?: string) {
+    const report = await this.report(id, version, configHash);
+    const player = report.players.find((item) => item.playerId === playerId);
+    if (!player) throw new ApiError('PLAYER_NOT_FOUND', 'Игрок не найден в scoring-отчёте.', 404);
+    const episodeIds = new Set(player.episodeIds);
+    return { schemaVersion: report.schemaVersion, matchId: id, scorerVersion: report.scorerVersion, configHash: report.configHash, model: report.model, experimental: report.experimental, player, episodes: report.episodes.filter((episode) => episodeIds.has(episode.id)), rounds: report.rounds.map((round) => ({ roundId: round.roundId, ordinal: round.ordinal, player: round.players.find((item) => item.playerId === playerId)! })), warnings: report.warnings, limitations: report.limitations };
+  }
+
+  async rescore(id: string, body: unknown): Promise<{ matchId: string; jobId: string; scoringVersion: string; configHash: string }> {
+    const parsed = rescoreRequestSchema.safeParse(body);
+    if (!parsed.success) throw new ApiError('UNSUPPORTED_MODE', 'Некорректный запрос rescore.', 422);
+    const config = this.scoringConfig(parsed.data.scoringVersion, parsed.data.configHash);
+    const match = await prisma.match.findUnique({ where: { id } });
+    if (!match) throw new ApiError('MATCH_NOT_FOUND', 'Матч не найден.', 404);
+    if (!match.normalizedFilePath) throw new ApiError('INCOMPLETE_MATCH', 'Для rescore нужен сохранённый M2-артефакт.', 409);
+    const artifact = await this.artifact(id);
+    if (!artifact.analytics) throw new ApiError('INCOMPLETE_MATCH', 'Старый артефакт не содержит M2-аналитику; требуется повторный разбор демо.', 409);
+    const jobId = randomUUID();
+    const configHash = scoringConfigHash(config);
+    await prisma.job.create({ data: { id: jobId, matchId: id, type: 'RESCORE', status: 'QUEUED', stage: 'QUEUED', requestedScoringVersion: config.version, requestedConfigHash: configHash } });
+    return { matchId: id, jobId, scoringVersion: config.version, configHash };
   }
 }

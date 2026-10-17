@@ -1,6 +1,6 @@
-import { Controller, Get, HttpCode, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiAcceptedResponse, ApiBody, ApiConflictResponse, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags, ApiUnprocessableEntityResponse } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -35,4 +35,24 @@ export class MatchesController {
   @Get('matches/:id/players/:playerId/analytics')
   @ApiOperation({ summary: 'Factual M2 analytics for one match participant' })
   playerAnalytics(@Param('id') id: string, @Param('playerId') playerId: string) { return this.service.playerAnalytics(id, playerId); }
+
+  @Get('matches/:id/report')
+  @ApiOperation({ summary: 'Versioned deterministic M3 scoring report; experimental policy, not causal probability' })
+  @ApiOkResponse({ description: 'm3-score-1 report with all ten players, per-round ledgers and evidence episodes' })
+  @ApiConflictResponse({ description: 'Report is pending or the stored artifact predates M2 analytics' })
+  report(@Param('id') id: string, @Query('version') version?: string, @Query('configHash') configHash?: string) { return this.service.report(id, version, configHash); }
+
+  @Get('matches/:id/players/:playerId/report')
+  @ApiOperation({ summary: 'Attributed findings and evidence episodes for one participant' })
+  @ApiOkResponse({ description: 'Player components, findings, episodes and per-round rows for the selected scorer version' })
+  playerReport(@Param('id') id: string, @Param('playerId') playerId: string, @Query('version') version?: string, @Query('configHash') configHash?: string) { return this.service.playerReport(id, playerId, version, configHash); }
+
+  @Post('matches/:id/rescore')
+  @HttpCode(202)
+  @ApiOperation({ summary: 'Queue scoring from the stored M2 artifact without parsing the demo again' })
+  @ApiAcceptedResponse({ description: 'RESCORE job queued with resolved scorer version and config hash' })
+  @ApiConflictResponse({ description: 'Stored M2 artifact is unavailable or incompatible' })
+  @ApiUnprocessableEntityResponse({ description: 'Unknown scorer version/config hash' })
+  @ApiBody({ schema: { type: 'object', required: ['scoringVersion'], properties: { scoringVersion: { type: 'string' }, configHash: { type: 'string', pattern: '^[a-f0-9]{64}$' } } } })
+  rescore(@Param('id') id: string, @Body() body: unknown) { return this.service.rescore(id, body); }
 }
