@@ -1,20 +1,11 @@
 import type { C2S2PreparedProfileDto } from '@who-ruined/contracts';
+import { PARTICIPATION_SIDECAR_POLICY_IDENTITIES } from '@who-ruined/scoring';
 
 export const PARTICIPATION_SIDECAR_SCHEMA_VERSION =
   'm3c8-participation-prepared@1.0.0-experimental' as const;
 
-export const P72_POLICY = {
-  PRIMARY: {
-    id: 'P72B_D_P10_N5_K025_A015_H2',
-    digest: '7ac1d2d3afcffa9d4682e2979f06f4dad8d42f270ec0e858bac93019724baf48',
-    harmMultiplier: 2,
-  },
-  FALLBACK: {
-    id: 'P72B_D_P10_N5_K025_A015_H1',
-    digest: '3d299d81f8e8cd336ec6288431fa83240f6a0209bfeed3b80f89930ab88f5c75',
-    harmMultiplier: 1,
-  },
-} as const;
+export const PARTICIPATION_SIDECAR_POLICIES = PARTICIPATION_SIDECAR_POLICY_IDENTITIES
+  .map(({ id, digest, harmMultiplier }) => ({ id, digest, harmMultiplier }));
 
 export type ParticipationClass =
   | 'PRESENT_VERIFIED'

@@ -24,8 +24,8 @@ Paths stored in SQLite are relative to the configured root. Artifact code resolv
 
 - normalized match data and M2 analytics;
 - compatible production scoring reports;
-- one active H2/H1 participation rating;
-- private policy-neutral recompute seed and selected policy identity;
+- one active H2 participation rating;
+- private recompute seed and selected policy identity;
 - source-retention metadata.
 
 The private `internal` block is persisted for deterministic rebuilds but is not returned by public rating/explanation endpoints.
@@ -104,7 +104,7 @@ The native parser is synchronous inside the child, but it cannot block the worke
 
 The HTTP `RESCORE` job recalculates a requested compatible scoring report from the `artifact` embedded in `match-result@1`; it does not read the original demo. A legacy normalized artifact can support the older report-only path. If neither stored form is sufficient, the request fails instead of fabricating evidence.
 
-Changing the active H2/H1 owner policy is a separate `rating:rebuild` operation. It reconstructs the active rating from the private recompute seed inside the canonical result, publishes a new immutable result, conditionally swaps the database pointer, then removes the old owned version. The demo is not required.
+Transitioning a historical non-H2 result is a separate `rating:rebuild` operation. It reconstructs H2 from the private recompute seed inside the canonical result, publishes a new immutable result, conditionally swaps the database pointer, then removes the old owned version. The demo is not required.
 
 ## Raw demo retention
 

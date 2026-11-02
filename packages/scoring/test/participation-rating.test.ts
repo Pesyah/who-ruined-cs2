@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  P72_POLICIES,
+  H2_PARTICIPATION_RATING_POLICY,
+  HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY,
+  PARTICIPATION_SIDECAR_POLICY_IDENTITIES,
   projectP72ParticipationRatings,
   selectP72Awards,
   type C2S2PreparedProfile,
@@ -40,15 +42,19 @@ function profile(index: number, status: P72ParticipationPreparedProfile['status'
 }
 
 describe('P7.2 frozen participation rating projection', () => {
-  it('keeps both owner-approved policy identities immutable', () => {
-    expect(P72_POLICIES.H2).toEqual({ selector: 'H2', id: 'P72B_D_P10_N5_K025_A015_H2', digest: '7ac1d2d3afcffa9d4682e2979f06f4dad8d42f270ec0e858bac93019724baf48', harmMultiplier: 2 });
-    expect(P72_POLICIES.H1).toEqual({ selector: 'H1', id: 'P72B_D_P10_N5_K025_A015_H1', digest: '3d299d81f8e8cd336ec6288431fa83240f6a0209bfeed3b80f89930ab88f5c75', harmMultiplier: 1 });
-    expect(Object.isFrozen(P72_POLICIES.H2)).toBe(true);
-    expect(Object.isFrozen(P72_POLICIES.H1)).toBe(true);
+  it('keeps H2 immutable and retains H1 identity only in sidecar compatibility metadata', () => {
+    expect(H2_PARTICIPATION_RATING_POLICY).toEqual({ selector: 'H2', id: 'P72B_D_P10_N5_K025_A015_H2', digest: '7ac1d2d3afcffa9d4682e2979f06f4dad8d42f270ec0e858bac93019724baf48', harmMultiplier: 2 });
+    expect(HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY).toEqual({ id: 'P72B_D_P10_N5_K025_A015_H1', digest: '3d299d81f8e8cd336ec6288431fa83240f6a0209bfeed3b80f89930ab88f5c75', harmMultiplier: 1 });
+    expect(PARTICIPATION_SIDECAR_POLICY_IDENTITIES).toEqual([
+      { id: H2_PARTICIPATION_RATING_POLICY.id, digest: H2_PARTICIPATION_RATING_POLICY.digest, harmMultiplier: 2 },
+      HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY
+    ]);
+    expect(Object.isFrozen(H2_PARTICIPATION_RATING_POLICY)).toBe(true);
+    expect(Object.isFrozen(HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY)).toBe(true);
   });
 
   it('reconciles aggregate saturation and six-family attribution exactly', () => {
-    const [row] = projectP72ParticipationRatings([profile(3)], 'H2');
+    const [row] = projectP72ParticipationRatings([profile(3)]);
     expect(row?.status).toBe('CALCULATED_RESEARCH_ONLY');
     if (!row || row.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('unexpected status');
     const reconstructed = 1 + Object.values(row.finalAttribution).reduce((sum, value) => sum + value, 0);
@@ -57,19 +63,29 @@ describe('P7.2 frozen participation rating projection', () => {
     expect(row.finalAttribution.DIRECT_HARM).toBe(2 * row.rawFamilyInputs.DIRECT_HARM);
   });
 
-  it('changes only the already-S2-transformed harm term when switching H2/H1', () => {
-    const input = [profile(4)];
-    const h2 = projectP72ParticipationRatings(input, 'H2')[0]!;
-    const h1 = projectP72ParticipationRatings(input, 'H1')[0]!;
-    if (h2.status !== 'CALCULATED_RESEARCH_ONLY' || h1.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('unexpected status');
-    expect(Math.abs((h2.rating - h1.rating) - h2.rawFamilyInputs.DIRECT_HARM)).toBeLessThanOrEqual(1e-12);
-    expect(h2.rawFamilyInputs).toEqual(h1.rawFamilyInputs);
-    expect(h2.aggregates.positiveTerm).toBe(h1.aggregates.positiveTerm);
-    expect(h2.aggregates.negativeTerm).toBe(h1.aggregates.negativeTerm);
+  it('matches the pre-removal deterministic H2 baseline exactly', () => {
+    const row = projectP72ParticipationRatings([profile(3)])[0]!;
+    if (row.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('unexpected status');
+    expect(row.rating).toBe(1.2765243531781516);
+    expect(row.aggregates).toEqual({
+      positiveMass: 0.05,
+      negativeMass: 0.032695129364369656,
+      positiveTerm: 0.5,
+      negativeTerm: -0.16347564682184829,
+      harmTerm: -0.06
+    });
+    expect(row.finalAttribution).toEqual({
+      COMBAT: 0.4,
+      SUPPORT: 0.1,
+      DEATH_RELATED: -0.15,
+      CONTEXT: -0.013475646821848278,
+      OBJECTIVES: 0,
+      DIRECT_HARM: -0.06
+    });
   });
 
   it('preserves per-player absence as null instead of a fabricated baseline rating', () => {
-    const [row] = projectP72ParticipationRatings([profile(0, 'PARTICIPATION_ABSENT_GT_2_ROUNDS')], 'H2');
+    const [row] = projectP72ParticipationRatings([profile(0, 'PARTICIPATION_ABSENT_GT_2_ROUNDS')]);
     expect(row).toMatchObject({ status: 'PARTICIPATION_ABSENT_GT_2_ROUNDS', rating: null, finalAttribution: null });
   });
 
@@ -79,7 +95,7 @@ describe('P7.2 frozen participation rating projection', () => {
     legacy.reason = 'SCENARIO_UNKNOWN';
     legacy.prepared.scenario = 'UNKNOWN';
     legacy.prepared.p4CPlus = { status: 'UNKNOWN_APPLICABILITY', reason: 'SCENARIO_UNKNOWN' };
-    const [row] = projectP72ParticipationRatings([legacy], 'H2');
+    const [row] = projectP72ParticipationRatings([legacy]);
     expect(row?.status).toBe('CALCULATED_RESEARCH_ONLY');
     if (!row || row.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('unexpected status');
     expect(row.rawFamilyInputs.OBJECTIVES).toBe(0);
@@ -91,7 +107,7 @@ describe('P7.2 frozen participation rating projection', () => {
 
   it('selects awards from nine calculated players and limits Who Ruined to the losing pool', () => {
     const input = Array.from({ length: 10 }, (_, index) => profile(index, index === 7 ? 'PARTICIPATION_ABSENT_GT_2_ROUNDS' : 'ELIGIBLE'));
-    const rows = projectP72ParticipationRatings(input, 'H2');
+    const rows = projectP72ParticipationRatings(input);
     const awards = selectP72Awards(rows, [{ teamId: 'team-a', score: 13 }, { teamId: 'team-b', score: 8 }]);
     expect(awards.eligiblePoolSize).toBe(9);
     expect(awards.incompletePool).toBe(true);
@@ -100,7 +116,7 @@ describe('P7.2 frozen participation rating projection', () => {
   });
 
   it('uses all calculated players as the Who Ruined pool only for a genuine score draw', () => {
-    const rows = projectP72ParticipationRatings(Array.from({ length: 10 }, (_, index) => profile(index)), 'H1');
+    const rows = projectP72ParticipationRatings(Array.from({ length: 10 }, (_, index) => profile(index)));
     const awards = selectP72Awards(rows, [{ teamId: 'team-a', score: 12 }, { teamId: 'team-b', score: 12 }]);
     expect(awards.outcome).toBe('DRAW');
     expect(awards.losingTeamId).toBeNull();

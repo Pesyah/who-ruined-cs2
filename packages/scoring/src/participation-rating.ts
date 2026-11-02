@@ -4,25 +4,10 @@ import {
   type ParticipationPreparedProfile,
   type ParticipationKernelRow
 } from './participation-family-kernel.js';
+import { H2_PARTICIPATION_RATING_POLICY } from './participation-policy.js';
 
 export const PARTICIPATION_RATING_SCORER_VERSION = 'm3c8-p7.2-f-rating-projector@1.0.0-experimental' as const;
 
-export const PARTICIPATION_RATING_POLICIES = Object.freeze({
-  H2: Object.freeze({
-    selector: 'H2' as const,
-    id: 'P72B_D_P10_N5_K025_A015_H2' as const,
-    digest: '7ac1d2d3afcffa9d4682e2979f06f4dad8d42f270ec0e858bac93019724baf48' as const,
-    harmMultiplier: 2 as const
-  }),
-  H1: Object.freeze({
-    selector: 'H1' as const,
-    id: 'P72B_D_P10_N5_K025_A015_H1' as const,
-    digest: '3d299d81f8e8cd336ec6288431fa83240f6a0209bfeed3b80f89930ab88f5c75' as const,
-    harmMultiplier: 1 as const
-  })
-});
-
-export type ParticipationRatingPolicySelector = keyof typeof PARTICIPATION_RATING_POLICIES;
 export type ParticipationRatingAvailabilityStatus =
   | 'CALCULATED_RESEARCH_ONLY'
   | 'PARTICIPATION_ABSENT_GT_2_ROUNDS'
@@ -135,10 +120,8 @@ function preparedForProjection(profile: ParticipationRatingPreparedProfile): Par
 }
 
 export function projectParticipationRatings(
-  profiles: ParticipationRatingPreparedProfile[],
-  selector: ParticipationRatingPolicySelector
+  profiles: ParticipationRatingPreparedProfile[]
 ): ParticipationRatingProjection[] {
-  const policy = PARTICIPATION_RATING_POLICIES[selector];
   const kernelRows = new Map(scoreParticipationPreparedProfiles(profiles.map(preparedForProjection)).map((row) => [row.profileKey, row]));
 
   return profiles.map((profile) => {
@@ -158,7 +141,7 @@ export function projectParticipationRatings(
     const negativeMass = nonHarmFamilies.reduce((sum, family) => sum + Math.max(-families[family], 0), 0);
     const positiveTerm = 10 * positiveMass;
     const negativeTerm = -softenNegativeParticipationMass(5 * negativeMass);
-    const harmTerm = policy.harmMultiplier * families.DIRECT_HARM;
+    const harmTerm = H2_PARTICIPATION_RATING_POLICY.harmMultiplier * families.DIRECT_HARM;
     const finalAttribution = {
       COMBAT: families.COMBAT >= 0 ? 10 * families.COMBAT : negativeMass > 0 ? negativeTerm * (-families.COMBAT / negativeMass) : 0,
       SUPPORT: families.SUPPORT >= 0 ? 10 * families.SUPPORT : negativeMass > 0 ? negativeTerm * (-families.SUPPORT / negativeMass) : 0,
@@ -244,13 +227,11 @@ export function selectParticipationAwards(
 }
 
 
-// Historical public names retained for source compatibility. Policy IDs and digests stay unchanged.
+// Historical domain names retained for source compatibility.
 export const P72_PARTICIPATION_SCORER_VERSION = PARTICIPATION_RATING_SCORER_VERSION;
-export const P72_POLICIES = PARTICIPATION_RATING_POLICIES;
 export const p72SoftNegative = softenNegativeParticipationMass;
 export const projectP72ParticipationRatings = projectParticipationRatings;
 export const selectP72Awards = selectParticipationAwards;
-export type P72PolicySelector = ParticipationRatingPolicySelector;
 export type P72AvailabilityStatus = ParticipationRatingAvailabilityStatus;
 export type P72ParticipationPreparedProfile = ParticipationRatingPreparedProfile;
 export type P72CalculatedProjection = CalculatedParticipationRating;

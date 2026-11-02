@@ -6,6 +6,9 @@ Branch: `refactor/codebase-quality`
 Audited refactor baseline (`HEAD`): `c321a870df496d719a21b42df5d72d91f981a739`  
 Main-line merge base: `14cb365a1f72ba03828e4e6255371ca56d1516a4`
 
+This report verifies the pre-H2-only P6 baseline. The later H1 retirement is
+documented separately in [ADR-011](../decisions.md).
+
 ## Verdict
 
 **P6 is accepted with limitations.** The refactored repository passes its

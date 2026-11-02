@@ -13,7 +13,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1
 Optional parameters:
 
 ~~~powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1 -ApiPort 3010 -RatingPolicy H1
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1 -ApiPort 3010
 ~~~
 
 The script combines `docker-compose.yml` and `docker-compose.local-dev.yml` under the fixed project `wrc-local-dev`. Before starting it verifies:

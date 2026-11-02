@@ -44,7 +44,7 @@ Clients branch on `error.code`, not on the localized/backend diagnostic message.
 
 Exact input validation and HTTP response annotations live with the capability controllers in `apps/api/src/modules`.
 
-The rating and explanation routes require `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1`. The backend chooses H2/H1 through `ACTIVE_RATING_POLICY`; a query-string policy selector is rejected with `INVALID_POLICY_SELECTOR`.
+The rating and explanation routes require `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1`. H2 is the only runtime policy; any query-string policy selector is rejected with `INVALID_POLICY_SELECTOR`.
 
 ## DTO and artifact versions
 

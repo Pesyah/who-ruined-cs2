@@ -10,7 +10,7 @@ The repository is an active prototype, not a public service. The parser, rating 
 - Normalizes players, roster-based teams, rounds and events without treating T/CT as stable team identity.
 - Computes availability-aware analytics: K/D/A, ADR, KAST, trades, openings, clutches, utility, economy and objective facts.
 - Publishes one immutable `match-result@1` artifact with a content checksum and a SQLite pointer.
-- Exposes the owner-selected H2 participation rating (H1 is the fallback policy), MVP/Who Ruined pools and per-player coverage.
+- Exposes the H2 participation rating, MVP/Who Ruined pools and per-player coverage.
 - Explains each rating through six families, typed evidence and transformations. The six final attributions plus the base value of 1 reconstruct the displayed score within `1e-12`.
 - Selects up to eight deterministic important moments per player: multikills and confirmed trades, including reliable fast-trade timing.
 - Builds a factual 2D replay from sampled positions, round events and map metadata. Missing map assets or replay data remain explicit unavailable/partial states.
@@ -18,7 +18,7 @@ The repository is an active prototype, not a public service. The parser, rating 
 
 ## Read the rating correctly
 
-H2 and H1 are deterministic, experimental projections. They are not calibrated skill ratings, win probabilities or evidence that a player caused a loss. H2 applies twice the direct-harm contribution; H1 applies it once. The remaining computation and the six-family kernel are shared.
+H2 is a deterministic, experimental projection. It is not a calibrated skill rating, win probability or evidence that a player caused a loss. H2 applies the frozen direct-harm multiplier of two; the remaining computation uses the six-family kernel.
 
 A value can be `null` when participation or required evidence is insufficient. Missing parser output is never converted to zero. A negative contribution, especially CONTEXT, can come from model centering or an aggregate transformation rather than a discrete mistake. Ordinary deaths are match facts, not tactical blame.
 
@@ -96,7 +96,6 @@ Copy `.env.example` only as a starting point. The important controls are:
 
 - `DATA_DIR` and `DATABASE_URL`: filesystem and SQLite roots; isolate both per worktree.
 - `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING`: enables rating and explanation reads.
-- `ACTIVE_RATING_POLICY`: `H2` or `H1`; selected by the owner, never by an HTTP query.
 - `RETAIN_SOURCE_DEMO`: defaults to false after verified canonical publication.
 - Upload, parser, artifact and replay size limits: bounded local resource controls.
 - Lease and heartbeat settings: worker ownership and recovery behavior.

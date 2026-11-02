@@ -24,14 +24,7 @@ export interface WorkerRuntimeConfig {
   maxResultCompressedBytes: number;
   maxResultJsonBytes: number;
   maxResultJsonDepth: number;
-  activeRatingPolicy: 'H2' | 'H1';
   retainSourceDemo: boolean;
-}
-
-function activePolicy(value: string | undefined): 'H2' | 'H1' {
-  const candidate = value?.trim() || 'H2';
-  if (candidate !== 'H2' && candidate !== 'H1') throw new Error('ACTIVE_RATING_POLICY must be H2 or H1');
-  return candidate;
 }
 
 function booleanFlag(name: string, value: string | undefined, fallback: boolean): boolean {
@@ -58,7 +51,6 @@ export function resolveWorkerRuntimeConfig(environment: NodeJS.ProcessEnv = proc
     maxResultCompressedBytes: positiveInteger('MAX_RESULT_COMPRESSED_BYTES', environment.MAX_RESULT_COMPRESSED_BYTES, 8 * 1024 * 1024, 256 * 1024 * 1024),
     maxResultJsonBytes: positiveInteger('MAX_RESULT_JSON_BYTES', environment.MAX_RESULT_JSON_BYTES, 64 * 1024 * 1024, 512 * 1024 * 1024),
     maxResultJsonDepth: positiveInteger('MAX_RESULT_JSON_DEPTH', environment.MAX_RESULT_JSON_DEPTH, 128, 512),
-    activeRatingPolicy: activePolicy(environment.ACTIVE_RATING_POLICY),
     retainSourceDemo: booleanFlag('RETAIN_SOURCE_DEMO', environment.RETAIN_SOURCE_DEMO, false)
   };
   if (config.heartbeatMs * 3 >= config.leaseMs) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveActiveRatingPolicy, resolveApiBindHost, resolveApiRuntimeConfig } from '../src/runtime-config.js';
+import { resolveApiBindHost, resolveApiRuntimeConfig } from '../src/runtime-config.js';
 
 describe('API bind host', () => {
   it('binds local-only by default', () => {
@@ -15,14 +15,6 @@ describe('API bind host', () => {
   });
 });
 
-describe('active rating policy', () => {
-  it('defaults to H2 and accepts only frozen owner policies', () => {
-    expect(resolveActiveRatingPolicy({})).toBe('H2');
-    expect(resolveActiveRatingPolicy({ ACTIVE_RATING_POLICY: 'H1' })).toBe('H1');
-    expect(() => resolveActiveRatingPolicy({ ACTIVE_RATING_POLICY: 'H3' })).toThrow('ACTIVE_RATING_POLICY');
-  });
-});
-
 describe('bounded API runtime configuration', () => {
   it('uses finite local defaults with measured canonical headroom', () => {
     const config = resolveApiRuntimeConfig({});
@@ -33,6 +25,7 @@ describe('bounded API runtime configuration', () => {
       maxResultJsonDepth: 128, maxConcurrentUploads: 2, maxQueuedJobs: 32
     });
     expect(config.corsOrigins).toEqual(new Set(['http://127.0.0.1:5173','http://localhost:5173']));
+    expect(config).not.toHaveProperty('activeRatingPolicy');
   });
 
   it.each([

@@ -6,7 +6,7 @@ import type {
   ClockPort,
   IdGeneratorPort,
 } from '../application/ports.js';
-import { resolveActiveRatingPolicy, resolveApiRuntimeConfig } from '../runtime-config.js';
+import { resolveApiRuntimeConfig } from '../runtime-config.js';
 
 @Injectable()
 export class RuntimeApiSettings implements ApiSettingsPort {
@@ -18,9 +18,6 @@ export class RuntimeApiSettings implements ApiSettingsPort {
     return process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING === '1';
   }
 
-  activeRatingPolicy(): 'H2' | 'H1' {
-    return resolveActiveRatingPolicy();
-  }
 }
 
 @Injectable()

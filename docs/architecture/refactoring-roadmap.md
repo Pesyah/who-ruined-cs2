@@ -5,6 +5,11 @@ Baseline and findings: [refactoring-audit.md](./refactoring-audit.md).
 Target boundaries: [target-architecture.md](./target-architecture.md).
 Final evidence: [final-quality-report.md](./final-quality-report.md).
 
+The roadmap froze H1/H2 behavior during P1–P6. The later owner decision to
+retire executable H1 is documented in [ADR-011](../decisions.md); historical
+H1 references below describe that refactoring baseline, not current runtime
+selection.
+
 ## Delivery principles
 
 1. Refactor by compatibility seam, not by mass move. A stage may contain several

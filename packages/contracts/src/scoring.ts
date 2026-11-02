@@ -5,6 +5,8 @@ import { idSchema as id, nullableCountSchema as nullableCount, nullableMetricSch
 import {
   activeParticipationRatingReportSchema,
   experimentalScenarioSchema,
+  persistedParticipationPolicyIdSchema,
+  persistedParticipationPolicySelectorSchema,
   participationSidecarSchema,
 } from './participation.js';
 
@@ -106,9 +108,9 @@ export const canonicalMatchResultSchema = z.object({
   schemaVersion: z.literal('match-result@1'),
   createdAt: z.string().datetime(),
   internal: z.object({
-    selectedPolicyId: z.enum(['P72B_D_P10_N5_K025_A015_H2','P72B_D_P10_N5_K025_A015_H1']),
+    selectedPolicyId: persistedParticipationPolicyIdSchema,
     selectedPolicyDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    selectedPolicySelector: z.enum(['H2','H1']),
+    selectedPolicySelector: persistedParticipationPolicySelectorSchema,
     sourceBindingDigest: z.string().regex(/^[a-f0-9]{64}$/),
     recomputeSeed: matchResultRecomputeSeedSchema
   }),

@@ -63,9 +63,3 @@ export function resolveApiRuntimeConfig(environment: NodeJS.ProcessEnv = process
     maxQueuedJobs: positiveInteger('MAX_QUEUED_JOBS', environment.MAX_QUEUED_JOBS, 32, 10_000)
   };
 }
-
-export function resolveActiveRatingPolicy(environment: NodeJS.ProcessEnv = process.env): 'H2' | 'H1' {
-  const value = environment.ACTIVE_RATING_POLICY?.trim() || 'H2';
-  if (value !== 'H2' && value !== 'H1') throw new Error('ACTIVE_RATING_POLICY must be H2 or H1');
-  return value;
-}

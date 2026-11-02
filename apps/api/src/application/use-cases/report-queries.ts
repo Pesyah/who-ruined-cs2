@@ -69,7 +69,7 @@ export class ReportQueries {
       analytics: stored.analytics,
     });
     const sidecar = await this.artifacts.readParticipationSidecar(artifact, databaseMatch.rawFilePath);
-    return buildActiveParticipationRating(artifact, sidecar, this.settings.activeRatingPolicy());
+    return buildActiveParticipationRating(artifact, sidecar);
   }
 
   async participationExplanation(id: string): Promise<ParticipationExplanationReport> {

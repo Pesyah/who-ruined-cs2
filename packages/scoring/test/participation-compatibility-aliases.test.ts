@@ -7,11 +7,9 @@ import {
   PARTICIPATION_FAMILY_POLICY,
   PARTICIPATION_FAMILY_POLICY_DIGEST,
   PARTICIPATION_MODEL_VERSION,
-  PARTICIPATION_RATING_POLICIES,
   PARTICIPATION_RATING_SCORER_VERSION,
   PARTICIPATION_REFERENCE_VERSION,
   P72_PARTICIPATION_SCORER_VERSION,
-  P72_POLICIES,
   projectP72ParticipationRatings,
   projectParticipationRatings,
   scoreC2S2PreparedProfile,
@@ -31,7 +29,6 @@ describe('participation scoring compatibility exports', () => {
     expect(scoreC2S2PreparedProfile).toBe(scoreParticipationPreparedProfile);
     expect(scoreC2S2PreparedProfiles).toBe(scoreParticipationPreparedProfiles);
     expect(P72_PARTICIPATION_SCORER_VERSION).toBe(PARTICIPATION_RATING_SCORER_VERSION);
-    expect(P72_POLICIES).toBe(PARTICIPATION_RATING_POLICIES);
     expect(projectP72ParticipationRatings).toBe(projectParticipationRatings);
     expect(selectP72Awards).toBe(selectParticipationAwards);
   });
