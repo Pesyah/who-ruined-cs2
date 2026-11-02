@@ -7,6 +7,7 @@ import { resolveWorkerRuntimeConfig } from './runtime-config.js';
 const args = new Set(process.argv.slice(2));
 const apply = args.has('--apply');
 const dryRun = args.has('--dry-run');
+const force = args.has('--force');
 if (apply === dryRun) throw new Error('Specify exactly one of --dry-run or --apply');
 const matchArg = [...args].find((arg) => arg.startsWith('--match='));
 const selectedMatchId = matchArg?.slice('--match='.length);
@@ -34,7 +35,7 @@ for (const match of matches) {
       maxPolicyDeltaError = Math.max(maxPolicyDeltaError, Math.abs((h2Player.rating.value - h1Player.rating.value) - h1Player.rating.rawFamilyInputs.DIRECT_HARM));
     }
     const next = config.activeRatingPolicy === 'H2' ? h2 : h1;
-    if (current.internal.selectedPolicyId === target.id && current.internal.selectedPolicyDigest === target.digest) {
+    if (!force && current.internal.selectedPolicyId === target.id && current.internal.selectedPolicyDigest === target.digest) {
       ready += 1; process.stdout.write(`${match.id}\tREADY\n`); continue;
     }
     if (!apply) { changed += 1; process.stdout.write(`${match.id}\tWOULD_REBUILD\n`); continue; }

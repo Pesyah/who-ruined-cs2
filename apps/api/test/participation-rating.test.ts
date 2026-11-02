@@ -76,6 +76,22 @@ function fixture(absentPlayerIndex: number | null = null) {
   return { match, analytics, artifact, sidecar };
 }
 
+function legacyUnknownHostageFixture() {
+  const data = fixture();
+  data.match.map = 'cs_synthetic';
+  const profiles = data.sidecar.profiles.map((profile) => ({
+    ...profile,
+    status: 'UNKNOWN_APPLICABILITY' as const,
+    reason: 'SCENARIO_UNKNOWN',
+    prepared: {
+      ...profile.prepared,
+      scenario: 'UNKNOWN' as const,
+      p4CPlus: { status: 'UNKNOWN_APPLICABILITY' as const, reason: 'SCENARIO_UNKNOWN' }
+    }
+  }));
+  return { ...data, sidecar: { ...data.sidecar, scenario: 'UNKNOWN' as const, profiles } };
+}
+
 function mockStored(data: ReturnType<typeof fixture>, sidecarOverride: unknown = data.sidecar, rawFilePath: string | null = 'uploads/synthetic.dem') {
   findUnique.mockResolvedValue({ id: data.match.matchId, normalizedFilePath: `cache/${data.match.matchId}.json.gz`, rawFilePath });
   readFile.mockImplementation(async (value) => gzipSync(Buffer.from(JSON.stringify(String(value).includes('c2s2-participation') ? sidecarOverride : data.artifact))));
@@ -154,6 +170,28 @@ describe('P7.2-F participation rating API', () => {
     expect(response.awards).toMatchObject({ eligiblePoolSize: 9, incompletePool: true, losingTeamId: 'team-b' });
     expect(response.awards.whoRuined.awardPoolSize).toBe(4);
     expect(response.players[7]).toMatchObject({ availability: { status: 'PARTICIPATION_ABSENT_GT_2_ROUNDS' }, rating: null, coverage: { absentFullRounds: 12 } });
+  });
+
+  it('rescues a stored UNKNOWN cs_ result as HOSTAGE while keeping OBJECTIVES at zero', () => {
+    const data = legacyUnknownHostageFixture();
+    const result = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    expect(result.activeRating.scenario).toBe('HOSTAGE');
+    expect(result.activeRating.applicability).toEqual({ status: 'SUPPORTED', reason: null });
+    expect(result.internal.recomputeSeed.scenario).toBe('HOSTAGE');
+    expect(result.activeRating.players).toHaveLength(10);
+    for (const player of result.activeRating.players) {
+      expect(player.availability).toEqual({ status: 'CALCULATED_RESEARCH_ONLY', reason: null });
+      expect(player.rating).not.toBeNull();
+      expect(player.rating!.rawFamilyInputs.OBJECTIVES).toBe(0);
+      expect(player.rating!.finalAttribution.OBJECTIVES).toBe(0);
+    }
+    const rebuilt = rebuildCanonicalMatchResult(result, 'H1');
+    expect(rebuilt.activeRating.players.every((player) => player.rating !== null)).toBe(true);
+    const explanation = buildParticipationExplanation(rebuilt);
+    for (const player of explanation.players) {
+      const objectives = player.rating?.families.find((family) => family.family === 'OBJECTIVES');
+      expect(objectives).toMatchObject({ rawInput: 0, finalAttribution: 0 });
+    }
   });
 
   it('builds a synthetic six-family explanation that exactly reconstructs H2 without invented event attribution', () => {

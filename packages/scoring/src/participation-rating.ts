@@ -108,16 +108,44 @@ function unavailable(
   };
 }
 
+function omitsOnlyUnknownObjectives(profile: ParticipationRatingPreparedProfile): boolean {
+  return profile.prepared.scenario === 'UNKNOWN'
+    && profile.status === 'UNKNOWN_APPLICABILITY'
+    && profile.reason === 'SCENARIO_UNKNOWN'
+    && profile.prepared.p4BPlus.status === 'CALCULATED_RESEARCH_ONLY'
+    && profile.prepared.p4CPlus.status === 'UNKNOWN_APPLICABILITY'
+    && profile.prepared.p4CPlus.reason === 'SCENARIO_UNKNOWN';
+}
+
+function preparedForProjection(profile: ParticipationRatingPreparedProfile): ParticipationPreparedProfile {
+  if (profile.prepared.scenario !== 'UNKNOWN'
+    || profile.prepared.p4CPlus.status !== 'UNKNOWN_APPLICABILITY'
+    || profile.prepared.p4CPlus.reason !== 'SCENARIO_UNKNOWN'
+    || profile.prepared.p4BPlus.status !== 'CALCULATED_RESEARCH_ONLY') {
+    return profile.prepared;
+  }
+  return {
+    ...profile.prepared,
+    p4CPlus: {
+      ...profile.prepared.p4BPlus,
+      reason: null,
+      objectiveSignals: {}
+    }
+  };
+}
+
 export function projectParticipationRatings(
   profiles: ParticipationRatingPreparedProfile[],
   selector: ParticipationRatingPolicySelector
 ): ParticipationRatingProjection[] {
   const policy = PARTICIPATION_RATING_POLICIES[selector];
-  const kernelRows = new Map(scoreParticipationPreparedProfiles(profiles.map((profile) => profile.prepared)).map((row) => [row.profileKey, row]));
+  const kernelRows = new Map(scoreParticipationPreparedProfiles(profiles.map(preparedForProjection)).map((row) => [row.profileKey, row]));
 
   return profiles.map((profile) => {
     const kernel = kernelRows.get(profile.profileKey) ?? null;
-    if (profile.status !== 'ELIGIBLE') return unavailable(profile, profile.status, profile.reason, kernel);
+    if (profile.status !== 'ELIGIBLE' && !omitsOnlyUnknownObjectives(profile)) {
+      return unavailable(profile, profile.status, profile.reason, kernel);
+    }
     if (!kernel || kernel.status !== 'CALCULATED_RESEARCH_ONLY') {
       const status = kernel?.status === 'UNKNOWN_APPLICABILITY'
         ? 'UNKNOWN_APPLICABILITY'

@@ -73,6 +73,22 @@ describe('P7.2 frozen participation rating projection', () => {
     expect(row).toMatchObject({ status: 'PARTICIPATION_ABSENT_GT_2_ROUNDS', rating: null, finalAttribution: null });
   });
 
+  it('keeps legacy UNKNOWN results calculable by omitting only the objective family', () => {
+    const legacy = profile(3);
+    legacy.status = 'UNKNOWN_APPLICABILITY';
+    legacy.reason = 'SCENARIO_UNKNOWN';
+    legacy.prepared.scenario = 'UNKNOWN';
+    legacy.prepared.p4CPlus = { status: 'UNKNOWN_APPLICABILITY', reason: 'SCENARIO_UNKNOWN' };
+    const [row] = projectP72ParticipationRatings([legacy], 'H2');
+    expect(row?.status).toBe('CALCULATED_RESEARCH_ONLY');
+    if (!row || row.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('unexpected status');
+    expect(row.rawFamilyInputs.OBJECTIVES).toBe(0);
+    expect(row.finalAttribution.OBJECTIVES).toBe(0);
+    expect(row.rawFamilyInputs.COMBAT).toBe(0.04);
+    expect(row.rawFamilyInputs.DIRECT_HARM).toBe(-0.03);
+    expect(Math.abs(row.rating - (1 + Object.values(row.finalAttribution).reduce((sum, value) => sum + value, 0)))).toBeLessThanOrEqual(1e-12);
+  });
+
   it('selects awards from nine calculated players and limits Who Ruined to the losing pool', () => {
     const input = Array.from({ length: 10 }, (_, index) => profile(index, index === 7 ? 'PARTICIPATION_ABSENT_GT_2_ROUNDS' : 'ELIGIBLE'));
     const rows = projectP72ParticipationRatings(input, 'H2');

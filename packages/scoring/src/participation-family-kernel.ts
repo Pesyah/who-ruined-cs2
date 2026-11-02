@@ -10,6 +10,13 @@ export type ParticipationKernelStatus = 'CALCULATED_RESEARCH_ONLY' | 'WITHHELD_R
 export type ParticipationFamily = 'COMBAT' | 'SUPPORT' | 'DEATH_RELATED' | 'DIRECT_HARM' | 'CONTEXT' | 'OBJECTIVES';
 export type ParticipationPhysicalFamily = Exclude<ParticipationFamily, 'CONTEXT' | 'OBJECTIVES'>;
 
+export function participationScenarioForMap(mapName: string | null): Exclude<ParticipationScenario, 'UNKNOWN'> | null {
+  const normalized = (mapName ?? '').trim().toLowerCase().split(/[\\/]/).at(-1) ?? '';
+  if (normalized.startsWith('de_')) return 'BOMB';
+  if (normalized.startsWith('cs_')) return 'HOSTAGE';
+  return null;
+}
+
 export type ParticipationEpisodeContribution = {
   anchorId: string;
   chosenAxis: string;
@@ -248,7 +255,9 @@ function objectiveSignals(profile: ParticipationPreparedProfile): Record<string,
   if (!signals) throw new Error('C2S2_OBJECTIVE_SIGNALS_UNAVAILABLE');
   const expected = profile.scenario === 'BOMB'
     ? ['objective:plants', 'objective:defuses']
-    : ['objective:hostageRescues', 'objective:hostageHurts'];
+    : profile.scenario === 'HOSTAGE'
+      ? ['objective:hostageRescues', 'objective:hostageHurts']
+      : [];
   const actual = Object.keys(signals).sort();
   if (actual.join('|') !== [...expected].sort().join('|')) throw new Error(`C2S2_OBJECTIVE_SIGNAL_SET_MISMATCH:${profile.scenario}`);
   return signals;
@@ -265,7 +274,6 @@ export function scoreParticipationPreparedProfile(profile: ParticipationPrepared
       objectives: null, directHarmRoundAllocation: null
     };
   }
-  if (profile.scenario === 'UNKNOWN') throw new Error('C2S2_UNKNOWN_SCENARIO_MUST_NOT_BE_CALCULATED');
   if (profile.p4BPlus.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('C2S2_CONTEXT_SOURCE_UNAVAILABLE');
   const episodes = profile.p4BPlus.episodeContributions ?? [];
   const families = calculatedFamilies(source);
