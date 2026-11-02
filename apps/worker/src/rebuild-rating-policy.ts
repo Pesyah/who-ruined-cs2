@@ -1,17 +1,18 @@
 import path from 'node:path';
 import { prisma, ACTIVE_JOB_STAGES } from '@who-ruined/database';
-import { P72_POLICIES, rebuildCanonicalMatchResult } from '@who-ruined/scoring';
+import { PARTICIPATION_RATING_POLICIES, rebuildCanonicalMatchResult } from '@who-ruined/scoring';
 import { publishCanonicalMatchResult, readCanonicalMatchResult, removeOwnedResult } from './match-result-storage.js';
 import { resolveWorkerRuntimeConfig } from './runtime-config.js';
 
 const args = new Set(process.argv.slice(2));
 const apply = args.has('--apply');
 const dryRun = args.has('--dry-run');
+const force = args.has('--force');
 if (apply === dryRun) throw new Error('Specify exactly one of --dry-run or --apply');
 const matchArg = [...args].find((arg) => arg.startsWith('--match='));
 const selectedMatchId = matchArg?.slice('--match='.length);
 const config = resolveWorkerRuntimeConfig();
-const target = P72_POLICIES[config.activeRatingPolicy];
+const target = PARTICIPATION_RATING_POLICIES[config.activeRatingPolicy];
 const dataRoot = path.resolve(process.env.DATA_DIR ?? path.resolve(process.cwd(), 'data'));
 const matches = await prisma.match.findMany({
   where: { resultFilePath: { not: null }, ...(selectedMatchId ? { id: selectedMatchId } : {}) },
@@ -34,7 +35,7 @@ for (const match of matches) {
       maxPolicyDeltaError = Math.max(maxPolicyDeltaError, Math.abs((h2Player.rating.value - h1Player.rating.value) - h1Player.rating.rawFamilyInputs.DIRECT_HARM));
     }
     const next = config.activeRatingPolicy === 'H2' ? h2 : h1;
-    if (current.internal.selectedPolicyId === target.id && current.internal.selectedPolicyDigest === target.digest) {
+    if (!force && current.internal.selectedPolicyId === target.id && current.internal.selectedPolicyDigest === target.digest) {
       ready += 1; process.stdout.write(`${match.id}\tREADY\n`); continue;
     }
     if (!apply) { changed += 1; process.stdout.write(`${match.id}\tWOULD_REBUILD\n`); continue; }

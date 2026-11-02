@@ -1,5 +1,7 @@
 # M3-B anonymous real-demo comparison
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 Run: `pnpm score:demos "F:\CS2 Demos"` on 2026-10-17. All 9 discovered
 Source 2 demos parsed and scored; failures 0. IDs below are SHA-256 prefixes and
 per-match anonymous player aliases. This is internal sensitivity analysis, not

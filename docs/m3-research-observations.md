@@ -1,5 +1,7 @@
 # M3-B research observations
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 These are anonymous observations from the 9-demo internal batch. They are not
 labels of intent, causality or player quality. Ticks and event IDs are retained
 only as reproducible anchors; private paths, names and Steam IDs are absent.

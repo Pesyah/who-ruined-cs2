@@ -1,52 +1,126 @@
-# Backend map
+# Current architecture map
 
-This is the shortest path through the local backend. Historical research names
-remain inside frozen schema/version strings where compatibility requires them;
-active source filenames describe their current responsibility.
+**Status:** canonical architecture reference after refactoring stages P0-P5. For design rationale and remaining P6 work, see [the roadmap](architecture/refactoring-roadmap.md). `SPEC.md` is normative for domain semantics.
 
-## Components
+## Boundary rules
 
-| Area | Primary location | Responsibility |
+1. Native parser output ends in `@who-ruined/parser-adapter`.
+2. `@who-ruined/match-domain` receives a parser-neutral `NormalizationInput`; it never imports demoparser2 rows or aliases.
+3. `@who-ruined/features` computes factual, availability-aware analytics only.
+4. `@who-ruined/scoring` owns rating/report arithmetic and cannot be moved into API or UI.
+5. `@who-ruined/artifacts` owns bounded validation and immutable filesystem publication.
+6. API and worker depend on database ports/repositories, not ad hoc Prisma access in domain code.
+7. Frontend feature modules consume versioned DTOs and render `null`/availability; they do not reproduce backend formulas.
+8. A stable team is roster-based. T/CT is a per-round side, never a team identifier.
+
+The repository enforces package/app direction through `npm.cmd run architecture:check`.
+
+## Applications
+
+### `apps/api`
+
+The Nest application is organized by capability:
+
+- `modules/health`: health route.
+- `modules/matches`: upload, match list/detail, rounds, analytics, job status, deletion and rescore.
+- `modules/reports`: legacy report, active rating and rating explanation reads.
+- `modules/replay`: replay index and round reads.
+- `application/use-cases`: orchestration independent of Nest decorators.
+- `application/ports.ts`: storage/system boundaries used by use cases.
+- `infrastructure`: Prisma/file-backed adapters and runtime services.
+- `http`: public error mapping and request concerns.
+
+Controllers validate transport input and delegate. They do not parse demos or calculate ratings. Root `health.controller.ts` and `matches.controller.ts` are source-compatibility barrels used by existing tests; new code imports capability modules directly.
+
+### `apps/worker`
+
+The worker owns background state transitions and artifact production:
+
+- `runner/worker-runner.ts`: polling, lease acquisition, heartbeat and loop ownership.
+- `job-lifecycle.ts`: stage transitions and fenced completion/failure.
+- `parser-supervisor.ts` and `parser-child.ts`: isolated native parser process, timeout and artifact boundary.
+- `parse-pipeline.ts`: normalization, features, reports, participation, replay and canonical result assembly.
+- `rescore-pipeline.ts`: compatible report rebuild from stored `match-result@1`.
+- `replay-artifact.ts`: replay DTO construction/publication.
+- `reconcile.ts`: startup cleanup and crash-window recovery.
+- `runner/worker-dependencies.ts`: composition of repositories, clock, filesystem and pipeline dependencies.
+
+The worker owns full demo parsing and is the only process that requests event/tick snapshots. API ingestion uses a narrow infrastructure adapter for Source 2 preflight/header validation before it queues work; controllers and application use cases do not see native rows.
+
+### `apps/web`
+
+The React application uses an app shell plus capability modules. See [frontend architecture](frontend.md).
+
+## Shared packages
+
+| Package | Owns | Does not own |
 | --- | --- | --- |
-| HTTP API | `apps/api/src/matches.controller.ts`, `matches.service.ts` | Upload, jobs, match/M2/report reads, RESCORE and the opt-in participation-rating endpoint. |
-| API storage guard | `apps/api/src/match-result-storage.ts` | Bounded, checksum-verified reads of the canonical result bound to SQLite. |
-| Worker lifecycle | `apps/worker/src/main.ts`, `process-job.ts`, `reconcile.ts` | Lease-owned jobs, recovery, parse/normalize/score orchestration and cleanup. |
-| Native parser boundary | `apps/worker/src/parser-{boundary,supervisor,child}.ts` | Owned subprocess, hard timeout and bounded parser artifact handoff. |
-| Normalized domain | `packages/match-domain/src/` | Stable roster-team identities, validated rounds and normalized events. |
-| Factual analytics | `packages/features/src/` | Availability-aware M2 metrics; no rating or tactical blame. |
-| Participation inputs | `apps/worker/src/prepared-participation-input.ts`, `participation-sidecar.ts` | Build six-family inputs and participation evidence while raw demo facts are available; legacy sidecar support remains for migration. |
-| Participation scoring | `packages/scoring/src/participation-family-kernel.ts`, `participation-rating.ts` | Shared six-family kernel and frozen owner-selected H2/H1 projection. |
-| Canonical result | `packages/scoring/src/active-match-result.ts`, `apps/worker/src/match-result-storage.ts` | Create/rebuild and atomically publish one `match-result@1` gzip artifact. |
-| SQLite accounting | `packages/database/src/`, `prisma/schema.prisma` | Match/job ownership, leases, deduplication and canonical-result pointers. |
+| `@who-ruined/contracts` | Zod DTOs, schema versions, public error codes | persistence or UI view models |
+| `@who-ruined/parser-adapter` | native calls, aliases, decoding, replay sampling, participation evidence | roster/domain decisions |
+| `@who-ruined/match-domain` | normalization, stable IDs, team/round/event model | native parser API |
+| `@who-ruined/features` | deterministic M2 facts and availability | ranking or blame labels |
+| `@who-ruined/scoring` | legacy report builders, participation kernel/projection, explanation, important moments | transport or persistence |
+| `@who-ruined/artifacts` | safe paths, gzip bounds, schema/binding checks, immutable publish | job policy |
+| `@who-ruined/database` | Prisma client, repositories, lease/fencing transactions | business arithmetic |
+| `@who-ruined/validation` | validation/comparison CLIs and golden-test adapters | production request handling |
+| `@who-ruined/testkit` | explicitly synthetic factories and test fixtures | runtime data |
 
-## Data flow
+## Ingestion and publication flow
 
-```text
-.dem upload
-  → SQLite match + queued PARSE job
-  → owned parser child with hard timeout
-  → normalized roster teams, rounds and events
-  → factual M2 analytics + production report
-  → prepared participation inputs + one owner-selected H2/H1 rating
-  → atomically published match-result@1.json.gz
-  → SQLite result binding
-  → versioned HTTP match / analytics / report / participation responses
-```
+~~~text
+POST .dem
+  -> API streams a bounded multipart part to uploads/<match>/<sha>.dem
+  -> API transaction creates match + queued PARSE job
+  -> worker claims job with lease token
+  -> parser child writes bounded provisional snapshots
+  -> parser-adapter decodes rows into NormalizationInput
+  -> match-domain normalizes roster teams, rounds and events
+  -> features computes factual analytics with availability
+  -> scoring builds legacy reports + active H2/H1 result
+  -> replay builder publishes index + round artifacts when evidence is available
+  -> artifact store publishes match-result@1 immutably
+  -> database transaction binds result path/SHA and terminal job state
+  -> source demo is removed only after binding is verified and policy permits
+~~~
 
-The worker removes a source demo only after publication and SQLite binding are
-verified, unless explicit debug retention is enabled. HTTP reads never reparse
-or silently rebuild a result.
+Filesystem and SQLite cannot share a transaction. Publication therefore uses immutable content, SHA-256 binding, lease fencing, intent state and startup reconciliation. The exact ordering is in [storage lifecycle](storage-lifecycle.md).
 
-## Owner policy and stable boundaries
+## Read flow
 
-- `ACTIVE_RATING_POLICY=H2` is the primary owner policy; `H1` is the permanent
-  fallback. `rating:rebuild` switches from the retained recompute seed without
-  a demo. HTTP policy selectors remain forbidden.
-- Do not rename or reinterpret H2/H1 IDs and digests, schema/version strings,
-  `match-result@1`, database columns/statuses, HTTP URLs, DTO fields, error
-  codes or runtime environment variables as a readability cleanup.
-- Stable teams are roster-derived, never inferred from T/CT. Missing parser
-  values remain unavailable/null. Ordinary deaths are facts, not blame.
+~~~text
+HTTP route
+  -> application use case
+  -> match repository + artifact reader
+  -> bounded decompression + checksum/schema/binding validation
+  -> versioned DTO projection
+  -> public error mapper
+~~~
 
-API details are in `docs/api-participation-rating.md`; storage and lifecycle
-details are in `docs/m4.3-compact-result-and-lifecycle.md`.
+The active rating and explanation use the rating already stored inside `match-result@1`. The API never reads `.dem` for GET requests and never exposes the internal recompute seed or policy digest.
+
+Replay reads validate the replay index first, then the requested round and its binding. A missing/corrupt replay has typed errors and does not invalidate the canonical match result.
+
+## Rescore and rating rebuild flows
+
+`POST /api/v1/matches/:id/rescore` creates a `RESCORE` job for a requested compatible scoring report. The worker reads the normalized artifact embedded in `match-result@1`, recomputes that report, publishes a new immutable result and swaps the database pointer. It does not need the original `.dem`.
+
+The owner-only `rating:rebuild` command is the separate H2/H1 policy path. It reconstructs prepared input from the private recompute seed, calls the same active rating builder used by new parses, then conditionally replaces the canonical result. Legacy artifacts without sufficient stored input fail instead of inventing evidence.
+
+## Dependency direction
+
+~~~text
+worker -> parser-adapter -> match-domain -> features -> scoring
+api    -> application ports -> database / artifacts / scoring adapters
+api ingestion infrastructure -> parser-adapter (header validation only)
+worker -> database + artifacts
+web    -> contracts + HTTP DTOs
+all versioned boundaries -> contracts
+~~~
+
+More precisely, domain packages may depend on contracts and lower-level pure packages, but they do not import application code. API and worker are composition roots. The web application cannot import parser, database, feature or scoring implementations.
+
+## Runtime topology
+
+The supported local topology is one API process, one or more lease-coordinated worker processes, one Vite/static web process, one SQLite database and one shared data root. Defaults bind HTTP services to loopback.
+
+This is a trusted-owner architecture. Authentication, tenant isolation, cross-process admission control and public object storage are not implemented; see [limitations](limitations.md).

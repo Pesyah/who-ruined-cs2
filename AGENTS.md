@@ -1,118 +1,79 @@
 # Repository instructions
 
-- `SPEC.md` supplied by the user is normative.
-- Keep parser, normalized domain, features, scoring, reports, API and UI boundaries separate.
-- Never infer a stable team from `T`/`CT`; team IDs are roster-based.
-- Missing parser values stay unavailable/null. Never invent parser output or claim real-demo validation from synthetic fixtures.
-- Ordinary deaths are facts, not tactical blame.
-- Run `pnpm lint && pnpm typecheck && pnpm test && pnpm build` at each milestone gate.
+- `SPEC.md` is normative. Current documentation starts at `docs/README.md`.
+- Keep native parser, parser adapter, normalized domain, factual features, scoring, artifacts/database, API and UI as separate boundaries.
+- Never infer stable team identity from T/CT; team IDs are roster-based and side is round-specific.
+- Missing parser values stay `null`/unavailable. Never invent evidence, convert unknown to zero or call a synthetic fixture real-demo validation.
+- Ordinary deaths are facts, not tactical blame. H2/H1 is experimental, uncalibrated and non-causal.
+- Do not run real `.dem`, golden real-demo tests, Docker, owner SQLite/data or mass archives without explicit owner permission.
 
-## Responsibility split
+## Architecture
 
-- Backend/M2 work owns parser capability mapping, normalized domain events,
-  deterministic feature computation, persistence artifacts, API contracts,
-  OpenAPI annotations, backend tests and factual documentation.
-- Frontend work owns React components, visual design, CSS and interaction
-  details. Backend changes must provide versioned DTOs and anonymized fixtures
-  so frontend work does not depend on private demos.
-- Do not mix M3 scoring, ranking or blame labels into M2 feature code. M2 emits
-  factual, availability-aware analytics only.
+- `packages/parser-adapter` owns demoparser2 calls, aliases and decoding. `packages/match-domain` accepts parser-neutral `NormalizationInput` and must not import the adapter.
+- `packages/features` emits deterministic factual analytics only. Scoring/ranking/blame labels belong to `packages/scoring`.
+- `packages/artifacts` owns bounded reads, binding/integrity checks and immutable publication. `packages/database` owns Prisma repositories and lease/fencing transactions.
+- API controllers validate transport and delegate to application use cases. Use cases orchestrate; domain functions compute; infrastructure performs I/O. Do not put formulas in controllers/repositories or Prisma/filesystem/environment access in pure calculations.
+- The worker owns parsing, normalization/features/scoring/replay pipelines, leases, publication and recovery. API GETs read stored artifacts and must not reopen demos.
+- Frontend `apps/web` renders versioned DTOs. It must not import parser/database/features/scoring implementations or reproduce backend formulas.
 
-## Frontend и переводы
+## Design and compatibility rules
 
-- Frontend: `apps/web`. Не переносить парсер, расчёт признаков или оценок в UI.
-- Все пользовательские тексты, включая ошибки, aria-label и пустые состояния,
-  проходят через `react-i18next`. Не переводить ники, SteamID, имена карт и
-  исходные диагностические сообщения backend; последние явно подписывать.
-- WRC Locale Kit: английский источник, namespace JSON,
-  статическое извлечение, синхронизация задач переводчику и проверка длины.
-  Runtime адаптирован к Vite/React Router; Next.js, WSL и внешние сервисы не нужны.
-- Модуль: `apps/web/src/shared/i18n`; локали:
-  `locales/<language>/<namespace>.json`.
-- `locale-catalog.ts` — 37 поддерживаемых языков, самоназвания, направление
-  письма и идентификатор модуля `wrc.locale-kit`. `settings.ts` — английский fallback, общий namespace
-  `translation`. Страницы используют `home`, `job`, `match`, `player`,
-  `about`; режим примеров — `preview`. Namespace загружаются по требованию.
-- `components/LanguageSwitcher.tsx` — поиск по самоназванию, названию через
-  `Intl.DisplayNames` и коду; значки показывают код языка. Esc закрывает меню
-  и возвращает фокус на кнопку. Не терять управление стрелками/Enter и RTL.
-- `client.ts` хранит только URL JSON-ресурсов в сборке; содержимое загружается
-  по требованию. `prepareLanguage` готовит используемые namespace перед сменой
-  языка и позволяет повторить запрос после ошибки, сохраняя рабочий язык.
-- Использовать `useTranslation('match')` и статические вызовы
-  `t('round-label', 'Round {{round}}', { round: ordinal })`.
-  Ключи и namespace — литералы. Нельзя шаблонные ключи вида ``t(`prefix-${code}`)``,
-  конкатенацию ключей или пользовательские строки как ключ.
-  Для enum — switch со статическим `t()` в каждой ветке.
-- Общие сообщения вынесены в `shared/messages.ts`. Ошибки API переводятся
-  по машинному коду, неизвестный код получает общее сообщение.
-- Английский defaultValue в коде — источник текста для экстрактора.
-  При изменении текста не править только английский JSON: следующий gettext
-  восстановит значение из кода.
-- Даты и числа форматировать через `Intl` с текущей локалью. Для количества
-  использовать `count` и i18next CLDR-формы, а не ручные условия для русского.
-  Не склеивать предложения из переведённых фрагментов.
+- Prefer an existing module and public entry point. Add a module/package only for a distinct responsibility, not to bypass an inconvenient API.
+- New internal names describe domain roles. Do not introduce historical M3/M3C8/P72/C2S2 names except immutable schema/version IDs, policy IDs/digests and documented compatibility adapters.
+- Use classes for stateful lifecycles/external dependencies; use pure functions for formulas, normalization and deterministic transformations. Do not add interfaces/abstract bases without a real substitution or lifecycle boundary.
+- One module has one main reason to change. Keep side effects at composition roots and inject parser, repository, artifact store, clock or ID boundaries when replacement/testing is real.
+- DRY applies to one domain policy/protocol. Do not merge semantically different code into generic managers. Duplicated formulas and magic fallbacks are forbidden.
+- Endpoint, DTO, error code, serialized enum, schema/version ID, policy ID/digest, artifact path/binding and database semantics are external contracts. Changing one requires an explicit version/compatibility plan and contract fixtures.
+- A compatibility adapter must state owner, reason and removal condition. Internal rename must not change serialized values.
+- Preserve typed failures. Unknown errors are safely logged and mapped once without returning stack traces, private paths or raw parser data.
+- Keep changes minimal and behaviorally scoped. Do not combine file moves, public renames and behavior changes without necessity.
 
-### Команды в Windows (PowerShell / cmd)
+## Checks by risk
 
-Первичная установка: `npm.cmd run setup:windows`. Скрипт использует закреплённый
-Corepack/pnpm, создаёт launcher только в `node_modules/.bin` и не меняет PATH
-системы. Затем можно вызывать команды через `npm.cmd run`, даже если `pnpm`
-отсутствует в PATH. Эквивалент для существующего pnpm: `pnpm <script>`.
+Use the smallest evidence set covering the changed package, its direct consumers and touched compatibility contract.
 
-В Windows используем именно `npm.cmd`: установленный npm.ps1 может терять
-разделитель `--` и именованные аргументы. На Linux/macOS — обычный `npm`.
+- Documentation: validate Markdown links, commands, actual paths/scripts/endpoints, contradictions and `git diff`. Do not run code gates unless documentation changes a verified workflow or reveals a concrete risk.
+- One package: its lint/typecheck/relevant tests, then only direct consumers. Filter Turbo with `npm.cmd run test:packages -- --filter=<package>`.
+- Shared contracts, database, parser, scoring, worker or artifact lifecycle: check the changed package, immediate consumers and exact version/compatibility fixtures.
+- Frontend: relevant Vitest/typecheck; add `i18n:check` for user strings/keys/locales and `design:contrast` for colors/tokens. Layout/interaction changes require representative narrow/wide, RTL, keyboard and `prefers-reduced-motion` checks.
+- Persisted DTO/artifact changes require old/new fixtures and a migration/version plan.
+- Full repository `lint/typecheck/test/build` is the P6 gate. Extra cross-repository checks before P6 require an observed regression or specific cross-layer risk.
+- Root `npm.cmd run test` includes the external real-demo golden suite; never run it without permission.
 
-1. `npm.cmd run gettext` — извлечь статические ключи и обновить EN.
-2. `npm.cmd run i18n:sync` — обновить структуру целевых локалей и
-   `translation-tasks.json`. Новые значения пустые; существующие сохраняются.
-3. Перевести задачи по `apps/web/src/shared/i18n/prompt.md`.
-4. `npm.cmd run i18n:sync` повторно — обновить состояние задач.
-5. `npm.cmd run i18n:check` — проверить извлечение, полноту, устаревшие строки,
-   плейсхолдеры и теги. Проверка ничего не записывает.
-6. `npm.cmd run i18n:compact` — собрать кандидатов на сокращение; затем проверить
-   реальный UI, не сокращать текст автоматически по числу символов.
+## Frontend structure
 
-Выборочная работа: `npm.cmd run i18n:sync -- --langs=ru --files=match,player`.
-Просмотр без записи: `npm.cmd run i18n:sync -- --dry-run`.
-Сокращение: `npm.cmd run i18n:compact -- --langs=ru --files=home --ratio=1.5`.
+- Active imports use `app/`, `features/`, `entities/` and `shared/`. Old root `components/`, `hooks/`, `analytics/`, `replay/`, `api.ts`, `player.ts` and `shared/upload.ts` are compatibility paths only; do not add consumers.
+- Server DTOs come from `@who-ruined/contracts`. View adapters preserve match/player/team IDs, `null`, availability and partial coverage.
+- API errors map by machine code in `shared/messages.ts`; unknown codes get a generic localized message while raw backend diagnostics remain explicitly labeled.
+- Upload percentage comes only from XHR. Processing uses real job stages, never invented percentage or ETA. Refresh errors do not hide already received data.
+- Rating, explanation, important moments and replay come only from their versioned backend DTOs. No fallback to legacy ratings and no invented events/positions.
+- Synthetic preview routes are development/demo-build fixtures and must remain labeled synthetic.
+- Current frontend details: `docs/frontend.md`. Native Vite default is `http://localhost:5174`; Docker web is 5173.
 
-Изменённый английский текст оставляет старый перевод и задачу на проверку.
-Задача не исчезает от повторных sync. Если перевод после ручной проверки
-действительно остаётся прежним:
-`npm.cmd run i18n:sync -- --langs=ru --files=match --acknowledge`.
-Это подтверждает все текущие переводы выбранных файлов/языков; применять только
-после их проверки, не как способ заставить проверку пройти.
+## Localization
 
-Новый язык: добавить код, самоназвание и направление в `locale-catalog.ts`, запустить sync,
-заполнить созданные JSON, повторить sync/check и проверить UI, числа, даты,
-множественное число и направление письма. Незаполненный язык не выпускать.
-Состояние `.translation-state.json` и `translation-tasks.json` хранить рядом
-с локалями в репозитории. Синхронизация и сокращение работают локально,
-без отправки текстов внешним сервисам.
+- Every user-facing string, error, aria label and empty state uses `react-i18next`. Do not translate nicknames, SteamIDs, map names or raw backend diagnostics.
+- WRC Locale Kit lives at `apps/web/src/shared/i18n`. It has 37 supported locales in `locale-catalog.ts`, English fallback and namespaces `translation`, `home`, `job`, `match`, `player`, `about`, `preview`.
+- Current switcher path is `shared/i18n/LanguageSwitcher.tsx`; shared states are in `shared/ui`. Preserve keyboard navigation, focus return, RTL and browser-language detection/manual preference behavior.
+- Use literal namespaces/keys and English `defaultValue` in code, for example `t('round-label', 'Round {{round}}', { round: ordinal })`. No dynamic/concatenated/user-provided keys.
+- Use `Intl` with the active locale and i18next CLDR `count` forms. Do not assemble translated sentences from fragments.
+- Runtime bundles locale URLs and loads JSON on demand. A failed language load must be retryable without losing the working language.
 
-### Проверки frontend
+Localization workflow on Windows:
 
-- `npm.cmd run dev:web`: UI `http://localhost:5173`, остановка Ctrl+C.
-- Отдельные frontend-спеки в текущий набор изменений не входят.
-  Для локализации запускать `npm.cmd run i18n:check` и проверять страницы в браузере,
-  включая сохранение языка, формы количества, длинные подписи и арабский RTL.
-- `/preview/available`, `/preview/low-confidence`,
-  `/preview/insufficient-data`, `/preview/m1`, `/preview/partial`
-  доступны только на dev-сервере. Синтетика всегда подписана и не подменяет API.
-- `/preview/states?view=match-loading` — галерея загрузок, ошибок, обработки,
-  пустых состояний и отсутствия сети. Она не делает запросов к API.
-- Общие скелетоны — `components/Skeleton.tsx`, иллюстрация состояний —
-  `SignalIllustration.tsx`. Анимации должны учитывать `prefers-reduced-motion`;
-  загрузка и ошибка обновления не должны скрывать уже полученные данные.
-- Процент передачи файла берётся только из событий XHR. Отмена останавливает
-  локальную передачу, а не серверную задачу. Этапы обработки не изображать
-  выдуманными процентами или временем до завершения.
-- Не принимать UI fixtures за проверку реальных демо. `analytics/types.ts` —
-  модель представления, а не контракт сервера. Реальный M2 DTO берётся из
-  `@who-ruined/contracts` через `hooks/useAnalytics.ts` и `analytics/adapter.ts`.
-  Адаптер проверяет matchId, playerId и roster teamId, сохраняет null и availability;
-  HE/fire отображаются отдельно, без вычисления суммарных метрик в UI.
-  HTTP 409 у старого отчёта сохраняет базовые данные и предлагает новую загрузку.
-  M3 не реализован: рейтинги, тактические выводы и вклад по раундам не выдумывать.
-- Подробности запуска и интеграции: `docs/frontend.md`.
+~~~text
+npm.cmd run gettext
+npm.cmd run i18n:sync
+# translate apps/web/src/shared/i18n/translation-tasks.json using prompt.md
+npm.cmd run i18n:sync
+npm.cmd run i18n:check
+~~~
+
+`--acknowledge` is allowed only after a human verifies unchanged translations; never use it to force a pass. Do not use external translation services or add dependencies.
+
+## Local development
+
+- Windows setup: `npm.cmd run setup:windows`; use `npm.cmd`, not `npm.ps1`.
+- Each worktree uses a unique `DATA_DIR`, `DATABASE_URL` and ports. Never attach a refactor process to owner data.
+- Recommended isolated run: `scripts/dev-up.ps1`; full instructions and runtime variables are in `docs/development.md`.
+- Do not stage, commit, push, merge, reset, clean, checkout branches or modify another worktree unless the owner explicitly requests it.

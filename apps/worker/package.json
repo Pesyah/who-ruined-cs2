@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@who-ruined/artifacts": "workspace:*",
     "@who-ruined/contracts": "workspace:*",
     "@who-ruined/database": "workspace:*",
     "@who-ruined/features": "workspace:*",

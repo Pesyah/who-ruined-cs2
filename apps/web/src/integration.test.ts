@@ -5,11 +5,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
-import { ApiClientError, getActiveParticipationRating, getScoringReport } from './api.js';
-import { presentEvidenceReport, presentParticipationRating } from './analytics/adapter.js';
-import { Scoreboard } from './components/Scoreboard.js';
+import { ApiClientError } from './shared/api/transport.js';
+import { getScoringReport } from './features/match-report/api.js';
+import { getActiveParticipationRating } from './features/participation-rating/api.js';
+import { presentEvidenceReport } from './features/rating-explanation/model.js';
+import { presentParticipationRating } from './features/participation-rating/model.js';
+import { Scoreboard } from './features/match-report/index.js';
 import { canRetryRatingError } from './shared/scoring.js';
-import { isReportPending } from './hooks/useScoring.js';
+import { isReportPending } from './features/rating-explanation/queries.js';
 
 const ids = Array.from({ length: 10 }, (_, index) => `player_${String(index + 1).padStart(2, '0')}`);
 const match: MatchData = matchDataSchema.parse({

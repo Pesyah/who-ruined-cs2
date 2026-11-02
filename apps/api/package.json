@@ -16,6 +16,7 @@
     "@nestjs/core": "11.1.6",
     "@nestjs/platform-express": "11.1.6",
     "@nestjs/swagger": "11.2.0",
+    "@who-ruined/artifacts": "workspace:*",
     "@who-ruined/contracts": "workspace:*",
     "@who-ruined/database": "workspace:*",
     "@who-ruined/parser-adapter": "workspace:*",

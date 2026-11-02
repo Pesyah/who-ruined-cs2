@@ -1,5 +1,7 @@
 # M3-A scoring proposal
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 Status: M3-A design retained as rationale; M3-B implements the approved
 decisions recorded in `m3-decisions.md`. `SPEC.md` 1.0.0 remains the immutable
 v1 compatibility baseline; its numeric constants are product policy, not

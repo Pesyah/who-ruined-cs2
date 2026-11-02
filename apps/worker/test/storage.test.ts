@@ -31,9 +31,9 @@ describe('immutable publication', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'wrc-m42-artifact-'));
     roots.push(root);
     const target = path.join(root, 'artifact.bin');
-    await expect(publishImmutableBytes(target, Buffer.from('stable'))).resolves.toBe('CREATED');
-    await expect(publishImmutableBytes(target, Buffer.from('stable'))).resolves.toBe('REUSED');
-    await expect(publishImmutableBytes(target, Buffer.from('conflict'))).rejects.toThrow('IMMUTABLE_ARTIFACT_CONFLICT');
+    await expect(publishImmutableBytes(root, target, Buffer.from('stable'))).resolves.toBe('CREATED');
+    await expect(publishImmutableBytes(root, target, Buffer.from('stable'))).resolves.toBe('REUSED');
+    await expect(publishImmutableBytes(root, target, Buffer.from('conflict'))).rejects.toThrow('IMMUTABLE_ARTIFACT_CONFLICT');
     await expect(readFile(target, 'utf8')).resolves.toBe('stable');
   });
 
@@ -41,7 +41,7 @@ describe('immutable publication', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'wrc-m42-fenced-artifact-'));
     roots.push(root);
     const target = path.join(root, 'artifact.bin');
-    await expect(publishImmutableBytes(target, Buffer.from('late'), async () => { throw new Error('STALE_JOB_OWNER'); })).rejects.toThrow('STALE_JOB_OWNER');
+    await expect(publishImmutableBytes(root, target, Buffer.from('late'), async () => { throw new Error('STALE_JOB_OWNER'); })).rejects.toThrow('STALE_JOB_OWNER');
     await expect(readFile(target)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

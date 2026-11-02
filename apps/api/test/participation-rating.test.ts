@@ -6,7 +6,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NORMALIZER_VERSION } from '@who-ruined/parser-adapter';
 import { participationExplanationReportSchema } from '@who-ruined/contracts';
-import { buildCanonicalMatchResult, buildImportantMoments, buildParticipationExplanation, C2S2_MODEL_VERSION, C2S2_POLICY_DIGEST, C2S2_REFERENCE_VERSION, P72_POLICIES, rebuildCanonicalMatchResult } from '@who-ruined/scoring';
+import { buildActiveParticipationRating, buildCanonicalMatchResult, buildImportantMoments, buildParticipationExplanation, C2S2_MODEL_VERSION, C2S2_POLICY_DIGEST, C2S2_REFERENCE_VERSION, P72_POLICIES, rebuildCanonicalMatchResult } from '@who-ruined/scoring';
 
 const findUnique = vi.fn();
 const readFile = vi.fn();
@@ -15,8 +15,9 @@ const access = vi.fn();
 vi.mock('@who-ruined/database', () => ({ prisma: { match: { findUnique }, report: { findUnique: vi.fn() }, job: { create: vi.fn() } } }));
 vi.mock('node:fs/promises', async (original) => ({ ...(await original<typeof import('node:fs/promises')>()), readFile, access, stat }));
 
-const { MatchesService } = await import('../src/matches.service.js');
+const { createTestApiFacade } = await import('./test-api-facade.js');
 const { AppModule } = await import('../src/app.module.js');
+const { buildParticipationRatingReport } = await import('../src/participation-rating.js');
 const { SafeExceptionFilter } = await import('../src/safe-exception.filter.js');
 
 const previousParticipationFlag = process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
@@ -75,6 +76,22 @@ function fixture(absentPlayerIndex: number | null = null) {
   return { match, analytics, artifact, sidecar };
 }
 
+function legacyUnknownHostageFixture() {
+  const data = fixture();
+  data.match.map = 'cs_synthetic';
+  const profiles = data.sidecar.profiles.map((profile) => ({
+    ...profile,
+    status: 'UNKNOWN_APPLICABILITY' as const,
+    reason: 'SCENARIO_UNKNOWN',
+    prepared: {
+      ...profile.prepared,
+      scenario: 'UNKNOWN' as const,
+      p4CPlus: { status: 'UNKNOWN_APPLICABILITY' as const, reason: 'SCENARIO_UNKNOWN' }
+    }
+  }));
+  return { ...data, sidecar: { ...data.sidecar, scenario: 'UNKNOWN' as const, profiles } };
+}
+
 function mockStored(data: ReturnType<typeof fixture>, sidecarOverride: unknown = data.sidecar, rawFilePath: string | null = 'uploads/synthetic.dem') {
   findUnique.mockResolvedValue({ id: data.match.matchId, normalizedFilePath: `cache/${data.match.matchId}.json.gz`, rawFilePath });
   readFile.mockImplementation(async (value) => gzipSync(Buffer.from(JSON.stringify(String(value).includes('c2s2-participation') ? sidecarOverride : data.artifact))));
@@ -106,24 +123,34 @@ describe('P7.2-F participation rating API', () => {
     if (previousPolicy === undefined) delete process.env.ACTIVE_RATING_POLICY; else process.env.ACTIVE_RATING_POLICY = previousPolicy;
   });
 
+  it('maps the legacy envelope from the same active rating result', () => {
+    const data = fixture();
+    const active = buildActiveParticipationRating(data.artifact, data.sidecar, 'H2');
+    const legacy = buildParticipationRatingReport(data.artifact, data.sidecar, 'H2');
+    expect(legacy.players).toEqual(active.players);
+    expect(legacy.ordering).toEqual(active.ordering);
+    expect(legacy.losingTeamOrdering).toEqual(active.losingTeamOrdering);
+    expect(legacy.awards).toEqual(active.awards);
+  });
+
   it('is default-off and performs no data access while disabled', async () => {
     delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
-    await expect(new MatchesService().participationRating('match')).rejects.toMatchObject({ code: 'EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', status: 404 });
+    await expect(createTestApiFacade().participationRating('match')).rejects.toMatchObject({ code: 'EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', status: 404 });
     expect(findUnique).not.toHaveBeenCalled();
   });
 
   it('keeps the explanation endpoint default-off and requires a stored canonical result', async () => {
     delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
-    await expect(new MatchesService().participationExplanation('match')).rejects.toMatchObject({ code: 'EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', status: 404 });
+    await expect(createTestApiFacade().participationExplanation('match')).rejects.toMatchObject({ code: 'EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', status: 404 });
     expect(findUnique).not.toHaveBeenCalled();
     process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '1';
     findUnique.mockResolvedValue({ id: 'match', deletionState: null, resultFilePath: null });
-    await expect(new MatchesService().participationExplanation('match')).rejects.toMatchObject({ code: 'REPORT_NOT_READY', status: 409 });
+    await expect(createTestApiFacade().participationExplanation('match')).rejects.toMatchObject({ code: 'REPORT_NOT_READY', status: 409 });
   });
 
   it('uses the owner-selected policy while keeping the public DTO policy-neutral', async () => {
     const data = fixture(); mockStored(data);
-    const service = new MatchesService();
+    const service = createTestApiFacade();
     const h2First = await service.participationRating(data.match.matchId);
     process.env.ACTIVE_RATING_POLICY = 'H1';
     const h1 = await service.participationRating(data.match.matchId);
@@ -139,10 +166,32 @@ describe('P7.2-F participation rating API', () => {
 
   it('returns a nine-player calculated pool and four-player losing award pool without fabricating the absent rating', async () => {
     const data = fixture(7); mockStored(data);
-    const response = await new MatchesService().participationRating(data.match.matchId);
+    const response = await createTestApiFacade().participationRating(data.match.matchId);
     expect(response.awards).toMatchObject({ eligiblePoolSize: 9, incompletePool: true, losingTeamId: 'team-b' });
     expect(response.awards.whoRuined.awardPoolSize).toBe(4);
     expect(response.players[7]).toMatchObject({ availability: { status: 'PARTICIPATION_ABSENT_GT_2_ROUNDS' }, rating: null, coverage: { absentFullRounds: 12 } });
+  });
+
+  it('rescues a stored UNKNOWN cs_ result as HOSTAGE while keeping OBJECTIVES at zero', () => {
+    const data = legacyUnknownHostageFixture();
+    const result = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    expect(result.activeRating.scenario).toBe('HOSTAGE');
+    expect(result.activeRating.applicability).toEqual({ status: 'SUPPORTED', reason: null });
+    expect(result.internal.recomputeSeed.scenario).toBe('HOSTAGE');
+    expect(result.activeRating.players).toHaveLength(10);
+    for (const player of result.activeRating.players) {
+      expect(player.availability).toEqual({ status: 'CALCULATED_RESEARCH_ONLY', reason: null });
+      expect(player.rating).not.toBeNull();
+      expect(player.rating!.rawFamilyInputs.OBJECTIVES).toBe(0);
+      expect(player.rating!.finalAttribution.OBJECTIVES).toBe(0);
+    }
+    const rebuilt = rebuildCanonicalMatchResult(result, 'H1');
+    expect(rebuilt.activeRating.players.every((player) => player.rating !== null)).toBe(true);
+    const explanation = buildParticipationExplanation(rebuilt);
+    for (const player of explanation.players) {
+      const objectives = player.rating?.families.find((family) => family.family === 'OBJECTIVES');
+      expect(objectives).toMatchObject({ rawInput: 0, finalAttribution: 0 });
+    }
   });
 
   it('builds a synthetic six-family explanation that exactly reconstructs H2 without invented event attribution', () => {
@@ -224,23 +273,23 @@ describe('P7.2-F participation rating API', () => {
       resultPolicyId: P72_POLICIES.H2.id, resultPolicyDigest: P72_POLICIES.H2.digest
     });
     readFile.mockResolvedValue(compressed);
-    await expect(new MatchesService().participationRating(data.match.matchId)).resolves.toEqual(JSON.parse(JSON.stringify(canonicalResult.activeRating)));
+    await expect(createTestApiFacade().participationRating(data.match.matchId)).resolves.toEqual(JSON.parse(JSON.stringify(canonicalResult.activeRating)));
     process.env.ACTIVE_RATING_POLICY = 'H1';
-    await expect(new MatchesService().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_POLICY_MISMATCH', status: 409 });
+    await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_POLICY_MISMATCH', status: 409 });
   });
 
   it('serves the explanation only from canonical match-result bytes and fails closed on corruption or policy mismatch', async () => {
     const data = fixture();
     const { result } = mockCanonical(data);
-    const response = await new MatchesService().participationExplanation(data.match.matchId);
+    const response = await createTestApiFacade().participationExplanation(data.match.matchId);
     expect(response).toEqual(JSON.parse(JSON.stringify(buildParticipationExplanation(result))));
     expect(response.provenance).toEqual({ source: 'match-result@1', originalDemoParsedAtRequest: false });
     process.env.ACTIVE_RATING_POLICY = 'H1';
-    await expect(new MatchesService().participationExplanation(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_POLICY_MISMATCH', status: 409 });
+    await expect(createTestApiFacade().participationExplanation(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_POLICY_MISMATCH', status: 409 });
     process.env.ACTIVE_RATING_POLICY = 'H2';
     const row = await findUnique.mock.results[0]?.value;
     findUnique.mockResolvedValue({ ...row, resultSha256: '0'.repeat(64) });
-    await expect(new MatchesService().participationExplanation(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
+    await expect(createTestApiFacade().participationExplanation(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
   });
 
   it('rebuilds one retained canonical input H2 to H1 and back to identical H2 values and awards', () => {
@@ -268,7 +317,7 @@ describe('P7.2-F participation rating API', () => {
       resultPolicyId: P72_POLICIES.H2.id, resultPolicyDigest: P72_POLICIES.H2.digest
     });
     readFile.mockResolvedValue(compressed);
-    await expect(new MatchesService().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
+    await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
   });
 
   it('fails closed when a valid canonical file is pointed at by another match row', async () => {
@@ -281,17 +330,17 @@ describe('P7.2-F participation rating API', () => {
       resultPolicyId: P72_POLICIES.H2.id, resultPolicyDigest: P72_POLICIES.H2.digest
     });
     readFile.mockResolvedValue(compressed);
-    await expect(new MatchesService().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
+    await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
   });
 
   it('rejects every HTTP policy selector before reading match data', async () => {
-    await expect(new MatchesService().participationRating('match', 'H3')).rejects.toMatchObject({ code: 'INVALID_POLICY_SELECTOR', status: 422 });
+    await expect(createTestApiFacade().participationRating('match', 'H3')).rejects.toMatchObject({ code: 'INVALID_POLICY_SELECTOR', status: 422 });
     expect(findUnique).not.toHaveBeenCalled();
   });
 
   it('returns the existing typed 404 when the canonical match record does not exist', async () => {
     findUnique.mockResolvedValue(null);
-    await expect(new MatchesService().participationRating('missing-match')).rejects.toMatchObject({ code: 'MATCH_NOT_FOUND', status: 404 });
+    await expect(createTestApiFacade().participationRating('missing-match')).rejects.toMatchObject({ code: 'MATCH_NOT_FOUND', status: 404 });
   });
 
   it('fails closed on schema, fingerprint, source-binding and frozen-policy mismatches', async () => {
@@ -303,7 +352,7 @@ describe('P7.2-F participation rating API', () => {
       [{ ...data.sidecar, model: { ...data.sidecar.model, preparedInputDigest: 'b'.repeat(64) } }, 'PARTICIPATION_SIDECAR_POLICY_MISMATCH']
     ] as const) {
       mockStored(data, sidecar);
-      await expect(new MatchesService().participationRating(data.match.matchId)).rejects.toMatchObject({ code, status: 409 });
+      await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code, status: 409 });
     }
   });
 
@@ -312,24 +361,24 @@ describe('P7.2-F participation rating API', () => {
     findUnique.mockResolvedValue({ id: data.match.matchId, normalizedFilePath: `cache/${data.match.matchId}.json.gz`, rawFilePath: 'uploads/synthetic.dem' });
     readFile.mockImplementationOnce(async () => gzipSync(Buffer.from(JSON.stringify(data.artifact)))).mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }));
     access.mockResolvedValue(undefined);
-    await expect(new MatchesService().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'PARTICIPATION_SIDECAR_BACKFILL_REQUIRED', status: 409 });
+    await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'PARTICIPATION_SIDECAR_BACKFILL_REQUIRED', status: 409 });
     findUnique.mockResolvedValue({ id: data.match.matchId, normalizedFilePath: `cache/${data.match.matchId}.json.gz`, rawFilePath: null });
     readFile.mockImplementationOnce(async () => gzipSync(Buffer.from(JSON.stringify(data.artifact)))).mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }));
-    await expect(new MatchesService().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'PARTICIPATION_SIDECAR_UNAVAILABLE_REQUIRES_ORIGINAL_DEMO', status: 409 });
+    await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'PARTICIPATION_SIDECAR_UNAVAILABLE_REQUIRES_ORIGINAL_DEMO', status: 409 });
   });
 
   it('rejects corrupt gzip without returning a fabricated HTTP 200 result', async () => {
     const data = fixture();
     findUnique.mockResolvedValue({ id: data.match.matchId, normalizedFilePath: `cache/${data.match.matchId}.json.gz`, rawFilePath: 'uploads/synthetic.dem' });
     readFile.mockImplementationOnce(async () => gzipSync(Buffer.from(JSON.stringify(data.artifact)))).mockResolvedValueOnce(Buffer.from('not-gzip'));
-    await expect(new MatchesService().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'PARTICIPATION_SIDECAR_INVALID', status: 409 });
+    await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'PARTICIPATION_SIDECAR_INVALID', status: 409 });
   });
 
   it('uses all ten calculated players for Who Ruined on a genuine draw', async () => {
     const data = fixture();
     data.match.rounds[0]!.scoreAfter['team-a'] = 12; data.match.rounds[0]!.scoreAfter['team-b'] = 12;
     mockStored(data);
-    const response = await new MatchesService().participationRating(data.match.matchId);
+    const response = await createTestApiFacade().participationRating(data.match.matchId);
     expect(response.awards).toMatchObject({ outcome: 'DRAW', losingTeamId: null });
     expect(response.awards.whoRuined).toMatchObject({ scope: 'DRAW_ALL_ELIGIBLE', awardPoolSize: 10 });
   });

@@ -1,4 +1,4 @@
-import { ApiClientError } from '../api.js';
+import { ApiClientError } from './api/transport.js';
 
 const nonRetryableCodes = new Set([
   'REPORT_CORRUPT',

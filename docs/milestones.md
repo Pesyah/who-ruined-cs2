@@ -1,5 +1,7 @@
 # Milestone status
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 ## M4.5 — legacy experimental retirement and backend closure
 
 The obsolete `GET /api/v1/matches/:id/experimental-rating` endpoint, its P2

@@ -7,7 +7,7 @@ import { CDataGCCStrike15_v2_MatchInfoSchema, fromBinary } from 'csgo-protobuf';
 import type { MatchAnalytics, MatchData, MatchEvent } from '@who-ruined/contracts';
 import { computeMatchAnalytics } from '@who-ruined/features';
 import { normalizeSnapshot, stableTeamId } from '@who-ruined/match-domain';
-import { asText, NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, parseDemoSnapshot, type ParsedDemoSnapshot } from '@who-ruined/parser-adapter';
+import { asText, NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, parseDemoSnapshot, toNormalizationInput, type ParsedDemoSnapshot } from '@who-ruined/parser-adapter';
 
 export type ValidationStatus = 'PASS' | 'PARTIAL' | 'FAIL' | 'SKIPPED';
 export interface ValidationCheck { name: string; status: ValidationStatus; explanation: string }
@@ -140,7 +140,7 @@ export async function validateDemo(demoPath: string, infoPath: string | null): P
   const demoId = digest.slice(0, 16);
   try {
     const snapshot = parseDemoSnapshot(demoPath);
-    const match = normalizeSnapshot({ matchId: `validation_${demoId}`, fileSha256: digest, normalizedAt: '2000-01-01T00:00:00.000Z', snapshot });
+    const match = normalizeSnapshot(toNormalizationInput({ matchId: `validation_${demoId}`, fileSha256: digest, normalizedAt: '2000-01-01T00:00:00.000Z', snapshot }));
     const analytics = computeMatchAnalytics(match, '2000-01-01T00:00:00.000Z');
     const internal = checkInternal(match, snapshot); const m2 = checkM2(match, analytics); const independent = await checkInfo(infoPath, match);
     const parser = pass('parser', 'Source 2 demo parsed and normalized without an uncaught error.');

@@ -2,9 +2,12 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "generate": { "outputs": ["generated/**"] },
+    "@who-ruined/database#build": { "dependsOn": ["generate"], "outputs": ["dist/**"] },
+    "@who-ruined/database#typecheck": { "dependsOn": ["generate"] },
     "dev": { "cache": false, "persistent": true },
     "lint": { "dependsOn": ["^lint"] },
     "typecheck": { "dependsOn": ["^build"] },
-    "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"] }
+    "test": { "dependsOn": ["^build"] }
   }
 }

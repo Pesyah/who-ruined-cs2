@@ -1,16 +1,19 @@
-import { createHash } from 'node:crypto';
-import { gzip } from 'node:zlib';
-import { promisify } from 'node:util';
 import {
   replayIndexArtifactSchema, replayRoundArtifactSchema,
   type MatchData, type ReplayIndexArtifact, type ReplayMapCalibration, type ReplayRoundArtifact
 } from '@who-ruined/contracts';
+import {
+  gzipJson,
+  replayIndexFingerprint,
+  replayIndexRelative,
+  replayRootRelative,
+  replayRoundRelative,
+  sha256Bytes,
+  verifyReplayIndexFingerprint,
+} from '@who-ruined/artifacts';
 import { asInteger, asText, NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, type ParsedReplaySnapshot, type UnknownRow } from '@who-ruined/parser-adapter';
 import { publishImmutableBytes, resolveDataPath } from './storage.js';
 import type { WorkerRuntimeConfig } from './runtime-config.js';
-
-const zip = promisify(gzip);
-const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 
 export const REPLAY_SAMPLE_RATE_HZ = 4;
 export const DUST2_REPLAY_CALIBRATION: ReplayMapCalibration = {
@@ -26,18 +29,6 @@ export const DUST2_REPLAY_CALIBRATION: ReplayMapCalibration = {
   sourceVersion: 'CS2 patch 14191 · resource/overviews/de_dust2.txt',
   imageUrl: null
 };
-
-export function replayRootRelative(matchId: string, fileSha256: string): string {
-  return `replays/${matchId}/${fileSha256}`;
-}
-
-export function replayIndexRelative(matchId: string, fileSha256: string): string {
-  return `${replayRootRelative(matchId, fileSha256)}/index.m4.7-replay@1.json.gz`;
-}
-
-export function replayRoundRelative(matchId: string, fileSha256: string, roundId: string): string {
-  return `${replayRootRelative(matchId, fileSha256)}/rounds/${roundId}.m4.7-replay-round@1.json.gz`;
-}
 
 function finite(row: UnknownRow, key: string): number | null {
   const value = row[key];
@@ -116,10 +107,6 @@ export function buildReplayRoundArtifacts(match: MatchData, snapshot: ParsedRepl
   });
 }
 
-function indexFingerprint(value: Omit<ReplayIndexArtifact, 'fingerprint'>): string {
-  return sha256(JSON.stringify(value));
-}
-
 export async function persistReplayArtifacts(options: {
   dataRoot: string;
   match: MatchData;
@@ -131,18 +118,18 @@ export async function persistReplayArtifacts(options: {
   const summaries: ReplayIndexArtifact['rounds'] = [];
   let totalCompressedBytes = 0;
   for (const artifact of artifacts) {
-    const bytes = await zip(Buffer.from(JSON.stringify(artifact)));
+    const bytes = await gzipJson(artifact);
     if (bytes.byteLength > options.config.maxReplayRoundCompressedBytes) throw new Error('REPLAY_ROUND_TOO_LARGE');
     totalCompressedBytes += bytes.byteLength;
     if (totalCompressedBytes > options.config.maxReplayTotalCompressedBytes) throw new Error('REPLAY_ARTIFACT_TOO_LARGE');
     await options.assertOwned();
-    await publishImmutableBytes(resolveDataPath(options.dataRoot, replayRoundRelative(options.match.matchId, options.match.fileSha256, artifact.round.id)), bytes, options.assertOwned);
+    await publishImmutableBytes(options.dataRoot, resolveDataPath(options.dataRoot, replayRoundRelative(options.match.matchId, options.match.fileSha256, artifact.round.id)), bytes, options.assertOwned);
     summaries.push({
       ...artifact.round,
       sampleCount: artifact.frames.length,
       eventCount: artifact.events.length,
       coverage: artifact.coverage,
-      sha256: sha256(bytes),
+      sha256: sha256Bytes(bytes),
       compressedBytes: bytes.byteLength
     });
   }
@@ -160,15 +147,11 @@ export async function persistReplayArtifacts(options: {
     totalCompressedBytes,
     warnings: summaries.some((round) => round.coverage === 'PARTIAL') ? ['PARTIAL_COORDINATE_COVERAGE'] : []
   };
-  const index = replayIndexArtifactSchema.parse({ ...withoutFingerprint, fingerprint: indexFingerprint(withoutFingerprint) });
-  const bytes = await zip(Buffer.from(JSON.stringify(index)));
+  const index = replayIndexArtifactSchema.parse({ ...withoutFingerprint, fingerprint: replayIndexFingerprint(withoutFingerprint) });
+  const bytes = await gzipJson(index);
   await options.assertOwned();
-  await publishImmutableBytes(resolveDataPath(options.dataRoot, replayIndexRelative(options.match.matchId, options.match.fileSha256)), bytes, options.assertOwned);
+  await publishImmutableBytes(options.dataRoot, resolveDataPath(options.dataRoot, replayIndexRelative(options.match.matchId, options.match.fileSha256)), bytes, options.assertOwned);
   return index;
 }
 
-export function verifyReplayIndexFingerprint(index: ReplayIndexArtifact): boolean {
-  const value = { ...index } as Partial<ReplayIndexArtifact>;
-  delete value.fingerprint;
-  return index.fingerprint === indexFingerprint(value as Omit<ReplayIndexArtifact, 'fingerprint'>);
-}
+export { replayIndexRelative, replayRootRelative, replayRoundRelative, verifyReplayIndexFingerprint };

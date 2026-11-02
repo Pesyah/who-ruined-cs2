@@ -1,5 +1,7 @@
 # M3 decision register
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 Status: implemented experimental policy, 2026-10-17. `SPEC.md` is unchanged.
 
 | Decision | M3-B policy | Why / caveat |

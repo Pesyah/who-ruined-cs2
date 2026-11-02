@@ -1,5 +1,7 @@
 # M3-C8/P7.2-G backend E2E closure
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 Date: 2026-10-25
 Status: **PASS / LOCAL ONLY / OWNER GIT REVIEW PENDING**
 

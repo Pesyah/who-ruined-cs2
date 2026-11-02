@@ -5,7 +5,7 @@ import path from 'node:path';
 import multer from 'multer';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createDemoUploadOptions } from '../src/matches.controller.js';
+import { createDemoUploadOptions } from '../src/modules/matches/matches.controller.js';
 
 const limit = 64 * 1024;
 let directory: string;

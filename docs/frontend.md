@@ -1,213 +1,157 @@
-# Frontend: разработка и интеграция
+# Frontend architecture and integration
 
-## Что реализовано
+**Status:** canonical frontend reference after P4 modularization. The active application is `apps/web`; historical handoff documents are indexed in [docs/README](README.md).
 
-- `/`: загрузка .dem файлом и drag-and-drop, валидация, защита от повторной
-  отправки, настоящий прогресс передачи, остановка и повторная попытка.
-  Список матчей с пагинацией, скелетоном и сохранением данных при ошибке обновления.
-  Импорт по ссылке отмечен будущим.
-- `/jobs/:jobId`: опрос реального API, этапы обработки, прошедшее время, ошибки/отмена,
-  автоматический переход к полному или частичному отчёту.
-- `/matches/:matchId`: одновременно MVP и Who Ruined, составы и отдельные
-  Steam-ссылки, K/D/A/TK, M2-показатели, выбор раунда, сравнения игроков,
-  урон HE/огня, раздел моментов и доступность исходных данных.
-  При наличии M3-отчёта показывает реальные серверные MVP/Who Ruined,
-  компоненты оценки, покрытие, эпизоды и вклад по раундам. UI ничего не пересчитывает.
-- `/matches/:matchId/players/:playerId`: выступление игрока в этом матче,
-  контекст результата команды, фильтр положительного вклада/ошибок/всех
-  действий, гранаты/размены и пагинируемый журнал событий с фильтром раунда.
-- `/about`: схема обработки, доступные возможности, FAQ, трактовка пропусков и хранение данных.
-- `*`: локализованная страница 404.
+## Responsibilities
 
-Тёмный интерфейс: CSS-токены в `src/index.css`, lime для основного действия,
-синий/оранжевый для составов, горизонтальная прокрутка широких таблиц.
-Бренд меняется в `src/brand.ts`, favicon — собственный SVG.
-Шрифты системные, внешних изображений и CDN нет.
-Страницы отчёта, игрока, обработки и справки загружаются отдельными модулями;
-главная не загружает заранее весь интерфейс отчёта и все языки.
-Анимации учитывают prefers-reduced-motion; кнопки, ссылки и фильтры доступны
-с клавиатуры. Страницы локализованы на 37 языков.
+The frontend owns routing, interaction, accessibility, localization, responsive layout and presentation adapters. It does not parse demos, compute M2 features, calculate H2/H1, select awards or infer missing events.
 
-## Запуск в Windows
+Server DTOs come from `@who-ruined/contracts`. A view adapter may reorganize a DTO for rendering, but it must preserve roster `teamId`, `null`, availability, coverage and typed errors.
 
-Нужны Node.js с Corepack (проверено на Node 24.21.0) и сеть для первой установки.
-Версия pnpm закреплена в package.json.
+## Module layout
 
-```powershell
-npm.cmd run setup:windows
-npm.cmd run dev:web
-```
+~~~text
+src/
+  app/                 providers, router, shell and route error boundary
+  pages/               thin route composition
+  features/
+    upload-demo/
+    match-report/
+    player-report/
+    participation-rating/
+    rating-explanation/
+    important-moments/
+    match-replay/
+  entities/match/      shared match view model and adapters
+  shared/
+    api/                HTTP transport only
+    i18n/               locale runtime, switcher, tooling and 37 locales
+    lib/                generic hooks/utilities
+    ui/                 reusable visual primitives and states
+  preview/             dev/demo-only synthetic scenarios
+~~~
 
-UI: http://localhost:5173. Остановка: Ctrl+C.
-Команды используют локальный launcher pnpm в node_modules/.bin, без bash/WSL
-и изменения системного PATH. Если pnpm уже доступен, можно использовать
-`pnpm dev:web`. Все `npm run` здесь выполняются из корня репозитория.
+Feature public APIs are their `index.ts` files. Cross-feature imports should use those entry points or a deliberately shared entity/UI primitive, not another feature's internal file.
 
-Для production-данных нужен существующий API на http://localhost:3000.
-Другой адрес перед запуском: `$env:API_URL = 'http://localhost:3000'`.
-Полный backend запускается по корневому README; frontend не создаёт БД.
+Thin pages compose capabilities:
 
-Без API можно открыть http://localhost:5173/preview/available.
-Главная при отсутствии API честно показывает ошибку списка матчей.
+- `MatchPage`: match report, active rating/awards and replay.
+- `PlayerPage`: player report, six-family explanation, important moments and replay links.
+- `HomePage`/`JobPage`: upload and processing state.
 
-## Архитектура
+## Routes
 
-| Слой | Файлы | Ответственность |
-| --- | --- | --- |
-| Маршруты | src/App.tsx, pages | URL, состояния запросов |
-| API | src/api.ts | fetch, XHR upload progress, AbortSignal, Zod-проверка M1/M2/M3, машинные ошибки |
-| Представление | components | Layout, MatchReport, PlayerReport, Awards, Scoreboard, RoundHistory, Charts, Moments |
-| UI-адаптеры | analytics/adapter.ts, analytics/presentation.ts | проверка принадлежности M2/M3-данных, отображение счёта, исход по roster ID, таймкоды и ссылки |
-| Модель UI | analytics/types.ts | представление реальных метрик и серверных M3-оценок, не контракт сервера |
-| Примеры | preview | синтетические данные и отдельные dev-маршруты |
-| Локализация | shared/i18n | WRC Locale Kit, реестр языков, lazy JSON, CLI-инструменты |
-
-Реальные K/D/A берутся только из `player.scoreboard`. Нет восстановления
-нулей из отсутствующего scoreboard. Отсутствующий счёт — `—`.
-Неподтверждённый матч не получает победителя/проигравшего или рейтинг.
-T/CT показываются для последнего раунда; принадлежность определяется teamId.
-Who Ruined может ссылаться только на игрока проигравшей команды и только
-при доступной оценке. Обычные смерти не становятся ошибками.
-
-## Реально используемые контракты
-
-| Запрос | Контракт |
+| Route | Purpose |
 | --- | --- |
-| POST /api/v1/matches | multipart demo; matchId, jobId, duplicate |
-| GET /api/v1/matches?cursor=... | items: id, map, status, quality, createdAt; nextCursor |
-| GET /api/v1/jobs/:id | jobDtoSchema / JobDto |
-| GET /api/v1/matches/:id | matchDataSchema / MatchData |
-| GET /api/v1/matches/:id/analytics | matchAnalyticsSchema / MatchAnalytics (m2-1) |
-| GET /api/v1/matches/:id/report | scoringReportSchema / ScoringReport (m3-score-1) |
-| GET /api/v1/matches/:id/players/:playerId/report | playerScoringReportSchema / PlayerScoringReport |
-| POST /api/v1/matches/:id/rescore | versioned scoring job; poll JobDto |
+| `/` | landing |
+| `/analyze` | demo upload and recent matches |
+| `/jobs/:jobId` | queued/processing/completed job |
+| `/matches/:matchId` | match report, rating and replay |
+| `/matches/:matchId/players/:playerId` | player report and explanation |
+| `/about` | product/method overview |
+| `/preview/:scenario?` | development or demo-build synthetic states only |
 
-Общие схемы импортированы из @who-ruined/contracts. Схемы upload/list
-описывают существующие ответы MatchesService локально в клиенте.
-Ошибки переводятся по error.code; requestId сохраняется в ApiClientError.
-Серверные сообщения качества показаны отдельно в исходном виде.
+Normal builds use browser history. The self-contained demo build uses hash routing and does not call the API.
 
-M2 загружается после базового матча через `useAnalytics`. Страница игрока
-использует тот же кеш матча, без повторного запроса полного набора аналитики.
-Адаптер проверяет совпадение matchId, наличие игрока в составе и teamId,
-отклоняет повторяющихся игроков. ADR, KAST, damage, openings, trades,
-HE/fire и flash-метрики берутся из DTO без пересчёта в UI.
-Null остаётся отсутствующим значением, 0 отображается как ноль.
-HE и огонь не складываются в придуманный суммарный показатель.
-Availability и исходные limitations доступны в раскрываемом блоке.
-HTTP 409 у старого артефакта не ломает отчёт: базовый матч остаётся видимым,
-а интерфейс предлагает загрузить демо снова. Контракты описаны в `docs/api-m2.md`.
-M3 загружается отдельным запросом после базового матча и M2. Адаптер не принимает
-повторяющихся игроков, несовпадающие roster/teamId или Who Ruined вне проигравшего
-состава. Значения компонентов, лидеры, эпизоды и round ledger берутся только из
-серверного DTO. `relativeIndex` не показывается как процент или вероятность;
-оценка явно помечена экспериментальной. HTTP 409 оставляет M1/M2 видимыми и
-предлагает загрузить демку повторно. Все оценки на preview-страницах по-прежнему
-вымышлены и никогда не подменяют live API.
+## Data access
 
-## Состояния и движение
+`shared/api/transport.ts` owns fetch/error envelope handling. Each feature owns:
 
-Общие скелетоны повторяют геометрию отчёта, игрока, списка и обработки.
-Переходы страниц, фильтры, полосы графиков, подтверждённые этапы и SVG-иллюстрации
-анимируются CSS; `prefers-reduced-motion` отключает движение.
-Широкие таблицы прокручиваются внутри своего блока, первый столбец закреплён;
-поддерживаются клавиатура, видимый фокус, RTL и перенос длинных подписей.
+- endpoint-specific API parsing;
+- React Query keys and hooks;
+- DTO-to-view mapping where needed;
+- loading/error/empty rendering for its capability.
 
-Загрузка использует события XHR: при неизвестном размере индикатор неопределённый,
-после передачи отдельно показывается ожидание подтверждения сервера.
-Остановка прерывает передачу в браузере, а не обработку уже полученного файла.
-При ошибке можно повторить отправку выбранного файла. Уход со страницы прерывает XHR.
-Этапы обработки и прошедшее время не обещают процент готовности или ETA.
-Сбой обновления сохраняет последние данные и предлагает повторную попытку.
-Потеря соединения отображается общим баннером; initial error и 404 имеют свои экраны.
+Query keys are centralized per capability and tested for invalidation compatibility. React Query retries once and does not refetch merely because the browser window regains focus.
 
-## Примеры M2/M3
+Vite proxies same-origin `/api` requests to `API_URL` and removes the development Origin header. Direct API clients still obey the configured CORS allow-list.
 
-`/preview/available` — оценки, моменты и графики;
-`/preview/low-confidence` — нет уверенного выбора;
-`/preview/insufficient-data` — недостаточно данных;
-`/preview/m1` — только текущие поля;
-`/preview/partial` — пропущены scoreboard, tick rate и итоговый счёт.
-Каждый сценарий позволяет открыть игрока.
+## Rating and explanation
 
-`/preview/states?view=match-loading` — галерея 11 состояний: загрузка отчёта,
-игрока, списка и задачи; обработка, ошибка обработки, готовый отчёт,
-ошибка запроса, пустой список, недоступные метрики и отсутствие сети.
-Выбор сохраняется в URL. Галерея использует те же компоненты, не отправляет API-запросы.
+`participation-rating` consumes only `m4.3-participation-rating@1`. It renders:
 
-Все имена, числа и выводы fixtures вымышлены; баннер остаётся на страницах
-игрока. Fixture не имеет настоящих SteamID. Модуль динамически импортируется
-только при import.meta.env.DEV. Production не регистрирует /preview и не
-включает fixture-код. Mock не является запасным ответом при ошибке API.
+- the real owner-selected H2/H1 value;
+- `null` and typed unavailability without a legacy fallback;
+- coverage and incomplete award pools;
+- deterministic ties, draw scope and roster-based teams;
+- six raw family inputs and final attribution values already calculated by the backend.
 
-## Дальнейшая интеграция и будущие возможности
+`rating-explanation` consumes `m4.6-participation-explanation@1`. It renders human-readable family descriptions, confirmed evidence, rounds, aggregate/base adjustments and nonlinear transformations. It never distributes an aggregate transform across events on its own.
 
-1. Локализованные объяснения по `explanationKey` и параметрам вместо вывода
-   технического идентификатора эпизода; исходные backend facts сохранять отдельно.
-2. Выбор версии/config для RESCORE в UI; typed API-функция уже существует,
-   но продуктовый control пока не добавлен.
-3. Серверная пагинация/группировка большого журнала эпизодов. Сейчас UI безопасно
-   показывает его порциями, но получает полный отчёт.
-4. Для активных строк списка матчей нужен jobId, чтобы открыть обработку.
-   Пока такие строки не маскируются ссылками на #.
-5. Для глобального публичного запуска нужны аутентификация, принадлежность
-   матчей, приватность, лимиты загрузки/хранения и контроль доступа.
-   Текущий локальный API этого не предоставляет; frontend не создаёт иллюзию защиты.
-6. Импорт share code/steam:// и FACEIT, клипы и переход к моменту демки —
-   отдельные будущие возможности, действующих production endpoint для них нет.
+`important-moments` renders the backend's deterministic multikill/trade selection. Internal event codes, anchor IDs and diagnostic field names are not user-facing labels.
 
-## WRC Locale Kit
+## Replay
 
-Модуль локализации Who Ruined CS2 имеет идентификатор `wrc.locale-kit`.
-Реестр `locale-catalog.ts` объединяет коды, самоназвания и направление письма;
-runtime и CLI используют один список. Английские строки в коде — источник,
-JSON разбиты по namespace и загружаются по требованию. Выбор языка сохраняется
-в localStorage. Инструменты извлечения, синхронизации, проверки плейсхолдеров
-и поиска слишком длинных переводов запускаются в Windows через npm.cmd.
+`match-replay` loads replay metadata first and the selected round separately. Playback/interpolation/geometry are UI concerns; event and position facts come from the versioned replay DTO.
 
-Переключатель содержит значки с кодами языков и поиск по самоназванию,
-английскому и локализованному названию через `Intl.DisplayNames`, а также коду.
-Поиск не зависит от регистра и диакритики; точное совпадение кода идёт первым.
-Стрелки меняют активный пункт, Enter выбирает язык, Esc закрывает меню с
-возвратом фокуса. Клик снаружи и уход фокуса также закрывают меню.
+The component handles:
 
-В runtime хранится манифест URL отдельных JSON-assets, без встраивания всех
-переводов в JavaScript. Перед сменой языка `prepareLanguage` загружает
-используемые namespace; при сбое сохраняется прежний язык и доступен повтор.
-JSON-assets публикуются вместе с остальной Vite-сборкой.
+- unavailable/corrupt replay independently of the match report;
+- round selection and deterministic playback;
+- missing map geometry/assets;
+- responsive canvas sizing and reduced motion;
+- keyboard-operable controls and localized labels.
 
-Языки: `en`, `ru`, `uk`, `fr`, `de`, `es`, `pt`, `tr`, `az`, `uz`, `bn`,
-`zh`, `id`, `kk`, `ky`, `ro`, `hu`, `pl`, `cs`, `sl`, `el`, `sv`, `sk`, `ar`,
-`nb`, `it`, `lv`, `lt`, `et`, `fi`, `da`, `bg`, `hr`, `nl`, `sw`, `am`, `lg`.
-Формы количества создаются по CLDR для каждого языка. Арабский интерфейс
-использует RTL; числовой счёт и таймкоды сохраняют порядок слева направо.
+The browser does not reopen the demo or synthesize unseen player positions.
 
-Рабочий процесс и добавление языка — в корневом AGENTS.md.
-`i18n:sync --dry-run` и `i18n:check` ничего не записывают.
-Snapshot ведётся отдельно по каждому языку/namespace, поэтому выборочный
-запуск не скрывает устаревшие переводы остальных языков.
-Пустые строки падают назад на EN; проверка запрещает выпуск неполной локали.
-Проверка текста включает совпадение плейсхолдеров и тегов.
+## Upload and job progress
 
-Экстракция использует официальный i18next-cli:
-https://github.com/i18next/i18next-cli.
+Upload percentage comes only from XHR transfer events. Once the file is accepted, the UI shows named job stages rather than invented processing percentages or completion times.
 
-## Проверка
+Cancellation stops the local transfer; it does not claim to cancel an already accepted server job. A refresh restores state from `GET /jobs/:id`.
 
-```powershell
-npm.cmd run lint
-npm.cmd run typecheck
-npm.cmd run test
-npm.cmd run build
+## Errors and retained data
+
+Machine error codes map to localized messages in `shared/messages.ts`. Unknown codes receive a generic message, while the original backend diagnostic is clearly labeled and not translated.
+
+A background refresh error must not hide already-rendered successful data. Loading, empty, offline, retry and partial states reuse primitives from `shared/ui`.
+
+## Localization
+
+The WRC Locale Kit is in `shared/i18n`:
+
+- 37 supported languages in `locale-catalog.ts`;
+- English fallback and `translation` common namespace;
+- page namespaces `home`, `job`, `match`, `player`, `about`; `preview` for synthetic examples;
+- browser-language detection unless a manual preference marker exists;
+- JSON resources loaded by URL on demand;
+- self-name/code search, keyboard navigation and RTL in `LanguageSwitcher.tsx`.
+
+All user-facing text, aria labels, errors and empty states use static `react-i18next` keys. Nicknames, SteamIDs, map names and raw backend diagnostics are not translated.
+
+Use the repository workflow:
+
+~~~powershell
+npm.cmd run gettext
+npm.cmd run i18n:sync
+# translate tasks manually using shared/i18n/prompt.md
+npm.cmd run i18n:sync
 npm.cmd run i18n:check
-```
+~~~
 
-Существующие тесты проекта остаются частью обязательных проверок.
-Дополнительные frontend-спеки и Playwright-обвязка в этот набор изменений не входят.
-При изменении локализации проверять смену и сохранение языка, загрузку всех
-namespace, формы количества, длинные подписи на 320/390 px и арабский RTL.
-Браузерная проверка preview не является прогоном демки через parser/worker.
+Do not use acknowledgement to hide an unreviewed translation.
 
-Golden-тесты требуют внешних файлов; SKIPPED не считается успешной проверкой.
-Локальные результаты проверок и скриншоты можно сохранять в artifacts/frontend.
-Production сборка не публикуется автоматически.
+## Accessibility and responsive behavior
+
+Interactive controls must remain keyboard reachable, visibly focused and correctly labeled. Layouts must tolerate long localized labels and narrow intermediate widths, not only named device breakpoints. Arabic is right-to-left; identifiers and numeric data can keep their appropriate direction.
+
+Animations, skeletons, replay playback decorations and reveals must respect `prefers-reduced-motion`. Color use must preserve the project contrast gate.
+
+## Preview and tests
+
+Preview routes exist only in Vite development or the demo build. They include loading, error, partial and unavailable states and make no API claims. Synthetic preview data is labeled synthetic.
+
+Targeted frontend checks:
+
+~~~powershell
+npm.cmd --prefix apps/web run test
+npm.cmd --prefix apps/web run typecheck
+npm.cmd run i18n:check
+npm.cmd run design:contrast
+~~~
+
+Use browser checks for representative narrow/intermediate/wide widths, Arabic RTL, keyboard flow and reduced motion when the touched UI creates that risk.
+
+## Compatibility adapters
+
+Root-level `api.ts`, legacy component/hook/analytics/player/replay files and `shared/upload.ts` re-export the P4 feature-first modules. They are retained temporarily for source compatibility and are not the preferred import surface. See [compatibility adapter audit](compatibility-adapters.md) before removing any of them.

@@ -1,5 +1,7 @@
 # Parser and M2 compatibility
 
+**Status:** current evidence record. The parser/domain boundary is summarized in [the architecture map](backend-map.md).
+
 > Real-demo validation for `@laihoe/demoparser2@0.42.0`. Only maps,
 > versions, counts, field names and anonymous aggregates are committed.
 

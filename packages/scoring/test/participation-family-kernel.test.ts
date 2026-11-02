@@ -3,6 +3,7 @@ import {
   C2S2_POLICY_DIGEST,
   C2S2_POLICY,
   c2s2PolicyDigest,
+  participationScenarioForMap,
   scoreC2S2PreparedProfile,
   scoreC2S2PreparedProfiles,
   softDirectHarmS2,
@@ -43,6 +44,13 @@ describe('C2 + S2 frozen experimental model', () => {
     expect(Object.isFrozen(C2S2_POLICY)).toBe(true);
     expect(Object.isFrozen(C2S2_POLICY.context)).toBe(true);
     expect(Object.isFrozen(C2S2_POLICY.objectives)).toBe(true);
+  });
+
+  it('derives the standard objective scenario from the map prefix without requiring an objective event', () => {
+    expect(participationScenarioForMap('cs_office')).toBe('HOSTAGE');
+    expect(participationScenarioForMap('de_dust2')).toBe('BOMB');
+    expect(participationScenarioForMap('workshop/123/CS_Custom')).toBe('HOSTAGE');
+    expect(participationScenarioForMap('ar_shoots')).toBeNull();
   });
 
   it.each([
@@ -113,8 +121,15 @@ describe('C2 + S2 frozen experimental model', () => {
     }
   });
 
-  it('does not silently calculate an UNKNOWN scenario', () => {
-    expect(() => scoreC2S2PreparedProfile(profile({ scenario: 'UNKNOWN' }))).toThrow('C2S2_UNKNOWN_SCENARIO_MUST_NOT_BE_CALCULATED');
+  it('calculates an UNKNOWN scenario with the objective family explicitly omitted', () => {
+    const input = profile({ scenario: 'UNKNOWN' });
+    input.p4CPlus.objectiveSignals = {};
+    const row = scoreC2S2PreparedProfile(input);
+    expect(row.status).toBe('CALCULATED_RESEARCH_ONLY');
+    if (row.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('unexpected status');
+    expect(row.familyContributions.OBJECTIVES).toBe(0);
+    expect(row.factorContributions.OBJECTIVES).toEqual({});
+    expect(row.rating).toBe(1 + Object.values(row.familyContributions).reduce((sum, value) => sum + value, 0));
   });
 
   it('rejects missing or mode-inconsistent objective signals', () => {
@@ -123,6 +138,8 @@ describe('C2 + S2 frozen experimental model', () => {
     expect(() => scoreC2S2PreparedProfile(missing)).toThrow('C2S2_OBJECTIVE_SIGNALS_UNAVAILABLE');
     const wrongMode = profile({ scenario: 'HOSTAGE' });
     expect(() => scoreC2S2PreparedProfile(wrongMode)).toThrow('C2S2_OBJECTIVE_SIGNAL_SET_MISMATCH:HOSTAGE');
+    const unknownWithInventedSignals = profile({ scenario: 'UNKNOWN' });
+    expect(() => scoreC2S2PreparedProfile(unknownWithInventedSignals)).toThrow('C2S2_OBJECTIVE_SIGNAL_SET_MISMATCH:UNKNOWN');
   });
 
   it('rejects duplicate profile keys and remains source-order deterministic', () => {

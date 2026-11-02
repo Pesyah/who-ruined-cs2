@@ -1,202 +1,141 @@
 # Who Ruined CS2
 
-Local-first CS2 demo analysis. The repository contains the validated M0/M1
-vertical slice, M2 factual analytics and an experimental M3-B backend/UI integration:
-parser → normalized facts → deterministic features → versioned scoring reports.
+Who Ruined CS2 is a local-first analysis tool for Counter-Strike 2 match demos. It turns a Source 2 `.dem` into factual match analytics, an experimental participation rating with an auditable explanation, a small set of important moments and an interactive 2D reconstruction.
 
-> Status: **M0 and M1 passed on three external real golden demos:** Office,
-> Dust2 and Train. The `.dem`/`.dem.info` files remain outside Git. The required
-> three-demo count is met. A later nine-demo batch contains two real team-kill
-> cases; the overtime gate remains open. M2 derived metrics pass unit tests and real-demo consistency checks,
-> but independent ADR/KAST/trade ground truth is not available.
+The repository is an active prototype, not a public service. The parser, rating and replay are usable locally; public hosting, multi-user isolation and causal claims are explicitly out of scope for the current release.
 
-## Start with Docker
+## What it does today
 
-Requirements: Docker Desktop with Compose.
+- Streams a CS2 `.dem` to local storage and processes it in a separate worker.
+- Normalizes players, roster-based teams, rounds and events without treating T/CT as stable team identity.
+- Computes availability-aware analytics: K/D/A, ADR, KAST, trades, openings, clutches, utility, economy and objective facts.
+- Publishes one immutable `match-result@1` artifact with a content checksum and a SQLite pointer.
+- Exposes the owner-selected H2 participation rating (H1 is the fallback policy), MVP/Who Ruined pools and per-player coverage.
+- Explains each rating through six families, typed evidence and transformations. The six final attributions plus the base value of 1 reconstruct the displayed score within `1e-12`.
+- Selects up to eight deterministic important moments per player: multikills and confirmed trades, including reliable fast-trade timing.
+- Builds a factual 2D replay from sampled positions, round events and map metadata. Missing map assets or replay data remain explicit unavailable/partial states.
+- Ships a React UI with 37 locales, RTL support, responsive layouts and development-only synthetic preview states.
 
-```bash
-docker compose up --build
-```
+## Read the rating correctly
 
-- UI: <http://localhost:5173>
-- API health: <http://localhost:3000/api/v1/health>
-- OpenAPI: <http://localhost:3000/api/docs>
+H2 and H1 are deterministic, experimental projections. They are not calibrated skill ratings, win probabilities or evidence that a player caused a loss. H2 applies twice the direct-harm contribution; H1 applies it once. The remaining computation and the six-family kernel are shared.
 
-Both published ports bind to host loopback. Uploaded demos and SQLite data remain under `./data` and are ignored by Git.
+A value can be `null` when participation or required evidence is insufficient. Missing parser output is never converted to zero. A negative contribution, especially CONTEXT, can come from model centering or an aggregate transformation rather than a discrete mistake. Ordinary deaths are match facts, not tactical blame.
 
-The backend upload path streams multipart data directly to a random file under
-`DATA_DIR/uploads`; it does not buffer the complete demo in the Node heap. The
-local default `MAX_UPLOAD_BYTES` is 536870912 bytes (512 MiB), with a separate
-256 MiB free-space reserve. Both values are finite and configurable. The 512
-MiB default was selected from a read-only audit of the available local corpus;
-it is a supported upload ceiling, not a promise that every demo below it will
-parse within the worker timeout or memory limit.
+See [scoring and explanation](docs/scoring.md) and [known limitations](docs/limitations.md).
 
-For an isolated Compose run, set `LOCAL_DATA_DIR` to a dedicated empty host
-directory and optionally set `API_PORT` to a free loopback port. `DATA_DIR`
-inside the containers remains `/data`:
+## Architecture
 
-```powershell
-$env:LOCAL_DATA_DIR = '<dedicated-empty-directory>'
-$env:API_PORT = '3301'
-docker compose -p wrc-isolated up --build api worker
-```
+~~~text
+browser
+  -> Vite/React feature modules
+  -> Nest API (/api/v1)
+  -> SQLite job + match metadata
+  -> leased worker
+  -> parser child process
+  -> normalized match domain
+  -> features -> scoring -> replay
+  -> immutable gzip artifacts
+  -> API DTO adapters -> browser
+~~~
 
-Never point an isolated test at the normal `./data` directory. The API
-container is limited to 512 MiB RAM / 1 CPU and the native-parser worker to 2
-GiB RAM / 2 CPUs by the supplied Compose file. Upload failures use stable
-codes: `SIZE_LIMIT` (413), `INVALID_DEMO` (415/422),
-`INGESTION_PERSISTENCE_FAILED` (503), and `STORAGE_UNAVAILABLE` (507).
+| Area | Location | Responsibility |
+| --- | --- | --- |
+| Web | `apps/web` | Routing, rendering, interaction and i18n only |
+| API | `apps/api` | HTTP validation, use cases, DTOs and storage reads |
+| Worker | `apps/worker` | Leases, parser supervision, pipelines, publication and recovery |
+| Contracts | `packages/contracts` | Versioned Zod DTOs and public errors |
+| Parser adapter | `packages/parser-adapter` | Native parser calls and capability mapping |
+| Match domain | `packages/match-domain` | Parser-neutral normalization and stable roster identity |
+| Features | `packages/features` | Deterministic factual analytics |
+| Scoring | `packages/scoring` | Legacy reports, participation rating and explanation |
+| Artifacts | `packages/artifacts` | Bounded reads and immutable publication |
+| Database | `packages/database` | Prisma client, repositories and lease operations |
 
-## Local development
+The dependency direction and data ownership rules are documented in the [current architecture map](docs/backend-map.md).
 
-For the isolated Windows Docker stand used for manual real-demo verification,
-including start, logs, stop, restart and H2/H1 owner policy commands, see
-[`docs/local-dev.md`](docs/local-dev.md).
+## Quick start on Windows
 
-Node.js 22.17+ and pnpm 11.25 are pinned for this milestone.
+Prerequisites:
 
-```bash
-pnpm install
-copy .env.example .env
-pnpm db:generate
-pnpm db:push
-pnpm dev
-```
+- Node.js 22.17 or newer.
+- Corepack available with Node.
+- Docker Desktop only for the recommended isolated full-stack run.
 
-On PowerShell set `DATABASE_URL=file:../data/app.db` if your environment does not load `.env` automatically (Prisma resolves it relative to `prisma/schema.prisma`).
+Install the pinned pnpm toolchain and dependencies:
 
-## Mandatory real-demo probe
+~~~powershell
+npm.cmd run setup:windows
+~~~
 
-```bash
-pnpm parser:probe -- C:\path\to\match.dem
-```
+The setup script uses the lockfile and creates a repository-local launcher; it does not modify the system PATH.
 
-The command calls `parseHeader`, `parsePlayerInfo`, `listGameEvents`,
-`parseEvents`, and event-adjacent `parseTicks`, then writes a sanitized probe
-report. It never stores player values. The committed cross-fixture report in
-`docs/compatibility.md` also records the manual three-demo reconciliation. See
-`tests/golden/README.md` for the path variables and skip behavior.
+Start the isolated Docker profile:
 
-With an external `.dem.info` sidecar, run the real reconciliation without
-copying either file into the repository:
+~~~powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1
+~~~
 
-```powershell
-$env:GOLDEN_OFFICE_DEMO_PATH = 'C:\external\office.dem'
-$env:GOLDEN_OFFICE_INFO_PATH = 'C:\external\office.dem.info'
-$env:GOLDEN_DUST2_DEMO_PATH = 'C:\external\dust2.dem'
-$env:GOLDEN_DUST2_INFO_PATH = 'C:\external\dust2.dem.info'
-$env:GOLDEN_TRAIN_DEMO_PATH = 'C:\external\train.dem'
-$env:GOLDEN_TRAIN_INFO_PATH = 'C:\external\train.dem.info'
-pnpm test:golden
-```
+This profile uses `_local-dev/data`, refuses the owner `data` directory and binds services to loopback. Open:
 
-The M1 scoreboard displays the parsed nickname and keeps a separate Steam
-profile link for every validated SteamID64. SteamID64 is always handled as a
-string.
+- Web: http://127.0.0.1:5173
+- API health: http://127.0.0.1:3000/api/v1/health
+- OpenAPI: http://127.0.0.1:3000/api/docs
 
-## M2 API
+Stop it without deleting its isolated data:
 
-- `GET /api/v1/matches/:id/analytics` returns schema `m2-1`.
-- `GET /api/v1/matches/:id/players/:playerId/analytics` returns one player's
-  factual metrics and contribution/error/neutral facts without a score.
-- `tests/fixtures/m2-match-analytics.json` is an anonymized synthetic fixture
-  for frontend integration; it is not real-demo evidence.
+~~~powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-down.ps1
+~~~
 
-See `docs/api-m2.md` for availability/null semantics and metric definitions.
+For a native three-process setup, a separate SQLite database, environment variables and the 5174 Vite port, follow the [development guide](docs/development.md). Do not point development commands at an owner database.
 
-## M3-B scoring API
+## Configuration
 
-- `GET /api/v1/matches/:id/report?version=...&configHash=...`
-- `GET /api/v1/matches/:id/players/:playerId/report?version=...&configHash=...`
-- `POST /api/v1/matches/:id/rescore` with `{ "scoringVersion": "...", "configHash": "..." }`
+Copy `.env.example` only as a starting point. The important controls are:
 
-Rescore reads the stored `m2-artifact-1` and never reparses the demo. Reports
-are deterministic, versioned and explicitly experimental. The live UI consumes
-the shared M3 contracts without recalculating scores or falling back to fixtures. See
-`docs/frontend-backend-contract.md`; `tests/fixtures/m3-scoring-report.json` is
-the anonymous frontend fixture.
+- `DATA_DIR` and `DATABASE_URL`: filesystem and SQLite roots; isolate both per worktree.
+- `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING`: enables rating and explanation reads.
+- `ACTIVE_RATING_POLICY`: `H2` or `H1`; selected by the owner, never by an HTTP query.
+- `RETAIN_SOURCE_DEMO`: defaults to false after verified canonical publication.
+- Upload, parser, artifact and replay size limits: bounded local resource controls.
+- Lease and heartbeat settings: worker ownership and recovery behavior.
 
-## Active participation result
+The complete, code-checked table is in [development](docs/development.md#runtime-configuration).
 
-The participation-aware candidate remains on a separate, default-off backend
-route, but M4.3 now exposes one owner-selected active policy:
+## Checks
 
-```text
-GET /api/v1/matches/:id/experimental-participation-rating
-```
+During development, run the smallest checks that cover the changed package, its direct consumers and the touched contract. Examples:
 
-Set `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1` for both the API and worker.
-Set `ACTIVE_RATING_POLICY=H2` (default PRIMARY) or `H1` (permanent FALLBACK) on
-the backend. HTTP `?policy=` selection is forbidden. New completed matches keep
-one `match-result@1` gzip JSON and delete the source only after verified
-publication and SQLite binding. GET never parses or backfills.
+~~~powershell
+npm.cmd run architecture:check
+npm.cmd run test:packages -- --filter=@who-ruined/scoring
+npm.cmd --prefix apps/web run test
+npm.cmd run i18n:check
+~~~
 
-To change the owner policy without a demo, cache or sidecar:
+Do not run real demos unless they are explicitly authorized. Synthetic fixtures must remain labeled synthetic and cannot support real-demo claims.
 
-```powershell
-$env:ACTIVE_RATING_POLICY = 'H1'
-npm.cmd run rating:rebuild -- --dry-run
-npm.cmd run rating:rebuild -- --apply
-```
+The P6 repository gate includes architecture, lint, typecheck, package tests,
+build, i18n and contrast. Its latest result is recorded in the
+[final quality report](docs/architecture/final-quality-report.md). The root
+`npm.cmd run test` additionally invokes the real-demo golden test; if its
+external demo inputs are unavailable, that is a skip/blocker, not a pass.
 
-See `docs/api-participation-rating.md` for the versioned DTO, availability
-codes, award pools and errors. `docs/frontend-handoff-participation-rating.md` is
-the backend-only handoff. Storage, migration, deletion and recovery are in
-`docs/m4.3-compact-result-and-lifecycle.md`. Historical migration is explicit:
+## Documentation
 
-```powershell
-npm.cmd run result:migrate -- --dry-run
-npm.cmd run result:migrate -- --apply
-```
+Start with the [documentation index](docs/README.md). The canonical references are:
 
-Migration never deletes legacy files automatically.
+- [API routes, DTOs and errors](docs/api.md)
+- [Storage, jobs and artifact lifecycle](docs/storage-lifecycle.md)
+- [Frontend architecture](docs/frontend.md)
+- [Local development and troubleshooting](docs/development.md)
+- [Parser compatibility evidence](docs/compatibility.md)
+- [Refactoring roadmap](docs/architecture/refactoring-roadmap.md)
+- [P6 final quality report](docs/architecture/final-quality-report.md)
 
-The obsolete P2/C2+S2 HTTP route was retired in M4.5. Historical files are not
-deleted automatically, while the shared prepared-input kernel remains internal
-because H2/H1 reconstruction depends on it.
+`SPEC.md` is normative for domain behavior. Historical M3/M4 reports remain in `docs/` as evidence and are indexed separately; they do not override the current contracts.
 
-## Batch validation
+## Current release boundary
 
-```powershell
-pnpm validate:demos "F:\CS2 Demos"
-pnpm score:demos "F:\CS2 Demos"
-```
-
-The validator recursively discovers arbitrary `.dem` names, matches adjacent
-`.dem.info` sidecars, isolates each native parse in a child process, and writes
-an anonymized JSON report under `data/reports/`. A failed or truncated demo is
-reported as `FAIL` without stopping the remaining batch. The exported report
-contains SHA-256 prefixes and anonymous aggregates, not paths, filenames,
-nicknames or SteamID values.
-
-## Verification
-
-```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-```
-
-M3-C scoring calibration remains experimental. M4.2 isolates the synchronous
-native parser behind an owned OS-process boundary, applies a real wall-clock
-hard timeout, and uses renewable lease tokens plus immutable publication for
-bounded worker recovery. Relevant worker settings are `JOB_LEASE_MS`,
-`JOB_HEARTBEAT_MS`, `MAX_JOB_ATTEMPTS`, `CHILD_KILL_GRACE_MS`,
-`MAX_PARSE_ARTIFACT_BYTES` and `MAX_PARSE_ARTIFACT_OUTPUT_BYTES`. Deletion,
-retention and compact-result lifecycle are implemented in M4.3. M4.4 adds
-finite upload/queue admission, strict HTTP inputs, bounded gzip inflation and
-container resource limits; see `docs/m4.4-backend-hardening.md`. Public
-deployment remains out of scope.
-No public deployment is configured.
-
-For a concise map of backend components and the `.dem` to HTTP data flow, see
-[`docs/backend-map.md`](docs/backend-map.md).
-
-## Frontend and translations
-
-See [docs/frontend.md](docs/frontend.md) for Windows setup, routes, API integration,
-design previews, localization checks and backend requirements. Translation instructions
-are in [AGENTS.md](AGENTS.md). Start with `pnpm.cmd run setup:windows`, then
-`pnpm.cmd run dev:web` (http://localhost:5173, Ctrl+C to stop).
+The current application is designed for one trusted local owner. It has loopback defaults and resource bounds, but no authentication, authorization, tenant isolation, rate limiting across multiple API processes, malware scanning or public object-store design. Treat a public deployment as a separate security and operations project, not a configuration toggle.

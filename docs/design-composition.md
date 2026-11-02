@@ -1,5 +1,7 @@
 # Композиция внутренних экранов: спецификация
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 Рабочий промт для вёрстки отчёта, страницы игрока и справки. Источник — публичная
 страница coinbase.com/ru, измеренная в браузере при ширине окна 1280 px. Значения
 Coinbase приведены как есть, рядом — то, во что они переводятся в нашей тёмной теме.

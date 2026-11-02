@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
-import { HealthController } from './health.controller.js';
-import { MatchesController } from './matches.controller.js';
-import { MatchesService } from './matches.service.js';
+import { HealthModule } from './modules/health/health.module.js';
+import { MatchesModule } from './modules/matches/matches.module.js';
+import { ReplayModule } from './modules/replay/replay.module.js';
+import { ReportsModule } from './modules/reports/reports.module.js';
 
-@Module({ controllers: [HealthController, MatchesController], providers: [MatchesService] })
+@Module({ imports: [HealthModule, MatchesModule, ReportsModule, ReplayModule] })
 export class AppModule {}

@@ -27,7 +27,7 @@ vi.mock('@who-ruined/parser-adapter', () => ({
   isSource2Header: () => true
 }));
 
-const { MatchesService } = await import('../src/matches.service.js');
+const { createTestApiFacade } = await import('./test-api-facade.js');
 const { safeDataPath } = await import('../src/storage.js');
 
 async function validTemporaryUpload(): Promise<{ path: string; file: Express.Multer.File }> {
@@ -49,7 +49,7 @@ describe('ingest ownership and persistence cleanup', () => {
   it('removes the owned upload and creates no retained state after a transaction failure', async () => {
     const upload = await validTemporaryUpload();
     database.transaction.mockRejectedValue(new Error('controlled database failure'));
-    await expect(new MatchesService().ingest(upload.file)).rejects.toMatchObject({ code: 'INGESTION_PERSISTENCE_FAILED', status: 503 });
+    await expect(createTestApiFacade().ingest(upload.file)).rejects.toMatchObject({ code: 'INGESTION_PERSISTENCE_FAILED', status: 503 });
     await expect(access(upload.path)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(database.transaction).toHaveBeenCalledOnce();
   });
@@ -58,7 +58,7 @@ describe('ingest ownership and persistence cleanup', () => {
     const upload = await validTemporaryUpload();
     database.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'existing-match', jobs: [{ id: 'existing-job' }] });
     database.transaction.mockRejectedValue(new Error('unique race'));
-    await expect(new MatchesService().ingest(upload.file)).resolves.toEqual({ matchId: 'existing-match', jobId: 'existing-job', duplicate: true });
+    await expect(createTestApiFacade().ingest(upload.file)).resolves.toEqual({ matchId: 'existing-match', jobId: 'existing-job', duplicate: true });
     await expect(access(upload.path)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
@@ -66,7 +66,7 @@ describe('ingest ownership and persistence cleanup', () => {
     const external = path.join(os.tmpdir(), `${randomUUID()}.dem`);
     await writeFile(external, Buffer.concat([Buffer.from('PBDEMS2'), Buffer.alloc(32)]));
     const file = { path: external, originalname: 'external.dem', size: 40 } as Express.Multer.File;
-    await expect(new MatchesService().ingest(file)).rejects.toMatchObject({ code: 'UPLOAD_STORAGE_INVALID', status: 500 });
+    await expect(createTestApiFacade().ingest(file)).rejects.toMatchObject({ code: 'UPLOAD_STORAGE_INVALID', status: 500 });
     await expect(access(external)).resolves.toBeUndefined();
     await rm(external, { force: true });
   });
@@ -77,7 +77,7 @@ describe('ingest ownership and persistence cleanup', () => {
     database.countJobs.mockResolvedValue(1);
     const upload = await validTemporaryUpload();
     try {
-      await expect(new MatchesService().ingest(upload.file)).rejects.toMatchObject({ code: 'QUEUE_SATURATED', status: 503 });
+      await expect(createTestApiFacade().ingest(upload.file)).rejects.toMatchObject({ code: 'QUEUE_SATURATED', status: 503 });
       await expect(access(upload.path)).rejects.toMatchObject({ code: 'ENOENT' });
       expect(database.transaction).not.toHaveBeenCalled();
     } finally {

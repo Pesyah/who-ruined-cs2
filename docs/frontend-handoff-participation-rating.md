@@ -1,5 +1,7 @@
 # Frontend handoff: active participation rating
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 This is documentation only; M4.3 does not change React, CSS, pages or frontend
 state. The shared DTO and OpenAPI output are authoritative.
 
