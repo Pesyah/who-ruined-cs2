@@ -1,5 +1,7 @@
 # M2 analytics contract
 
+**Status:** current detailed analytics semantics. The complete route/version/error index is [API](api.md).
+
 The local API remains under `/api/v1`; the analytics payload itself is
 versioned as `schemaVersion: "m2-1"` and `featureVersion: "m2-0.1.0"`.
 

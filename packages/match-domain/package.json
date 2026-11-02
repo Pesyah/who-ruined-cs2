@@ -11,6 +11,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "@who-ruined/contracts": "workspace:*", "@who-ruined/parser-adapter": "workspace:*" },
+  "dependencies": { "@who-ruined/contracts": "workspace:*" },
   "devDependencies": { "@who-ruined/testkit": "workspace:*" }
 }

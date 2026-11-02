@@ -26,7 +26,7 @@ packages/database/generated/
 **/*.tsbuildinfo
 
 # Frontend verification artifacts
-artifacts/
+/artifacts/
 test-results/
 playwright-report/
 apps/web/src/shared/i18n/compaction-tasks.json

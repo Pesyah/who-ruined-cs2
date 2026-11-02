@@ -1,5 +1,7 @@
 # M3-B frontend/backend contract
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 The live frontend consumes the versioned `m3-score-1` DTO through
 `@who-ruined/contracts`. The anonymous fixture at
 `tests/fixtures/m3-scoring-report.json` remains a contract/test fixture only;

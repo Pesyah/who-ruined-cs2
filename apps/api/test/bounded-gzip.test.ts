@@ -6,7 +6,11 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let root = '';
-vi.mock('../src/storage.js', () => ({ safeExistingDataPath: async (relative: string) => path.join(root, relative) }));
+vi.mock('../src/storage.js', () => ({
+  get dataRoot() {
+    return root;
+  },
+}));
 const { readBoundedGzipJson } = await import('../src/bounded-gzip.js');
 const previous = { compressed: process.env.MAX_RESULT_COMPRESSED_BYTES, json: process.env.MAX_RESULT_JSON_BYTES, depth: process.env.MAX_RESULT_JSON_DEPTH };
 

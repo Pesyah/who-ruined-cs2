@@ -4,7 +4,7 @@ import { loadEnvFile } from 'node:process';
 import { CDataGCCStrike15_v2_MatchInfoSchema, fromBinary } from 'csgo-protobuf';
 import { describe, expect, it } from 'vitest';
 import { normalizeSnapshot, stableTeamId } from '../../packages/match-domain/dist/index.js';
-import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, parseDemoSnapshot } from '../../packages/parser-adapter/dist/index.js';
+import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, parseDemoSnapshot, toNormalizationInput } from '../../packages/parser-adapter/dist/index.js';
 import { computeMatchAnalytics } from '../../packages/features/dist/index.js';
 
 try {
@@ -41,10 +41,10 @@ describe('real demo reconciliation', () => {
       expect(createHash('sha256').update(demoBytes).digest('hex')).toBe(fixture.sha256);
       expect(PARSER_LIBRARY_VERSION).toBe(fixture.parserVersion);
       expect(NORMALIZER_VERSION).toBe(fixture.normalizerVersion);
-      const match = normalizeSnapshot({
+      const match = normalizeSnapshot(toNormalizationInput({
         matchId: fixture.id, fileSha256: fixture.sha256, normalizedAt: '2000-01-01T00:00:00.000Z',
         snapshot: parseDemoSnapshot(demoPath)
-      });
+      }));
       const info = fromBinary(CDataGCCStrike15_v2_MatchInfoSchema, await readFile(infoPath));
       const referenceRounds = info.roundstatsall; const finalReference = referenceRounds.at(-1);
       if (!finalReference?.reservation || finalReference.reservation.accountIds.length !== 10) throw new Error('Reference info does not contain a 10-player roster');

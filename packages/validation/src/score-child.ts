@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { computeMatchAnalytics } from '@who-ruined/features';
 import { normalizeSnapshot } from '@who-ruined/match-domain';
-import { parseDemoSnapshot } from '@who-ruined/parser-adapter';
+import { parseDemoSnapshot, toNormalizationInput } from '@who-ruined/parser-adapter';
 import { SCORING_CONFIGS, scoreMatch } from '@who-ruined/scoring';
 import type { MatchArtifact, ScoringReport } from '@who-ruined/contracts';
 
@@ -65,7 +65,8 @@ function scoreSummary(report: ScoringReport, playerAlias: ReadonlyMap<string, st
 const demoPath = process.argv[2];
 if (!demoPath) process.exit(2);
 const digest = await sha256(demoPath);
-const match = normalizeSnapshot({ matchId: `scoring_${digest.slice(0, 16)}`, fileSha256: digest, normalizedAt: '2000-01-01T00:00:00.000Z', snapshot: parseDemoSnapshot(demoPath) });
+const snapshot = parseDemoSnapshot(demoPath);
+const match = normalizeSnapshot(toNormalizationInput({ matchId: `scoring_${digest.slice(0, 16)}`, fileSha256: digest, normalizedAt: '2000-01-01T00:00:00.000Z', snapshot }));
 const artifact: MatchArtifact = { schemaVersion: 'm2-artifact-1', match, analytics: computeMatchAnalytics(match, '2000-01-01T00:00:00.000Z') };
 const playerAlias = new Map(match.players.map((player, index) => [player.id, `player_${String(index + 1).padStart(2, '0')}`]));
 const teamAlias = new Map(match.teams.map((team, index) => [team.id, `team_${index + 1}`]));

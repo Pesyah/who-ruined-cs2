@@ -1,5 +1,7 @@
 # M3-A numerical examples and edge cases
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 All examples are synthetic scoring fixtures. They are not evidence that the
 model identifies causes of defeat in real matches.
 

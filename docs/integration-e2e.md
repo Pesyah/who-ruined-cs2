@@ -1,5 +1,7 @@
 # Frontend ↔ backend integration E2E
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 Validated locally on 2026-10-17. This document deliberately omits local demo
 paths, filenames, nicknames, Steam IDs, match IDs and job IDs. Real `.dem`,
 `.dem.info`, SQLite and generated reports remain outside Git.

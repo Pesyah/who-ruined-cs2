@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   asInteger,
   asText,
+  decodeParticipationRow,
   isSource2Header,
   parseDemoReplaySnapshot,
   parseDemoSnapshot,
@@ -22,6 +23,30 @@ describe("parser boundary", () => {
     expect(asInteger({ team_number: 3 }, ["team_num", "team_number"])).toBe(3);
     expect(asInteger({}, ["tick"])).toBeNull();
     expect(asText({ steamid: 765n }, ["steamid"])).toBe("765");
+  });
+  it("decodes participation aliases inside the parser boundary", () => {
+    expect(decodeParticipationRow({
+      event: "player_spawn",
+      tick: "42",
+      xuid: 76561198000000000n,
+      steam_id: "76561198000000001",
+      user_steamid: "76561198000000002",
+      hostage: 7,
+      is_alive: "true",
+    })).toEqual({
+      eventName: "player_spawn",
+      tick: 42,
+      candidateSteamIds: [
+        "76561198000000002",
+        "76561198000000000",
+        "76561198000000001",
+      ],
+      tickSteamId: "76561198000000001",
+      actorSteamId: "76561198000000002",
+      hostageId: "7",
+      isAlive: true,
+    });
+    expect(decodeParticipationRow({ tick: "-1" }).tick).toBe(-1);
   });
   it("recognizes only Source 2 headers and emits schema only", () => {
     expect(isSource2Header({ demo_version_name: "valve_demo_2" })).toBe(true);

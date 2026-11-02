@@ -1,9 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../components/Icon.js';
-import { SignalIllustration } from '../components/SignalIllustration.js';
-import { Disclosure } from '../components/Disclosure.js';
-import { Story } from '../components/Story.js';
+import { Disclosure, Icon, SignalIllustration, Story } from '../shared/ui/index.js';
 
 /** How the analysis works, told as stories: pipeline, what is visible today, what stays open. */
 export function AboutPage() {

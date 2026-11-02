@@ -6,7 +6,8 @@
   "exports": { ".": "./dist/index.js" },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "prisma generate --schema ../../prisma/schema.prisma && tsc -p tsconfig.json",
+    "generate": "prisma generate --schema ../../prisma/schema.prisma",
+    "build": "tsc -p tsconfig.json",
     "lint": "eslint src --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"

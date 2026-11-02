@@ -1,9 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { MatchReport } from '../components/MatchReport.js';
-import { PlayerReport } from '../components/PlayerReport.js';
+import { MatchReport } from '../features/match-report/index.js';
+import { PlayerReport } from '../features/player-report/index.js';
 import { previewData, scenarios, type PreviewScenario } from './fixtures.js';
-import { Icon } from '../components/Icon.js';
+import { Icon } from '../shared/ui/Icon.js';
 import StateGallery from './StateGallery.js';
 
 export default function PreviewPage() {

@@ -1,5 +1,7 @@
 # Active participation rating API
 
+**Status:** current detailed H2/H1 contract. Explanation and replay routes are indexed in [API](api.md).
+
 > M4.5 retirement note: the earlier
 > `GET /api/v1/matches/{matchId}/experimental-rating` P2/C2+S2 endpoint is no
 > longer registered and is absent from OpenAPI. This document describes the

@@ -1,5 +1,7 @@
 # Retired M3-C8 P2/C2+S2 HTTP integration
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 The owner retired the obsolete experimental P2/C2+S2 rating API in M4.5.
 
 The following route is no longer registered and receives ordinary safe

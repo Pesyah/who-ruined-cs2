@@ -1,65 +1,47 @@
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
-import { link, lstat, mkdir, open, readFile, rm } from 'node:fs/promises';
+import {
+  ArtifactError,
+  FileArtifactStore,
+  assertNoSymlinkPath,
+  resolveArtifactPath,
+} from '@who-ruined/artifacts';
 
 export function resolveDataPath(dataRoot: string, relativePath: string): string {
-  const root = path.resolve(dataRoot);
-  const resolved = path.resolve(root, relativePath);
-  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
-  if (resolved === root || !resolved.startsWith(prefix)) throw new Error('Unsafe artifact path');
-  return resolved;
-}
-
-export async function assertNoSymlinkComponents(dataRoot: string, target: string): Promise<void> {
-  const root = path.resolve(dataRoot);
-  const resolved = path.resolve(target);
-  const relative = path.relative(root, resolved);
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Unsafe artifact path');
-  let current = root;
-  for (const segment of relative.split(path.sep)) {
-    current = path.join(current, segment);
-    try {
-      if ((await lstat(current)).isSymbolicLink()) throw new Error('SYMLINK_ARTIFACT_PATH');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw error;
-    }
+  try {
+    return resolveArtifactPath(dataRoot, relativePath);
+  } catch {
+    throw new Error('Unsafe artifact path');
   }
 }
 
-const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex');
+export async function assertNoSymlinkComponents(dataRoot: string, target: string): Promise<void> {
+  try {
+    await assertNoSymlinkPath(dataRoot, target);
+  } catch (error) {
+    if (error instanceof ArtifactError && error.reason === 'SYMLINK') throw new Error('SYMLINK_ARTIFACT_PATH');
+    if (error instanceof ArtifactError && error.reason === 'UNSAFE_PATH') throw new Error('Unsafe artifact path');
+    throw error;
+  }
+}
 
 export async function publishImmutableBytes(
+  dataRoot: string,
   target: string,
   bytes: Buffer,
   beforeCommit?: () => Promise<void>
 ): Promise<'CREATED' | 'REUSED'> {
-  await mkdir(path.dirname(target), { recursive: true });
   try {
-    const existing = await readFile(target);
-    if (digest(existing) === digest(bytes)) return 'REUSED';
-    throw new Error('IMMUTABLE_ARTIFACT_CONFLICT');
+    const relativePath = path.relative(path.resolve(dataRoot), path.resolve(target));
+    const store = new FileArtifactStore(dataRoot, {
+      compressedBytes: Number.MAX_SAFE_INTEGER,
+      decompressedBytes: Number.MAX_SAFE_INTEGER,
+      jsonDepth: Number.MAX_SAFE_INTEGER,
+    });
+    return (await store.publishImmutable(relativePath, bytes, beforeCommit)).publication;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-  const temporary = `${target}.${randomUUID()}.tmp`;
-  const handle = await open(temporary, 'wx');
-  try {
-    await handle.writeFile(bytes);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await beforeCommit?.();
-    await link(temporary, target);
-    return 'CREATED';
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    const existing = await readFile(target);
-    if (digest(existing) === digest(bytes)) return 'REUSED';
-    throw new Error('IMMUTABLE_ARTIFACT_CONFLICT');
-  } finally {
-    await rm(temporary, { force: true });
+    if (error instanceof ArtifactError && error.reason === 'IMMUTABLE_CONFLICT') {
+      throw new Error('IMMUTABLE_ARTIFACT_CONFLICT');
+    }
+    throw error;
   }
 }

@@ -1,5 +1,7 @@
 # Frontend handoff: M4.1 backend upload errors
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 No frontend implementation is included. The upload endpoint and successful
 202 response are unchanged:
 

@@ -1,5 +1,7 @@
 # M3 scoring inputs
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 This document inventories factual M2 inputs consumed by the experimental M3-B
 models. Formula and policy live in `scoring.md`; this inventory remains factual
 and does not assign roles or turn missing opportunities into mistakes.

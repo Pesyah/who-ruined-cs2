@@ -1,13 +1,13 @@
 import {
-  scoreC2S2PreparedProfiles,
-  type C2S2Family,
-  type C2S2PreparedProfile,
-  type C2S2Row
+  scoreParticipationPreparedProfiles,
+  type ParticipationFamily,
+  type ParticipationPreparedProfile,
+  type ParticipationKernelRow
 } from './participation-family-kernel.js';
 
-export const P72_PARTICIPATION_SCORER_VERSION = 'm3c8-p7.2-f-rating-projector@1.0.0-experimental' as const;
+export const PARTICIPATION_RATING_SCORER_VERSION = 'm3c8-p7.2-f-rating-projector@1.0.0-experimental' as const;
 
-export const P72_POLICIES = Object.freeze({
+export const PARTICIPATION_RATING_POLICIES = Object.freeze({
   H2: Object.freeze({
     selector: 'H2' as const,
     id: 'P72B_D_P10_N5_K025_A015_H2' as const,
@@ -22,8 +22,8 @@ export const P72_POLICIES = Object.freeze({
   })
 });
 
-export type P72PolicySelector = keyof typeof P72_POLICIES;
-export type P72AvailabilityStatus =
+export type ParticipationRatingPolicySelector = keyof typeof PARTICIPATION_RATING_POLICIES;
+export type ParticipationRatingAvailabilityStatus =
   | 'CALCULATED_RESEARCH_ONLY'
   | 'PARTICIPATION_ABSENT_GT_2_ROUNDS'
   | 'PARTICIPATION_EVIDENCE_UNKNOWN'
@@ -31,23 +31,23 @@ export type P72AvailabilityStatus =
   | 'WITHHELD_INSUFFICIENT_VERIFIED_EXPOSURE'
   | 'UNKNOWN_APPLICABILITY';
 
-export type P72ParticipationPreparedProfile = {
+export type ParticipationRatingPreparedProfile = {
   profileKey: string;
   playerId: string;
   teamId: string;
-  status: 'ELIGIBLE' | Exclude<P72AvailabilityStatus, 'CALCULATED_RESEARCH_ONLY' | 'PARTIAL_COVERAGE_INSUFFICIENT'>;
+  status: 'ELIGIBLE' | Exclude<ParticipationRatingAvailabilityStatus, 'CALCULATED_RESEARCH_ONLY' | 'PARTIAL_COVERAGE_INSUFFICIENT'>;
   reason: string | null;
-  prepared: C2S2PreparedProfile;
+  prepared: ParticipationPreparedProfile;
 };
 
-export type P72CalculatedProjection = {
+export type CalculatedParticipationRating = {
   profileKey: string;
   playerId: string;
   teamId: string;
   status: 'CALCULATED_RESEARCH_ONLY';
   reason: null;
   rating: number;
-  rawFamilyInputs: Record<C2S2Family, number>;
+  rawFamilyInputs: Record<ParticipationFamily, number>;
   aggregates: {
     positiveMass: number;
     negativeMass: number;
@@ -55,24 +55,24 @@ export type P72CalculatedProjection = {
     negativeTerm: number;
     harmTerm: number;
   };
-  finalAttribution: Record<C2S2Family, number>;
-  kernel: Extract<C2S2Row, { status: 'CALCULATED_RESEARCH_ONLY' }>;
+  finalAttribution: Record<ParticipationFamily, number>;
+  kernel: Extract<ParticipationKernelRow, { status: 'CALCULATED_RESEARCH_ONLY' }>;
 };
 
-export type P72UnavailableProjection = {
+export type UnavailableParticipationRating = {
   profileKey: string;
   playerId: string;
   teamId: string;
-  status: Exclude<P72AvailabilityStatus, 'CALCULATED_RESEARCH_ONLY'>;
+  status: Exclude<ParticipationRatingAvailabilityStatus, 'CALCULATED_RESEARCH_ONLY'>;
   reason: string | null;
   rating: null;
   rawFamilyInputs: null;
   aggregates: null;
   finalAttribution: null;
-  kernel: C2S2Row | null;
+  kernel: ParticipationKernelRow | null;
 };
 
-export type P72Projection = P72CalculatedProjection | P72UnavailableProjection;
+export type ParticipationRatingProjection = CalculatedParticipationRating | UnavailableParticipationRating;
 
 const nonHarmFamilies = ['COMBAT', 'SUPPORT', 'DEATH_RELATED', 'CONTEXT', 'OBJECTIVES'] as const;
 const epsilon = 1e-12;
@@ -82,18 +82,18 @@ function finite(value: number, label: string): number {
   return value;
 }
 
-export function p72SoftNegative(value: number): number {
+export function softenNegativeParticipationMass(value: number): number {
   finite(value, 'P72_NEGATIVE_INPUT');
   if (value < 0) throw new RangeError('P72_NEGATIVE_INPUT_MUST_BE_NONNEGATIVE');
   return value <= 0.25 ? value : 0.25 + 0.15 * Math.log1p((value - 0.25) / 0.15);
 }
 
 function unavailable(
-  profile: P72ParticipationPreparedProfile,
-  status: P72UnavailableProjection['status'],
+  profile: ParticipationRatingPreparedProfile,
+  status: UnavailableParticipationRating['status'],
   reason: string | null,
-  kernel: C2S2Row | null
-): P72UnavailableProjection {
+  kernel: ParticipationKernelRow | null
+): UnavailableParticipationRating {
   return {
     profileKey: profile.profileKey,
     playerId: profile.playerId,
@@ -108,12 +108,12 @@ function unavailable(
   };
 }
 
-export function projectP72ParticipationRatings(
-  profiles: P72ParticipationPreparedProfile[],
-  selector: P72PolicySelector
-): P72Projection[] {
-  const policy = P72_POLICIES[selector];
-  const kernelRows = new Map(scoreC2S2PreparedProfiles(profiles.map((profile) => profile.prepared)).map((row) => [row.profileKey, row]));
+export function projectParticipationRatings(
+  profiles: ParticipationRatingPreparedProfile[],
+  selector: ParticipationRatingPolicySelector
+): ParticipationRatingProjection[] {
+  const policy = PARTICIPATION_RATING_POLICIES[selector];
+  const kernelRows = new Map(scoreParticipationPreparedProfiles(profiles.map((profile) => profile.prepared)).map((row) => [row.profileKey, row]));
 
   return profiles.map((profile) => {
     const kernel = kernelRows.get(profile.profileKey) ?? null;
@@ -129,7 +129,7 @@ export function projectP72ParticipationRatings(
     const positiveMass = nonHarmFamilies.reduce((sum, family) => sum + Math.max(families[family], 0), 0);
     const negativeMass = nonHarmFamilies.reduce((sum, family) => sum + Math.max(-families[family], 0), 0);
     const positiveTerm = 10 * positiveMass;
-    const negativeTerm = -p72SoftNegative(5 * negativeMass);
+    const negativeTerm = -softenNegativeParticipationMass(5 * negativeMass);
     const harmTerm = policy.harmMultiplier * families.DIRECT_HARM;
     const finalAttribution = {
       COMBAT: families.COMBAT >= 0 ? 10 * families.COMBAT : negativeMass > 0 ? negativeTerm * (-families.COMBAT / negativeMass) : 0,
@@ -138,7 +138,7 @@ export function projectP72ParticipationRatings(
       CONTEXT: families.CONTEXT >= 0 ? 10 * families.CONTEXT : negativeMass > 0 ? negativeTerm * (-families.CONTEXT / negativeMass) : 0,
       OBJECTIVES: families.OBJECTIVES >= 0 ? 10 * families.OBJECTIVES : negativeMass > 0 ? negativeTerm * (-families.OBJECTIVES / negativeMass) : 0,
       DIRECT_HARM: harmTerm
-    } satisfies Record<C2S2Family, number>;
+    } satisfies Record<ParticipationFamily, number>;
     const rating = finite(1 + positiveTerm + negativeTerm + harmTerm, 'P72_RATING');
     const reconstructed = 1 + Object.values(finalAttribution).reduce((sum, value) => sum + value, 0);
     if (Math.abs(rating - reconstructed) > epsilon) throw new Error('P72_ATTRIBUTION_INTEGRITY_MISMATCH');
@@ -157,7 +157,7 @@ export function projectP72ParticipationRatings(
   });
 }
 
-export type P72Award = {
+export type ParticipationRatingAward = {
   playerId: string | null;
   awardPoolSize: number;
   tied: boolean;
@@ -167,18 +167,18 @@ export type P72Award = {
   reasonIfUnavailable: string | null;
 };
 
-export function selectP72Awards(
-  rows: P72Projection[],
+export function selectParticipationAwards(
+  rows: ParticipationRatingProjection[],
   teams: Array<{ teamId: string; score: number | null }>
 ): {
   eligiblePoolSize: number;
   incompletePool: boolean;
   losingTeamId: string | null;
   outcome: 'DECIDED' | 'DRAW' | 'UNKNOWN';
-  mvp: P72Award;
-  whoRuined: P72Award & { scope: 'LOSING_TEAM_ELIGIBLE' | 'DRAW_ALL_ELIGIBLE' | 'UNAVAILABLE' };
+  mvp: ParticipationRatingAward;
+  whoRuined: ParticipationRatingAward & { scope: 'LOSING_TEAM_ELIGIBLE' | 'DRAW_ALL_ELIGIBLE' | 'UNAVAILABLE' };
 } {
-  const calculated = rows.filter((row): row is P72CalculatedProjection => row.status === 'CALCULATED_RESEARCH_ONLY');
+  const calculated = rows.filter((row): row is CalculatedParticipationRating => row.status === 'CALCULATED_RESEARCH_ONLY');
   const validOutcome = teams.length === 2 && teams.every((team) => team.score !== null);
   const draw = validOutcome && teams[0]!.score === teams[1]!.score;
   const losingTeamId = validOutcome && !draw
@@ -187,7 +187,7 @@ export function selectP72Awards(
   const descending = [...calculated].sort((left, right) => right.rating - left.rating || left.profileKey.localeCompare(right.profileKey));
   const whoPool = draw ? calculated : losingTeamId ? calculated.filter((row) => row.teamId === losingTeamId) : [];
   const ascending = [...whoPool].sort((left, right) => left.rating - right.rating || left.profileKey.localeCompare(right.profileKey));
-  const award = (ordered: P72CalculatedProjection[], reason: string | null): P72Award => {
+  const award = (ordered: CalculatedParticipationRating[], reason: string | null): ParticipationRatingAward => {
     const first = ordered[0];
     if (!first) return { playerId: null, awardPoolSize: 0, tied: false, close: false, tiedPlayerIds: [], scoreGap: null, reasonIfUnavailable: reason };
     const tiedRows = ordered.filter((row) => Math.abs(row.rating - first.rating) <= epsilon);
@@ -214,3 +214,18 @@ export function selectP72Awards(
     }
   };
 }
+
+
+// Historical public names retained for source compatibility. Policy IDs and digests stay unchanged.
+export const P72_PARTICIPATION_SCORER_VERSION = PARTICIPATION_RATING_SCORER_VERSION;
+export const P72_POLICIES = PARTICIPATION_RATING_POLICIES;
+export const p72SoftNegative = softenNegativeParticipationMass;
+export const projectP72ParticipationRatings = projectParticipationRatings;
+export const selectP72Awards = selectParticipationAwards;
+export type P72PolicySelector = ParticipationRatingPolicySelector;
+export type P72AvailabilityStatus = ParticipationRatingAvailabilityStatus;
+export type P72ParticipationPreparedProfile = ParticipationRatingPreparedProfile;
+export type P72CalculatedProjection = CalculatedParticipationRating;
+export type P72UnavailableProjection = UnavailableParticipationRating;
+export type P72Projection = ParticipationRatingProjection;
+export type P72Award = ParticipationRatingAward;

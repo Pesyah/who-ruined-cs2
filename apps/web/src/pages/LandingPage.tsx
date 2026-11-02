@@ -1,10 +1,9 @@
 import { Link, NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { brand } from '../brand.js';
-import { AsciiField } from '../components/AsciiField.js';
-import { Icon } from '../components/Icon.js';
+import { AsciiField, Icon } from '../shared/ui/index.js';
 import { previewEnabled } from '../shared/env.js';
-import { LanguageSwitcher } from '../components/LanguageSwitcher.js';
+import { LanguageSwitcher } from '../shared/i18n/LanguageSwitcher.js';
 
 export function LandingPage() {
   const { t } = useTranslation();

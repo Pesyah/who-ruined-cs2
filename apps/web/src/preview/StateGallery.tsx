@@ -1,11 +1,8 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ReportSkeleton, RecentSkeleton, JobSkeleton } from '../components/Skeleton.js';
-import { ErrorState, Unavailable } from '../components/States.js';
-import { JobProgress } from '../components/JobProgress.js';
-import { SignalIllustration } from '../components/SignalIllustration.js';
-import { Icon } from '../components/Icon.js';
+import { ErrorState, Icon, JobSkeleton, RecentSkeleton, ReportSkeleton, SignalIllustration, Unavailable } from '../shared/ui/index.js';
+import { JobProgress } from '../features/upload-demo/index.js';
 
 export default function StateGallery() {
   const { t } = useTranslation('preview');

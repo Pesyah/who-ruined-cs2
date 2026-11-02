@@ -1,5 +1,5 @@
 import { matchDataSchema, type MatchData } from '@who-ruined/contracts';
-import type { MatchAnalytics } from '../analytics/types.js';
+import type { MatchAnalytics } from '../entities/match/types.js';
 
 export const scenarios = ['available', 'low-confidence', 'insufficient-data', 'm1', 'partial'] as const;
 export type PreviewScenario = typeof scenarios[number];

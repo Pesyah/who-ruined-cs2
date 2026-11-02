@@ -1,69 +1,130 @@
-# Scoring
+# Scoring, participation rating and explanation
 
-M3-B implements two deliberately separate deterministic model families in
-`@who-ruined/scoring`. The package accepts only a validated `m2-artifact-1`
-value and an immutable, Zod-validated config. It does not parse demos, query a
-database or call a network service.
+**Status:** canonical scoring reference. M3/M4 stage reports are historical evidence; persisted schema versions, policy IDs/digests and arithmetic remain compatibility contracts.
 
-## v1 compatibility baseline
+## Keep facts and evaluation separate
 
-`scoring-v1-compat@1.0.0` reproduces `SPEC.md` §7 and §11.2. Its nine finding
-types, weights, confidence, simultaneous `TEAM_KILL` + verified
-`TEAM_DAMAGE`, `net / validRounds`, 75/25 formula, 0–100 scale, stable tie-break
-and abstention thresholds are unchanged. A spread below `0.15` or top-two gap
-below `0.10` yields no clear v1 ruiner. This historical policy is not silently
-modified by successor decisions.
+`@who-ruined/features` emits factual, availability-aware analytics. `@who-ruined/scoring` consumes those facts and prepared participation evidence. Neither the parser adapter nor the frontend may produce a rating.
 
-## Experimental successor
+Ordinary deaths, low ratings and negative family values are not automatically tactical errors. Missing evidence remains unavailable and can withhold a rating.
 
-For the five players on the losing stable roster:
+## Active H2/H1 participation rating
 
-```text
-positiveRate = positive / validRounds
-teamReference = mean(losing-team positiveRate)
-positiveShortfall = max(0, teamReference - positiveRate)
-confirmedHarmRate = bundledConfirmedHarm / validRounds
-ruinRaw = alpha * positiveShortfall + beta * confirmedHarmRate
-```
+H2 is the default primary owner policy. H1 is the permanent fallback. They share one kernel and projection path; only the direct-harm multiplier differs.
 
-The baseline experiment is `alpha=0.75`, `beta=0.25`; this split is not
-approved as scientifically optimal. The comparison CLI also runs 50/50,
-25/75, low/high harm severity and a score-isolated flash-support hypothesis.
-No coefficient was fitted to the nine available matches.
+For the five non-harm family inputs \(v_i\) and the already softened direct-harm input \(H\):
 
-On an eligible full match successor always returns one losing-team leader.
-Exact primary-score ties use stable player ID and are marked `primaryScoreTied`;
-small gaps are marked `close`. v1 continues to abstain. A result is withheld
-for partial/unsupported/tied/incomplete/critically under-covered input.
+~~~text
+P = sum(max(v_i, 0))
+N = sum(max(-v_i, 0))
+g(z) = z                                      when z <= 0.25
+     = 0.25 + 0.15 * log1p((z - 0.25) / 0.15) otherwise
 
-MVP is independent: it compares all ten players by experimental
-`net / validRounds`, reports close/tie state and may select a player from either
-team.
+rating = 1 + 10P - g(5N) + hH
+h = 2 for H2
+h = 1 for H1
+~~~
 
-## Confirmed harm and research
+The five negative non-harm attributions split \(-g(5N)\) proportionally to their negative mass. Positive inputs use a linear factor of 10. Direct harm uses \(hH\).
 
-- A live suicide has a strict configurable successor severity (baseline 2.5).
-  Pre-freeze and post-round suicides are not scored.
-- Successor combines a team kill and its linked lethal friendly HP event into
-  one severity episode. v1 retains both findings and their original sum.
-- Friendly damage and flash are confirmed facts, not proof of intent.
-- `FRIENDLY_FIRE_COMBAT_CONTEXT` records firearm friendly damage followed by
-  firearm enemy damage by the same shooter in the same live round. Intervals
-  `<=0.5 s`, `(0.5,1] s`, and `>1 s` are labelled strong, moderate and not
-  triggered. The hypothesis always has `significance=null` and changes no score.
-- Ordinary deaths, untraded deaths, lost clutches, missing drops and inferred
-  roles never create negative findings.
+The invariant is:
 
-Every finding and episode contains player, round, tick, source event IDs,
-evidence strength, explanation key, scorer version and config hash. Reports
-also include per-round player ledgers. The relative index is not a probability,
-causal estimate, proof of intent or cross-match quality score.
+~~~text
+1 + sum(six finalAttribution values) == rating.value
+tolerance = 1e-12
+~~~
 
-Run the private-demo comparison with:
+The active DTO records the reconstructed value and requires `exactWithinTolerance: true`.
 
-```powershell
-pnpm score:demos "F:\CS2 Demos"
-```
+## Six families
 
-Exports under `data/reports/` and `data/research/` contain only anonymous IDs;
-both directories are ignored by Git.
+| Family | Meaning | Important caveat |
+| --- | --- | --- |
+| COMBAT | confirmed combat outcomes and model combat axes | an aggregate contribution can include baseline/residual terms |
+| SUPPORT | confirmed assists/support evidence | only evidence represented by the stored prepared input is used |
+| DEATH_RELATED | recorded death-related model axes | a death is a fact, not automatically blame |
+| DIRECT_HARM | confirmed friendly harm after the kernel softening | H2/H1 multiplier is applied here only |
+| CONTEXT | centered/saturated contextual factors | a negative value can come from centering, not a bad action |
+| OBJECTIVES | typed bomb/hostage objective factors | positive/negative caps can make it aggregate rather than event-local |
+
+T/CT exposure is coverage context. Player `teamId` remains roster-based across side changes.
+
+## Production call path
+
+New canonical results use one arithmetic path:
+
+~~~text
+buildCanonicalMatchResult
+  -> buildActiveParticipationRating
+  -> projectParticipationRatings
+  -> scoreParticipationPreparedProfiles
+  -> scoreParticipationPreparedProfile
+~~~
+
+The active API reads the stored active DTO. Its compatibility builder `buildParticipationRatingReport` delegates to `buildActiveParticipationRating` after validating the same sidecar.
+
+The explanation reprojects the private seed through `projectP72ParticipationRatings`; that name is a compatibility alias of `projectParticipationRatings`, not a second implementation. It verifies raw inputs, final attributions and the reconstruction against the stored active rating before returning a DTO.
+
+An older worker-only `scoreParticipationSidecar` helper still contains historical report arithmetic and is used by a compatibility test, not the canonical parse/API path. It is listed for P6 migration/removal review in [compatibility adapters](compatibility-adapters.md); its persisted IDs must remain unchanged.
+
+## Availability and awards
+
+Each player has an availability status and explicit coverage:
+
+- verified, absent-full, partial, unknown and globally excluded rounds;
+- counted/excluded opportunities;
+- T/CT exposure;
+- stable cause codes.
+
+A rating can be `null` for insufficient/unknown participation or applicability. Other players can remain calculated, so award pools can be incomplete.
+
+MVP is the highest calculated eligible value. Who Ruined is the lowest calculated eligible value on the losing roster; in a draw its scope is all eligible players. Missing match outcome makes Who Ruined unavailable. Exact ties are retained in `tiedPlayerIds` and resolved deterministically by stable profile key for ordering.
+
+The frontend must not replace a missing active rating with a legacy M3 score.
+
+## Explanation contract
+
+`buildParticipationExplanation` reads only `match-result@1`; GET does not reopen a demo. For each calculated family it returns:
+
+- the exact raw input;
+- the exact final attribution;
+- typed sources: `EVENT`, `AGGREGATE` or `BASELINE`;
+- round and event IDs only when an anchor can be resolved;
+- typed transformations such as context centering/saturation, objective caps, negative-mass softening, positive scale and direct-harm multiplier.
+
+Unrecognized anchors do not receive invented event IDs. Residual arithmetic becomes an explicit baseline/aggregate source. Cross-family nonlinear negative-mass softening stays identified as cross-family; it is not falsely distributed as causal event evidence.
+
+The public explanation omits recompute seed, policy digests and complete prepared profiles.
+
+## Important moments
+
+The same explanation response carries a short deterministic selection derived from normalized events and verified M2 facts:
+
+- 2/3/4/5 enemy kills in one round become one multikill card;
+- a confirmed trade within the verified five-second one-to-one revenge rule becomes a trade;
+- a confirmed trade at or below one second becomes a fast trade when tick rate is known;
+- a trade inside a multikill is included in that multikill rather than duplicated;
+- ordinary single kills, damage hits, friendly-damage technical events and old arbitrary mistake episodes are excluded;
+- at most eight moments are returned per player, sorted by significance then deterministic round/tick/ID order.
+
+When no qualifying moment exists, the DTO contains an empty list.
+
+## Legacy M3 reports
+
+The canonical result still embeds compatible `m3-score-1` reports for existing consumers and RESCORE. They are deterministic rule-based reports from explicit configuration hashes. They are not substituted for the active participation rating.
+
+`POST /rescore` recomputes a requested compatible legacy report from stored normalized data. H2/H1 active-policy rebuild is a separate owner CLI operation that uses the canonical recompute seed.
+
+## Compatibility identities
+
+The following historical names remain public aliases in `@who-ruined/scoring`:
+
+- `P72_*`, `projectP72ParticipationRatings`, `selectP72Awards`;
+- `C2S2_*`, `scoreC2S2PreparedProfile(s)`;
+- matching historical TypeScript types.
+
+New implementation code should prefer `PARTICIPATION_*`, `projectParticipationRatings` and `scoreParticipationPreparedProfile(s)`. Do not rename serialized versions, policy IDs, digests, hashing inputs or the order of arithmetic.
+
+## Evidence boundary
+
+The model is experimental, uncalibrated and non-causal. It has deterministic and compatibility tests, but no human evaluation proving that it identifies the cause of a loss. The required public-quality evaluation gate remains in [eval](eval.md) and `SPEC.md`.

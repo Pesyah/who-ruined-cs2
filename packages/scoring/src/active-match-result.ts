@@ -8,15 +8,20 @@ import {
   type ParticipationSidecar,
   type ScoringReport
 } from '@who-ruined/contracts';
-import { C2S2_MODEL_VERSION, C2S2_POLICY_DIGEST, C2S2_REFERENCE_VERSION, type C2S2Family } from './participation-family-kernel.js';
 import {
-  P72_PARTICIPATION_SCORER_VERSION,
-  P72_POLICIES,
-  projectP72ParticipationRatings,
-  selectP72Awards,
-  type P72CalculatedProjection,
-  type P72ParticipationPreparedProfile,
-  type P72PolicySelector
+  PARTICIPATION_FAMILY_POLICY_DIGEST,
+  PARTICIPATION_MODEL_VERSION,
+  PARTICIPATION_REFERENCE_VERSION,
+  type ParticipationFamily,
+} from './participation-family-kernel.js';
+import {
+  PARTICIPATION_RATING_POLICIES,
+  PARTICIPATION_RATING_SCORER_VERSION,
+  projectParticipationRatings,
+  selectParticipationAwards,
+  type CalculatedParticipationRating,
+  type ParticipationRatingPolicySelector,
+  type ParticipationRatingPreparedProfile,
 } from './participation-rating.js';
 
 const tolerance = 1e-12;
@@ -33,9 +38,9 @@ export function stableSha256(value: unknown): string {
   return createHash('sha256').update(canonical(value)).digest('hex');
 }
 
-function compactFamilies(value: { [K in C2S2Family]?: number | undefined } | null | undefined): Partial<Record<C2S2Family, number>> | null {
+function compactFamilies(value: { [K in ParticipationFamily]?: number | undefined } | null | undefined): Partial<Record<ParticipationFamily, number>> | null {
   if (!value) return null;
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number')) as Partial<Record<C2S2Family, number>>;
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number')) as Partial<Record<ParticipationFamily, number>>;
 }
 
 function causeCodes(profile: ParticipationSidecar['profiles'][number]): string[] {
@@ -57,13 +62,13 @@ function lastScores(artifact: MatchArtifact): Array<{ teamId: string; score: num
 export function buildActiveParticipationRating(
   artifact: MatchArtifact,
   sidecar: ParticipationSidecar,
-  selector: P72PolicySelector
+  selector: ParticipationRatingPolicySelector
 ): ActiveParticipationRatingReport {
   const { match, analytics } = artifact;
   if (match.players.length !== 10 || match.teams.length !== 2 || match.teams.some((team) => team.playerIds.length !== 5)) throw new Error('UNSUPPORTED_ROSTER_SIZE');
   const profileByPlayer = new Map(sidecar.profiles.map((profile) => [profile.playerId, profile]));
   if (profileByPlayer.size !== 10 || match.players.some((player) => !profileByPlayer.has(player.id))) throw new Error('PARTICIPATION_SIDECAR_ROSTER_MISMATCH');
-  const preparedProfiles: P72ParticipationPreparedProfile[] = sidecar.profiles.map((profile) => ({
+  const preparedProfiles: ParticipationRatingPreparedProfile[] = sidecar.profiles.map((profile) => ({
     profileKey: profile.profileKey, playerId: profile.playerId, teamId: profile.teamId,
     status: profile.status, reason: profile.reason,
     prepared: {
@@ -72,12 +77,12 @@ export function buildActiveParticipationRating(
       p4CPlus: { status: profile.prepared.p4CPlus.status, reason: profile.prepared.p4CPlus.reason ?? null, familyContributions: compactFamilies(profile.prepared.p4CPlus.familyContributions), objectiveSignals: profile.prepared.p4CPlus.objectiveSignals ?? null, episodeContributions: profile.prepared.p4CPlus.episodeContributions ?? null }
     }
   }));
-  const projected = projectP72ParticipationRatings(preparedProfiles, selector);
+  const projected = projectParticipationRatings(preparedProfiles, selector);
   const projectionByPlayer = new Map(projected.map((row) => [row.playerId, row]));
-  const calculated = projected.filter((row): row is P72CalculatedProjection => row.status === 'CALCULATED_RESEARCH_ONLY');
+  const calculated = projected.filter((row): row is CalculatedParticipationRating => row.status === 'CALCULATED_RESEARCH_ONLY');
   const ordering = [...calculated].sort((left, right) => right.rating - left.rating || left.profileKey.localeCompare(right.profileKey)).map((row) => row.playerId);
   const scores = lastScores(artifact);
-  const awards = selectP72Awards(projected, scores);
+  const awards = selectParticipationAwards(projected, scores);
   const losingTeamOrdering = awards.losingTeamId
     ? [...calculated].filter((row) => row.teamId === awards.losingTeamId).sort((left, right) => right.rating - left.rating || left.profileKey.localeCompare(right.profileKey)).map((row) => row.playerId)
     : awards.outcome === 'DRAW' ? ordering : [];
@@ -109,7 +114,7 @@ export function buildActiveParticipationRating(
   });
   return activeParticipationRatingReportSchema.parse({
     schemaVersion: 'm4.3-participation-rating@1', reportVersion: 'match-result@1', matchId: match.matchId,
-    experimental: true, calibrated: false, causalBlame: false, scorerVersion: P72_PARTICIPATION_SCORER_VERSION,
+    experimental: true, calibrated: false, causalBlame: false, scorerVersion: PARTICIPATION_RATING_SCORER_VERSION,
     scenario: sidecar.scenario,
     applicability: { status: sidecar.scenario === 'UNKNOWN' ? 'UNKNOWN' : 'SUPPORTED', reason: sidecar.scenario === 'UNKNOWN' ? 'UNKNOWN_APPLICABILITY' : null },
     match: { map: match.map, quality: match.quality, totalRounds: match.rounds.length, validRounds: match.rounds.filter((round) => round.isValid).length, teams: scores },
@@ -124,13 +129,13 @@ export function buildCanonicalMatchResult(options: {
   artifact: MatchArtifact;
   sidecar: ParticipationSidecar;
   productionReports: ScoringReport[];
-  selector: P72PolicySelector;
+  selector: ParticipationRatingPolicySelector;
   sourceDemoRetained: boolean;
   createdAt?: string;
 }): CanonicalMatchResult {
   if (options.sidecar.binding.matchId !== options.artifact.match.matchId || options.sidecar.binding.fileSha256 !== options.artifact.match.fileSha256) throw new Error('PARTICIPATION_SIDECAR_STALE');
-  if (options.sidecar.model.preparedInputModel !== C2S2_MODEL_VERSION || options.sidecar.model.preparedInputDigest !== C2S2_POLICY_DIGEST || options.sidecar.model.referenceVersion !== C2S2_REFERENCE_VERSION) throw new Error('PARTICIPATION_SIDECAR_POLICY_MISMATCH');
-  const policy = P72_POLICIES[options.selector];
+  if (options.sidecar.model.preparedInputModel !== PARTICIPATION_MODEL_VERSION || options.sidecar.model.preparedInputDigest !== PARTICIPATION_FAMILY_POLICY_DIGEST || options.sidecar.model.referenceVersion !== PARTICIPATION_REFERENCE_VERSION) throw new Error('PARTICIPATION_SIDECAR_POLICY_MISMATCH');
+  const policy = PARTICIPATION_RATING_POLICIES[options.selector];
   return canonicalMatchResultSchema.parse({
     schemaVersion: 'match-result@1', createdAt: options.createdAt ?? new Date().toISOString(),
     internal: {
@@ -144,7 +149,7 @@ export function buildCanonicalMatchResult(options: {
   });
 }
 
-export function rebuildCanonicalMatchResult(value: CanonicalMatchResult, selector: P72PolicySelector): CanonicalMatchResult {
+export function rebuildCanonicalMatchResult(value: CanonicalMatchResult, selector: ParticipationRatingPolicySelector): CanonicalMatchResult {
   const seed = value.internal.recomputeSeed;
   const sidecar = {
     schemaVersion: 'm3c8-participation-prepared@1.0.0-experimental' as const,

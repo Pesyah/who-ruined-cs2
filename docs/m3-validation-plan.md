@@ -1,5 +1,7 @@
 # M3 scoring validation and calibration plan
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 This plan governs the implemented experimental M3-B engine and later product claims. The nine
 real demos validate parsing and internal arithmetic; they are not a statistical
 calibration corpus and contain no real overtime.

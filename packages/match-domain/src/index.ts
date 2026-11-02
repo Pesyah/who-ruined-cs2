@@ -1,6 +1,18 @@
 import { createHash } from 'node:crypto';
 import type { MatchData, MatchEvent, MatchRound, Quality, Side } from '@who-ruined/contracts';
-import { asInteger, asText, PARSER_LIBRARY_VERSION, type ParsedDemoSnapshot, type UnknownRow } from '@who-ruined/parser-adapter';
+import type {
+  NormalizationEventInput,
+  NormalizationInput,
+  NormalizationTickInput,
+} from './normalization-input.js';
+
+export type {
+  NormalizationEventInput,
+  NormalizationInput,
+  NormalizationPlayerInput,
+  NormalizationTickInput,
+  NormalizeInput,
+} from './normalization-input.js';
 
 export type MatchId = string & { readonly __matchId: unique symbol };
 export type TeamId = string & { readonly __teamId: unique symbol };
@@ -68,25 +80,23 @@ function validateRound(round: MatchRound, priorEnd: number, expectedOrdinal: num
   }
 }
 
-export interface NormalizeInput { matchId: string; fileSha256: string; snapshot: ParsedDemoSnapshot; normalizedAt?: string }
-
-function uniqueTicks(rows: UnknownRow[]): number[] {
-  return [...new Set(rows.map((row) => asInteger(row, ['tick'])).filter((tick): tick is number => tick !== null))].sort((a, b) => a - b);
+function uniqueTicks(events: NormalizationEventInput[]): number[] {
+  return [...new Set(events.map((event) => event.tick).filter((tick): tick is number => tick !== null))].sort((a, b) => a - b);
 }
 
 interface TeamTickState { sideByTeamId: Record<string, Side>; scoreByTeamId: Record<string, number>; issues: string[] }
 
-function readTeamTickState(tick: number, tickRows: UnknownRow[], teams: MatchData['teams'], playerToTeam: Map<string, string>): TeamTickState {
-  const rows = tickRows.filter((row) => asInteger(row, ['tick']) === tick);
+function readTeamTickState(tick: number, tickRows: NormalizationTickInput[], teams: MatchData['teams'], playerToTeam: Map<string, string>): TeamTickState {
+  const rows = tickRows.filter((row) => row.tick === tick);
   const sideValues = new Map<string, Set<Side>>();
   const scoreValues = new Map<string, Set<number>>();
   const members = new Map<string, Set<string>>();
   for (const row of rows) {
-    const playerId = asText(row, ['steamid','steam_id']);
+    const playerId = row.playerId;
     const teamId = playerId ? playerToTeam.get(playerId) : undefined;
     if (!teamId || !playerId) continue;
-    const sideNumber = asInteger(row, ['team_num','team_number']);
-    const score = asInteger(row, ['team_rounds_total','team_score']);
+    const sideNumber = row.sideNumber;
+    const score = row.teamScore;
     const side = sideNumber === 2 ? 'T' : sideNumber === 3 ? 'CT' : null;
     if (side) { const values = sideValues.get(teamId) ?? new Set<Side>(); values.add(side); sideValues.set(teamId, values); }
     if (score !== null) { const values = scoreValues.get(teamId) ?? new Set<number>(); values.add(score); scoreValues.set(teamId, values); }
@@ -106,32 +116,13 @@ function readTeamTickState(tick: number, tickRows: UnknownRow[], teams: MatchDat
   return { sideByTeamId, scoreByTeamId, issues: [...new Set(issues)] };
 }
 
-function asBoolean(row: UnknownRow, aliases: string[]): boolean | null {
-  for (const key of aliases) {
-    const value = row[key];
-    if (typeof value === 'boolean') return value;
-    if (value === 0 || value === 1) return value === 1;
-  }
-  return null;
-}
-
-function asNumber(row: UnknownRow, aliases: string[]): number | null {
-  for (const key of aliases) {
-    const value = row[key];
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
-  }
-  return null;
-}
-
 export function isSteamId64(value: string | null): value is string {
   return value !== null && /^7656119\d{10}$/.test(value);
 }
 
-export function deriveTickRate(tickRows: UnknownRow[]): number | null {
+export function deriveTickRate(tickRows: NormalizationTickInput[]): number | null {
   const samples = [...new Map(tickRows.flatMap((row) => {
-    const tick = asInteger(row, ['tick']); const gameTime = row.game_time;
-    return tick !== null && typeof gameTime === 'number' && Number.isFinite(gameTime) ? [[tick, gameTime] as const] : [];
+    return row.tick !== null && row.gameTime !== null ? [[row.tick, row.gameTime] as const] : [];
   })).entries()].sort(([a], [b]) => a - b);
   const first = samples[0]; const last = samples.at(-1);
   if (!first || !last || first[0] === last[0] || first[1] === last[1]) return null;
@@ -144,13 +135,12 @@ export function isCreditedAssist(assisterId: string | null, targetId: string | n
   return assisterId !== null && targetId !== null && playerToTeam.get(assisterId) !== undefined && playerToTeam.get(assisterId) !== playerToTeam.get(targetId);
 }
 
-export function normalizeSnapshot(input: NormalizeInput): MatchData {
+export function normalizeSnapshot(input: NormalizationInput): MatchData {
   const issues: MatchData['qualityIssues'] = [];
-  const playerCandidates = input.snapshot.players.map((row, index) => {
-    const candidateSteamId = asText(row, ['steamid','steam_id','user_steamid']);
+  const playerCandidates = input.players.map((player, index) => {
+    const candidateSteamId = player.candidateSteamId;
     const steamId = isSteamId64(candidateSteamId) ? candidateSteamId : null;
-    const sideNumber = asInteger(row, ['team_number','team_num']);
-    return { id: steamId ?? `anon_${index + 1}`, steamId, displayName: asText(row, ['name','player_name']) ?? `Игрок ${index + 1}`, sideNumber };
+    return { id: steamId ?? `anon_${index + 1}`, steamId, displayName: player.displayName ?? `Игрок ${index + 1}`, sideNumber: player.initialSideNumber };
   });
   const parsedPlayers = [...new Map(playerCandidates.map((player) => [player.id, player])).values()];
   const groups = new Map<number, typeof parsedPlayers>();
@@ -165,8 +155,8 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
   const playerToTeam = new Map(teams.flatMap((team) => team.playerIds.map((playerId) => [playerId, team.id] as const)));
   if (parsedPlayers.some((player) => player.steamId === null)) issues.push({ code: 'PLAYER_IDENTITY_UNVERIFIED', message: 'Не для всех игроков подтверждён SteamID64.' });
   const scoreboardByPlayer = new Map(parsedPlayers.map((player) => [player.id, { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_SCOREBOARD_PHASES' as const }]));
-  const adjustScoreboard = (row: UnknownRow, delta: 1 | -1): void => {
-    const actorId = asText(row, ['attacker_steamid']); const targetId = asText(row, ['user_steamid','victim_steamid']); const assisterId = asText(row, ['assister_steamid']);
+  const adjustScoreboard = (event: NormalizationEventInput, delta: 1 | -1): void => {
+    const actorId = event.attackerPlayerId; const targetId = event.subjectPlayerId; const assisterId = event.assisterPlayerId;
     const actor = actorId ? scoreboardByPlayer.get(actorId) : undefined; const target = targetId ? scoreboardByPlayer.get(targetId) : undefined; const assister = assisterId ? scoreboardByPlayer.get(assisterId) : undefined;
     if (target) target.deaths += delta;
     if (actor && targetId && actorId !== targetId) {
@@ -174,15 +164,15 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     }
     if (assister && isCreditedAssist(assisterId, targetId, playerToTeam)) assister.assists += delta;
   };
-  for (const row of input.snapshot.events) {
-    if (asText(row, ['event_name','event','name']) !== 'player_death') continue;
-    adjustScoreboard(row, 1);
+  for (const event of input.events) {
+    if (event.name !== 'player_death') continue;
+    adjustScoreboard(event, 1);
   }
   const players = parsedPlayers.filter((player) => playerToTeam.has(player.id)).map((player) => ({
     id: player.id, steamId: player.steamId, displayName: player.displayName, teamId: playerToTeam.get(player.id) ?? '',
     scoreboard: scoreboardByPlayer.get(player.id) ?? { kills: 0, deaths: 0, assists: 0, teamKills: 0, source: 'PARSED_DEATH_EVENTS_SCOREBOARD_PHASES' as const }
   }));
-  const byKind = (name: string): UnknownRow[] => input.snapshot.events.filter((row) => asText(row, ['event_name','event','name']) === name);
+  const byKind = (name: string): NormalizationEventInput[] => input.events.filter((event) => event.name === name);
   const explicitStarts = uniqueTicks([...byKind('round_prestart'), ...byKind('round_start')]);
   const freezes = uniqueTicks(byKind('round_freeze_end'));
   const legacyEnds = uniqueTicks(byKind('round_end'));
@@ -207,8 +197,8 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     const priorEnd = rounds.at(-1)?.endTick ?? -1;
     const phaseStart = [...explicitStarts].reverse().find((tick) => tick <= freezeTick && tick >= priorEnd);
     const startTick = Math.max(phaseStart ?? freezeTick, priorEnd + 1);
-    const beforeState = readTeamTickState(freezeTick, input.snapshot.ticks, teams, playerToTeam);
-    const afterState = readTeamTickState(endTick, input.snapshot.ticks, teams, playerToTeam);
+    const beforeState = readTeamTickState(freezeTick, input.ticks, teams, playerToTeam);
+    const afterState = readTeamTickState(endTick, input.ticks, teams, playerToTeam);
     const scoreAfter = { ...afterState.scoreByTeamId };
     const winners = teams.filter((team) => (scoreAfter[team.id] ?? -1) - (priorScore[team.id] ?? -1) === 1 && teams.every((other) => other.id === team.id || (scoreAfter[other.id] ?? -1) === (priorScore[other.id] ?? -1)));
     const winnerTeamId = winners.length === 1 ? winners[0]?.id ?? null : null;
@@ -231,51 +221,60 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
   if (rounds.length !== freezes.length) issues.push({ code: 'ROUND_COVERAGE', message: `Восстановлено ${rounds.length} из ${freezes.length} live-раундов.` });
   const normalizedEvents: MatchEvent[] = [];
   let unassignedDeaths = 0;
-  const tickRate = deriveTickRate(input.snapshot.ticks);
+  const tickRate = deriveTickRate(input.ticks);
   const factualKinds: Record<string, string> = {
     player_death: 'PLAYER_DEATH', player_hurt: 'PLAYER_HURT', player_blind: 'PLAYER_BLIND',
     bomb_beginplant: 'BOMB_BEGIN_PLANT', bomb_begindefuse: 'BOMB_BEGIN_DEFUSE', bomb_planted: 'BOMB_PLANTED', bomb_defused: 'BOMB_DEFUSED', bomb_exploded: 'BOMB_EXPLODED',
     flashbang_detonate: 'FLASH_DETONATE', hegrenade_detonate: 'HE_DETONATE', smokegrenade_detonate: 'SMOKE_DETONATE', inferno_startburn: 'INFERNO_START', inferno_expire: 'INFERNO_EXPIRE'
   };
-  const orderedRows = input.snapshot.events.map((row, rowIndex) => ({ row, rowIndex })).sort((a, b) => (asInteger(a.row, ['tick']) ?? Number.MAX_SAFE_INTEGER) - (asInteger(b.row, ['tick']) ?? Number.MAX_SAFE_INTEGER) || a.rowIndex - b.rowIndex);
+  const orderedEvents = [...input.events].sort((left, right) =>
+    (left.tick ?? Number.MAX_SAFE_INTEGER) - (right.tick ?? Number.MAX_SAFE_INTEGER)
+    || left.sourceRowIndex - right.sourceRowIndex
+  );
   const terminalByRound = new Map<string, { tick: number; rowIndex: number; type: 'OBJECTIVE' | 'ELIMINATION' }>();
   for (const round of rounds) {
     const freezeTick = round.freezeEndTick ?? round.startTick;
-    const objectiveCandidates: Array<{ row: UnknownRow; rowIndex: number; terminalType: 'OBJECTIVE' | 'ELIMINATION' }> = orderedRows.filter(({ row }) => {
-      const tick = asInteger(row, ['tick']); const name = asText(row, ['event_name','event','name']);
-      return tick !== null && tick >= freezeTick && tick <= round.endTick && (name === 'bomb_defused' || name === 'bomb_exploded');
-    }).map((item) => ({ ...item, terminalType: 'OBJECTIVE' as const }));
-    const candidates = [...objectiveCandidates];
+    const objectiveCandidates = orderedEvents.filter((event) =>
+      event.tick !== null
+      && event.tick >= freezeTick
+      && event.tick <= round.endTick
+      && (event.name === 'bomb_defused' || event.name === 'bomb_exploded')
+    ).map((event) => ({ event, terminalType: 'OBJECTIVE' as const }));
+    const candidates: Array<{ event: NormalizationEventInput; terminalType: 'OBJECTIVE' | 'ELIMINATION' }> = [...objectiveCandidates];
     const alive = new Map(teams.map((team) => [team.id, new Set(team.playerIds)]));
-    for (const item of orderedRows) {
-      const tick = asInteger(item.row, ['tick']); const name = asText(item.row, ['event_name','event','name']);
-      if (tick === null || tick < freezeTick || tick > round.endTick || name !== 'player_death') continue;
-      const targetId = asText(item.row, ['user_steamid','victim_steamid']); const teamId = targetId ? playerToTeam.get(targetId) : undefined;
+    for (const event of orderedEvents) {
+      const tick = event.tick;
+      if (tick === null || tick < freezeTick || tick > round.endTick || event.name !== 'player_death') continue;
+      const targetId = event.subjectPlayerId; const teamId = targetId ? playerToTeam.get(targetId) : undefined;
       if (targetId && teamId) alive.get(teamId)?.delete(targetId);
       if ([...alive.values()].some((playersAlive) => playersAlive.size === 0)) {
-        if (objectiveCandidates.length === 0) candidates.push({ ...item, terminalType: 'ELIMINATION' });
+        if (objectiveCandidates.length === 0) candidates.push({ event, terminalType: 'ELIMINATION' });
         break;
       }
     }
-    candidates.sort((a, b) => (asInteger(a.row, ['tick']) ?? 0) - (asInteger(b.row, ['tick']) ?? 0) || a.rowIndex - b.rowIndex);
-    const terminal = candidates[0]; const terminalTick = terminal ? asInteger(terminal.row, ['tick']) : null;
-    if (terminal && terminalTick !== null) terminalByRound.set(round.id, { tick: terminalTick, rowIndex: terminal.rowIndex, type: terminal.terminalType });
+    candidates.sort((left, right) =>
+      (left.event.tick ?? 0) - (right.event.tick ?? 0)
+      || left.event.sourceRowIndex - right.event.sourceRowIndex
+    );
+    const terminal = candidates[0]; const terminalTick = terminal?.event.tick ?? null;
+    if (terminal && terminalTick !== null) terminalByRound.set(round.id, { tick: terminalTick, rowIndex: terminal.event.sourceRowIndex, type: terminal.terminalType });
   }
   const bombStateByRound = new Map<string, 'NOT_PLANTED'|'PLANTED'|'DEFUSED'|'EXPLODED'>();
   const seenLiveDeathKeys = new Set<string>();
-  for (const { row, rowIndex: parserRowIndex } of orderedRows) {
-    const eventName = asText(row, ['event_name','event','name']);
+  for (const event of orderedEvents) {
+    const parserRowIndex = event.sourceRowIndex;
+    const eventName = event.name;
     if (!eventName || !factualKinds[eventName]) continue;
-    const tick = asInteger(row, ['tick']);
+    const tick = event.tick;
     if (tick === null) { if (eventName === 'player_death') unassignedDeaths += 1; continue; }
     const candidateLiveRound = rounds.find((candidate) => tick >= (candidate.freezeEndTick ?? candidate.startTick) && tick <= candidate.endTick);
     const terminal = candidateLiveRound ? terminalByRound.get(candidateLiveRound.id) : undefined;
     const afterTerminalPosition = terminal ? tick > terminal.tick || tick === terminal.tick && parserRowIndex > terminal.rowIndex : false;
-    const rawActorForPhase = asText(row, ['attacker_steamid']); const rawTargetForPhase = asText(row, ['user_steamid','victim_steamid']);
+    const rawActorForPhase = event.attackerPlayerId; const rawTargetForPhase = event.subjectPlayerId;
     const afterEliminationSuicide = eventName === 'player_death' && (rawActorForPhase === rawTargetForPhase || rawActorForPhase === null);
     const deathKey = candidateLiveRound && rawTargetForPhase ? `${candidateLiveRound.id}:${rawTargetForPhase}` : null;
     const duplicateRoundDeath = deathKey !== null && seenLiveDeathKeys.has(deathKey);
-    const deathWeapon = asText(row, ['weapon']);
+    const deathWeapon = event.weapon;
     const sameTickObjectiveSuicide = terminal?.type === 'OBJECTIVE' && tick === terminal.tick && afterEliminationSuicide && deathWeapon === 'planted_c4';
     const postEliminationWorldDeath = terminal?.type === 'ELIMINATION' && afterTerminalPosition && afterEliminationSuicide && deathWeapon === 'world';
     const afterTerminal = terminal !== undefined && afterTerminalPosition && afterEliminationSuicide && (duplicateRoundDeath || sameTickObjectiveSuicide || postEliminationWorldDeath);
@@ -287,9 +286,9 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     const postRound = priorRound && (!nextRound || tick < nextRound.startTick) ? priorRound : undefined;
     const phaseRound = liveRound ?? intervalRound ?? postRound;
     if (!phaseRound) { if (eventName === 'player_death') unassignedDeaths += 1; continue; }
-    const rawActor = asText(row, ['attacker_steamid','user_steamid','userid_steamid','thrower_steamid']);
-    const rawTarget = asText(row, ['victim_steamid','user_steamid']);
-    const rawAssister = asText(row, ['assister_steamid']);
+    const rawActor = event.actorPlayerId;
+    const rawTarget = event.targetPlayerId;
+    const rawAssister = event.assisterPlayerId;
     const actorId = rawActor && playerToTeam.has(rawActor) ? rawActor : null;
     const targetId = eventName.startsWith('player_') && rawTarget && playerToTeam.has(rawTarget) ? rawTarget : null;
     const candidateAssisterId = rawAssister && playerToTeam.has(rawAssister) ? rawAssister : null;
@@ -297,12 +296,12 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
     const actorTeamId = actorId ? playerToTeam.get(actorId) ?? null : null;
     const targetTeamId = targetId ? playerToTeam.get(targetId) ?? null : null;
     const friendlyFire = actorId !== null && targetId !== null && actorId !== targetId && actorTeamId === targetTeamId;
-    const tickRows = input.snapshot.ticks.filter((item) => asInteger(item, ['tick']) === tick);
+    const tickRows = input.ticks.filter((item) => item.tick === tick);
     const aliveByTeamId = tickRows.length > 0 ? Object.fromEntries(teams.map((team) => [team.id, tickRows.filter((item) => {
-      const idAtTick = asText(item, ['steamid','steam_id']);
-      return idAtTick && playerToTeam.get(idAtTick) === team.id && asBoolean(item, ['is_alive']) === true;
+      const idAtTick = item.playerId;
+      return idAtTick && playerToTeam.get(idAtTick) === team.id && item.isAlive === true;
     }).length])) : null;
-    const actorTick = actorId ? tickRows.find((item) => asText(item, ['steamid','steam_id']) === actorId) : undefined;
+    const actorTick = actorId ? tickRows.find((item) => item.playerId === actorId) : undefined;
     let bombState = bombStateByRound.get(phaseRound.id) ?? 'NOT_PLANTED';
     if (eventName === 'bomb_planted') bombState = 'PLANTED';
     if (eventName === 'bomb_defused') bombState = 'DEFUSED';
@@ -313,45 +312,43 @@ export function normalizeSnapshot(input: NormalizeInput): MatchData {
       id: eventId(phaseRound.ordinal, eventName, parserRowIndex), kind, roundId: phaseRound.id, tick, actorId, targetId, assisterId,
       attrs: {
         friendlyFire, suicide: eventName === 'player_death' ? actorId !== null && actorId === targetId : null,
-        headshot: asBoolean(row, ['headshot']), assistedFlash: asBoolean(row, ['assistedflash']), weapon: asText(row, ['weapon']),
-        healthAfter: asInteger(row, ['health']), armorAfter: asInteger(row, ['armor']), rawHealthDamage: asInteger(row, ['dmg_health']), rawArmorDamage: asInteger(row, ['dmg_armor']),
-        hitgroup: asInteger(row, ['hitgroup']), blindDuration: asNumber(row, ['blind_duration']), entityId: asInteger(row, ['entityid']),
-        site: asText(row, ['site']), hasKit: asBoolean(row, ['haskit']), x: asNumber(row, ['x']), y: asNumber(row, ['y']), z: asNumber(row, ['z']),
+        headshot: event.headshot, assistedFlash: event.assistedFlash, weapon: event.weapon,
+        healthAfter: event.healthAfter, armorAfter: event.armorAfter, rawHealthDamage: event.rawHealthDamage, rawArmorDamage: event.rawArmorDamage,
+        hitgroup: event.hitgroup, blindDuration: event.blindDuration, entityId: event.entityId,
+        site: event.site, hasKit: event.hasKit, x: event.x, y: event.y, z: event.z,
         excludedFromLiveFeatures: liveRound === undefined
       },
       context: {
         phase: liveRound ? 'LIVE' : tick < (phaseRound.freezeEndTick ?? phaseRound.startTick) ? 'PRE_FREEZE' : 'POST_ROUND',
         actorTeamId, targetTeamId, actorSide: actorTeamId ? phaseRound.sideByTeamId[actorTeamId] ?? null : null, targetSide: targetTeamId ? phaseRound.sideByTeamId[targetTeamId] ?? null : null,
         aliveByTeamId, secondsFromFreezeEnd: phaseRound.freezeEndTick !== null && tickRate !== null ? (tick - phaseRound.freezeEndTick) / tickRate : null,
-        bombState, actorEquipmentValue: actorTick ? asInteger(actorTick, ['current_equip_value']) : null, actorMoney: actorTick ? asInteger(actorTick, ['cash']) : null
+        bombState, actorEquipmentValue: actorTick?.equipmentValue ?? null, actorMoney: actorTick?.cash ?? null
       },
       source: { eventName, rowIndex: parserRowIndex }
     });
-    if (eventName === 'player_death' && !liveRound && tick >= (phaseRound.freezeEndTick ?? phaseRound.startTick)) adjustScoreboard(row, -1);
+    if (eventName === 'player_death' && !liveRound && tick >= (phaseRound.freezeEndTick ?? phaseRound.startTick)) adjustScoreboard(event, -1);
   }
   for (const round of rounds) {
     if (round.freezeEndTick === null) continue;
     const freezeTick = round.freezeEndTick;
-    input.snapshot.ticks.forEach((row, tickRowIndex) => {
-      if (asInteger(row, ['tick']) !== freezeTick) return;
-      const playerId = asText(row, ['steamid','steam_id']);
+    input.ticks.forEach((tickInput) => {
+      if (tickInput.tick !== freezeTick) return;
+      const playerId = tickInput.playerId;
       if (!playerId || !playerToTeam.has(playerId)) return;
-      const rawInventory = row.inventory;
-      const inventory = Array.isArray(rawInventory) ? rawInventory.filter((item): item is string => typeof item === 'string') : [];
       normalizedEvents.push({
-        id: eventId(round.ordinal, 'economy_snapshot', tickRowIndex), kind: 'ECONOMY_SNAPSHOT', roundId: round.id, tick: freezeTick,
+        id: eventId(round.ordinal, 'economy_snapshot', tickInput.sourceRowIndex), kind: 'ECONOMY_SNAPSHOT', roundId: round.id, tick: freezeTick,
         actorId: playerId, targetId: null, assisterId: null,
-        attrs: { equipmentValue: asInteger(row, ['current_equip_value']), armor: asInteger(row, ['armor_value']), hasHelmet: asBoolean(row, ['has_helmet']), hasDefuser: asBoolean(row, ['has_defuser']), money: asInteger(row, ['cash']), inventory },
-        context: { phase: 'LIVE', actorTeamId: playerToTeam.get(playerId) ?? null, targetTeamId: null, actorSide: round.sideByTeamId[playerToTeam.get(playerId) ?? ''] ?? null, targetSide: null, aliveByTeamId: null, secondsFromFreezeEnd: 0, bombState: 'NOT_PLANTED', actorEquipmentValue: asInteger(row, ['current_equip_value']), actorMoney: asInteger(row, ['cash']) },
-        source: { eventName: 'parseTicks:economy', rowIndex: tickRowIndex }
+        attrs: { equipmentValue: tickInput.equipmentValue, armor: tickInput.armorValue, hasHelmet: tickInput.hasHelmet, hasDefuser: tickInput.hasDefuser, money: tickInput.cash, inventory: tickInput.inventory },
+        context: { phase: 'LIVE', actorTeamId: playerToTeam.get(playerId) ?? null, targetTeamId: null, actorSide: round.sideByTeamId[playerToTeam.get(playerId) ?? ''] ?? null, targetSide: null, aliveByTeamId: null, secondsFromFreezeEnd: 0, bombState: 'NOT_PLANTED', actorEquipmentValue: tickInput.equipmentValue, actorMoney: tickInput.cash },
+        source: { eventName: 'parseTicks:economy', rowIndex: tickInput.sourceRowIndex }
       });
     });
   }
   if (unassignedDeaths > 0) issues.push({ code: 'UNASSIGNED_DEATH_EVENTS', message: `${unassignedDeaths} событий смерти не удалось однозначно привязать к live-раунду.` });
   const match: MatchData = {
     schemaVersion: '1', matchId: input.matchId, fileSha256: input.fileSha256,
-    map: asText(input.snapshot.header, ['map_name']), tickRate, teams, players, rounds, events: normalizedEvents, quality: 'PARTIAL', qualityIssues: issues,
-    provenance: { parser: '@laihoe/demoparser2', parserVersion: PARSER_LIBRARY_VERSION, normalizedAt: input.normalizedAt ?? new Date().toISOString() }
+    map: input.map, tickRate, teams, players, rounds, events: normalizedEvents, quality: 'PARTIAL', qualityIssues: issues,
+    provenance: { parser: input.provenance.parser, parserVersion: input.provenance.parserVersion, normalizedAt: input.normalizedAt ?? new Date().toISOString() }
   };
   const validation = validateMatch(match);
   return { ...match, quality: validation.quality, qualityIssues: [...issues, ...validation.issues] };

@@ -1,18 +1,15 @@
-import { useMatch } from '../hooks/useMatch.js';
+import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { MatchReport } from '../components/MatchReport.js';
-import { ErrorState, RefreshStatus } from '../components/States.js';
+import { AnalyticsNotice, MatchReport, useAnalytics, useMatch } from '../features/match-report/index.js';
+import { ErrorState, RefreshStatus, ReportSkeleton } from '../shared/ui/index.js';
 import { errorMessage } from '../shared/messages.js';
-import { useAnalytics } from '../hooks/useAnalytics.js';
-import { ReportSkeleton } from '../components/Skeleton.js';
-import { AnalyticsNotice } from '../components/AnalyticsNotice.js';
-import { ScoringNotice } from '../components/ScoringNotice.js';
-import { useParticipationExplanation, useParticipationRating } from '../hooks/useScoring.js';
-import { presentParticipationRating } from '../analytics/adapter.js';
+import { ScoringNotice, presentParticipationRating, useParticipationRating } from '../features/participation-rating/index.js';
+import { useParticipationExplanation } from '../features/rating-explanation/index.js';
 
 export function MatchPage() {
   const { t } = useTranslation();
-  const query = useMatch();
+  const { matchId = '' } = useParams();
+  const query = useMatch(matchId);
   const analytics = useAnalytics(query.data);
   const explanation = useParticipationExplanation(query.data);
   const rating = useParticipationRating(query.data);

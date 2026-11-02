@@ -5,25 +5,25 @@ import {
   type ParticipationExplanationFamilyRow,
   type ParticipationExplanationReport
 } from '@who-ruined/contracts';
-import { C2S2_POLICY, type C2S2EpisodeContribution, type C2S2Family } from './participation-family-kernel.js';
+import { PARTICIPATION_FAMILY_POLICY, type ParticipationEpisodeContribution, type ParticipationFamily } from './participation-family-kernel.js';
 import {
-  P72_POLICIES,
-  projectP72ParticipationRatings,
-  type P72CalculatedProjection,
-  type P72ParticipationPreparedProfile
+  PARTICIPATION_RATING_POLICIES,
+  projectParticipationRatings,
+  type CalculatedParticipationRating,
+  type ParticipationRatingPreparedProfile
 } from './participation-rating.js';
 import { buildImportantMoments } from './important-moments.js';
 
 const EPSILON = 1e-12;
 const FAMILY_ORDER = ['COMBAT','SUPPORT','DEATH_RELATED','OBJECTIVES','CONTEXT','DIRECT_HARM'] as const;
 
-type Calculated = P72CalculatedProjection;
+type Calculated = CalculatedParticipationRating;
 type Source = ParticipationExplanationFamilyRow['sources'][number];
 type Transform = ParticipationExplanationFamilyRow['transformations'][number];
 
-function compactFamilies(value: { [K in C2S2Family]?: number | undefined } | null | undefined): Partial<Record<C2S2Family, number>> | null {
+function compactFamilies(value: { [K in ParticipationFamily]?: number | undefined } | null | undefined): Partial<Record<ParticipationFamily, number>> | null {
   if (!value) return null;
-  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number')) as Partial<Record<C2S2Family, number>>;
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number')) as Partial<Record<ParticipationFamily, number>>;
 }
 
 function close(left: number, right: number, label: string): void {
@@ -42,7 +42,7 @@ function eventEvidence(
   return { roundIds: roundId ? [roundId] : [], evidenceEventIds: [] };
 }
 
-function sourceReason(family: C2S2Family): Source['reason'] {
+function sourceReason(family: ParticipationFamily): Source['reason'] {
   switch (family) {
     case 'COMBAT': return 'CONFIRMED_COMBAT_EVENT';
     case 'SUPPORT': return 'CONFIRMED_SUPPORT_EVENT';
@@ -58,9 +58,9 @@ function finalPart(rawFamily: number, rawPart: number): number | null {
 }
 
 function physicalSources(
-  family: Extract<C2S2Family, 'COMBAT' | 'SUPPORT' | 'DEATH_RELATED'>,
+  family: Extract<ParticipationFamily, 'COMBAT' | 'SUPPORT' | 'DEATH_RELATED'>,
   rawInput: number,
-  episodes: C2S2EpisodeContribution[],
+  episodes: ParticipationEpisodeContribution[],
   eventById: ReadonlyMap<string, MatchEvent>,
   roundIds: readonly string[]
 ): Source[] {
@@ -68,7 +68,7 @@ function physicalSources(
   for (const episode of episodes.filter((item) => item.family === family)) {
     const evidence = eventEvidence(episode.anchorId, eventById, roundIds);
     const key = `${evidence.roundIds[0] ?? ''}\u0000${evidence.evidenceEventIds.length > 0 ? 'EVENT' : 'AGGREGATE'}`;
-    const rawContribution = C2S2_POLICY.scoreScale * episode.base;
+    const rawContribution = PARTICIPATION_FAMILY_POLICY.scoreScale * episode.base;
     const current = grouped.get(key);
     if (current) {
       current.rawContribution += rawContribution;
@@ -141,7 +141,7 @@ function aggregateSources(
 
 function directHarmSources(
   projection: Calculated,
-  episodes: C2S2EpisodeContribution[],
+  episodes: ParticipationEpisodeContribution[],
   eventById: ReadonlyMap<string, MatchEvent>,
   roundIds: readonly string[],
   multiplier: 1 | 2
@@ -164,7 +164,7 @@ function directHarmSources(
   return sources;
 }
 
-function transforms(family: C2S2Family, projection: Calculated, harmMultiplier: 1 | 2): Transform[] {
+function transforms(family: ParticipationFamily, projection: Calculated, harmMultiplier: 1 | 2): Transform[] {
   const rawInput = projection.rawFamilyInputs[family];
   const finalAttribution = projection.finalAttribution[family];
   if (family === 'DIRECT_HARM') {
@@ -199,7 +199,7 @@ function familyRows(result: CanonicalMatchResult, projection: Calculated): Parti
   const eventById = new Map(result.artifact.match.events.map((event) => [event.id, event]));
   const roundIds = result.artifact.match.rounds.map((round) => round.id);
   const episodes = profile.prepared.p4CPlus.episodeContributions ?? profile.prepared.p4BPlus.episodeContributions ?? [];
-  const harmMultiplier = P72_POLICIES[result.internal.selectedPolicySelector].harmMultiplier;
+  const harmMultiplier = PARTICIPATION_RATING_POLICIES[result.internal.selectedPolicySelector].harmMultiplier;
   return FAMILY_ORDER.map((family) => {
     let sources: Source[];
     if (family === 'COMBAT' || family === 'SUPPORT' || family === 'DEATH_RELATED') {
@@ -220,7 +220,7 @@ function familyRows(result: CanonicalMatchResult, projection: Calculated): Parti
 }
 
 export function buildParticipationExplanation(result: CanonicalMatchResult): ParticipationExplanationReport {
-  const profiles: P72ParticipationPreparedProfile[] = result.internal.recomputeSeed.profiles.map((profile) => ({
+  const profiles: ParticipationRatingPreparedProfile[] = result.internal.recomputeSeed.profiles.map((profile) => ({
     profileKey: profile.profileKey,
     playerId: profile.playerId,
     teamId: profile.teamId,
@@ -245,7 +245,7 @@ export function buildParticipationExplanation(result: CanonicalMatchResult): Par
       }
     }
   }));
-  const projections = new Map(projectP72ParticipationRatings(profiles, result.internal.selectedPolicySelector)
+  const projections = new Map(projectParticipationRatings(profiles, result.internal.selectedPolicySelector)
     .map((projection) => [projection.playerId, projection]));
   const moments = buildImportantMoments(result.artifact);
   const players = result.activeRating.players.map((activePlayer) => {

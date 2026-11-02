@@ -1,5 +1,7 @@
 # Backend readability cleanup report
 
+> **Historical snapshot — not current documentation.** Retained as milestone evidence. Use [the documentation index](README.md) to find the current contract.
+
 ## 1. Renamed, moved and removed
 
 | Before | After | Scope |

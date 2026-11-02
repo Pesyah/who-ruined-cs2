@@ -1,16 +1,17 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import {
   scoringConfigSchema, scoringReportSchema,
   type MatchArtifact, type MatchEvent, type ScoringConfig, type ScoringEpisode,
   type ScoringFinding, type ScoringPlayer, type ScoringReport
 } from '@who-ruined/contracts';
+import { V1_CONFIG } from './presets.js';
 
 export * from './participation-family-kernel.js';
 export * from './participation-rating.js';
 export * from './active-match-result.js';
 export * from './important-moments.js';
 export * from './participation-explanation.js';
+export * from './presets.js';
 
 type FindingCode = ScoringFinding['code'];
 type PlayerMutable = Omit<ScoringPlayer, 'episodeIds'> & { episodeIds: string[] };
@@ -18,19 +19,6 @@ type EpisodeCore = Omit<ScoringEpisode, 'scorerVersion' | 'configHash'>;
 const epsilon = 1e-9;
 const positiveCodes = new Set<FindingCode>(['ENEMY_KILL','OPENING_KILL','TRADE_KILL','ENEMY_DAMAGE','BOMB_DEFUSE','BOMB_PLANT_WIN','FLASH_SUPPORT']);
 const contextCodes = new Set<FindingCode>(['ENEMY_KILL','OPENING_KILL','TRADE_KILL','BOMB_DEFUSE','BOMB_PLANT_WIN']);
-
-function readConfig(name: string): ScoringConfig {
-  const parsed: unknown = JSON.parse(readFileSync(new URL(`../config/${name}.json`, import.meta.url), 'utf8'));
-  return deepFreeze(scoringConfigSchema.parse(parsed));
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const child of Object.values(value)) deepFreeze(child);
-  }
-  return value;
-}
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
@@ -41,15 +29,6 @@ function canonical(value: unknown): unknown {
   }
   return value;
 }
-
-export const V1_CONFIG = readConfig('v1');
-export const SUCCESSOR_75_25_CONFIG = readConfig('successor-75-25');
-export const SUCCESSOR_50_50_CONFIG = readConfig('successor-50-50');
-export const SUCCESSOR_25_75_CONFIG = readConfig('successor-25-75');
-export const SUCCESSOR_SUPPORT_CONFIG = readConfig('successor-support');
-export const SUCCESSOR_HARM_LOW_CONFIG = readConfig('successor-harm-low');
-export const SUCCESSOR_HARM_HIGH_CONFIG = readConfig('successor-harm-high');
-export const SCORING_CONFIGS = Object.freeze([V1_CONFIG, SUCCESSOR_75_25_CONFIG, SUCCESSOR_50_50_CONFIG, SUCCESSOR_25_75_CONFIG, SUCCESSOR_HARM_LOW_CONFIG, SUCCESSOR_HARM_HIGH_CONFIG, SUCCESSOR_SUPPORT_CONFIG]);
 
 export function scoringConfigHash(config: ScoringConfig): string {
   return createHash('sha256').update(JSON.stringify(canonical(config))).digest('hex');
