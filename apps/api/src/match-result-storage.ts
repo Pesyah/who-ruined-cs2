@@ -3,9 +3,8 @@ import {
   assertCanonicalMatchResultBinding,
   parseCanonicalMatchResult,
 } from '@who-ruined/artifacts';
-import { PARTICIPATION_RATING_POLICIES } from '@who-ruined/scoring';
+import { H2_PARTICIPATION_RATING_POLICY } from '@who-ruined/scoring';
 import { ApplicationError } from './application/application-error.js';
-import { resolveActiveRatingPolicy } from './runtime-config.js';
 import { readBoundedGzipJson } from './bounded-gzip.js';
 
 export async function readCanonicalResult(stored: {
@@ -40,9 +39,12 @@ export async function readCanonicalResult(stored: {
     throw new ApplicationError('REPORT_CORRUPT', 'Policy binding канонического отчёта и SQLite не совпадает.', 409);
   }
   if (requireActivePolicy) {
-    const expected = PARTICIPATION_RATING_POLICIES[resolveActiveRatingPolicy()];
-    if (value.internal.selectedPolicyId !== expected.id || value.internal.selectedPolicyDigest !== expected.digest) {
-      throw new ApplicationError('REPORT_POLICY_MISMATCH', 'Сохранённый отчёт создан для другой owner policy; выполните локальный rating:rebuild.', 409);
+    if (
+      value.internal.selectedPolicySelector !== H2_PARTICIPATION_RATING_POLICY.selector
+      || value.internal.selectedPolicyId !== H2_PARTICIPATION_RATING_POLICY.id
+      || value.internal.selectedPolicyDigest !== H2_PARTICIPATION_RATING_POLICY.digest
+    ) {
+      throw new ApplicationError('REPORT_POLICY_MISMATCH', 'Сохранённый отчёт создан не для H2; выполните локальный rating:rebuild.', 409);
     }
   }
   return value;

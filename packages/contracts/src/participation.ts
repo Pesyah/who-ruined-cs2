@@ -89,6 +89,16 @@ export const participationSidecarSchema = z.object({
 });
 export type ParticipationSidecar = z.infer<typeof participationSidecarSchema>;
 
+/**
+ * Historical serialized envelopes may contain H1. These schemas are retained
+ * for compatible reads only; runtime rating calculation is H2-only.
+ */
+export const persistedParticipationPolicySelectorSchema = z.enum(['H2','H1']);
+export const persistedParticipationPolicyIdSchema = z.enum([
+  'P72B_D_P10_N5_K025_A015_H2',
+  'P72B_D_P10_N5_K025_A015_H1'
+]);
+
 export const participationRatingAvailabilitySchema = z.enum([
   'CALCULATED_RESEARCH_ONLY','PARTICIPATION_ABSENT_GT_2_ROUNDS','PARTICIPATION_EVIDENCE_UNKNOWN',
   'PARTIAL_COVERAGE_INSUFFICIENT','WITHHELD_INSUFFICIENT_VERIFIED_EXPOSURE','UNKNOWN_APPLICABILITY'
@@ -134,7 +144,8 @@ export const participationRatingReportSchema = z.object({
   matchId: id, experimental: z.literal(true), calibrated: z.literal(false), causalBlame: z.literal(false),
   scorerVersion: z.literal('m3c8-p7.2-f-rating-projector@1.0.0-experimental'),
   policy: z.object({
-    selector: z.enum(['H2','H1']), policyId: z.enum(['P72B_D_P10_N5_K025_A015_H2','P72B_D_P10_N5_K025_A015_H1']),
+    selector: persistedParticipationPolicySelectorSchema,
+    policyId: persistedParticipationPolicyIdSchema,
     policyDigest: z.string().regex(/^[a-f0-9]{64}$/), harmMultiplier: z.union([z.literal(1),z.literal(2)])
   }),
   prepared: z.object({
@@ -165,7 +176,7 @@ export const participationRatingOpenApiSchema = z.toJSONSchema(participationRati
 export type ParticipationRatingReport = z.infer<typeof participationRatingReportSchema>;
 
 /**
- * M4.3 exposes one active owner-selected policy. The frozen policy identity is
+ * M4.3 exposes the active H2 result. The frozen policy identity is
  * deliberately kept in the canonical file's private section, not this DTO.
  */
 export const activeParticipationRatingReportSchema = participationRatingReportSchema.omit({

@@ -18,11 +18,11 @@ import {
 } from '@who-ruined/artifacts';
 import {
   buildActiveParticipationRating,
+  H2_PARTICIPATION_RATING_POLICY,
   PARTICIPATION_FAMILY_POLICY_DIGEST,
   PARTICIPATION_MODEL_VERSION,
-  PARTICIPATION_RATING_POLICIES,
+  PARTICIPATION_SIDECAR_POLICY_IDENTITIES,
   PARTICIPATION_REFERENCE_VERSION,
-  type ParticipationRatingPolicySelector
 } from '@who-ruined/scoring';
 import { ApplicationError } from './application/application-error.js';
 import { safeDataPath } from './storage.js';
@@ -42,7 +42,7 @@ export function participationSidecarRelativePath(matchId: string, fileSha256: st
 }
 
 function expectedPolicies(): Array<{ id: string; digest: string; harmMultiplier: number }> {
-  return [PARTICIPATION_RATING_POLICIES.H2, PARTICIPATION_RATING_POLICIES.H1].map(({ id, digest, harmMultiplier }) => ({ id, digest, harmMultiplier }));
+  return PARTICIPATION_SIDECAR_POLICY_IDENTITIES.map(({ id, digest, harmMultiplier }) => ({ id, digest, harmMultiplier }));
 }
 
 function validateFrozenIdentity(sidecar: ParticipationSidecar): void {
@@ -51,7 +51,13 @@ function validateFrozenIdentity(sidecar: ParticipationSidecar): void {
   }
   const actual = [...sidecar.model.policies].sort((left, right) => left.id.localeCompare(right.id));
   const expected = expectedPolicies().sort((left, right) => left.id.localeCompare(right.id));
-  if (canonicalJson(actual) !== canonicalJson(expected)) throw new ApplicationError('PARTICIPATION_SIDECAR_POLICY_MISMATCH', 'Prepared sidecar не содержит обе неизменяемые политики H×2 и H×1.', 409);
+  if (canonicalJson(actual) !== canonicalJson(expected)) {
+    throw new ApplicationError(
+      'PARTICIPATION_SIDECAR_POLICY_MISMATCH',
+      'Prepared sidecar не содержит совместимые замороженные policy identities.',
+      409
+    );
+  }
 }
 
 function validateFingerprint(sidecar: ParticipationSidecar): void {
@@ -111,8 +117,7 @@ export async function readParticipationSidecarForApi(
 
 export function buildParticipationRatingReport(
   artifact: MatchArtifact,
-  sidecar: ParticipationSidecar,
-  selector: ParticipationRatingPolicySelector
+  sidecar: ParticipationSidecar
 ): ParticipationRatingReport {
   const { match } = artifact;
   if (match.players.length !== 10 || match.teams.length !== 2 || match.teams.some((team) => team.playerIds.length !== 5)) {
@@ -130,10 +135,9 @@ export function buildParticipationRatingReport(
     if (!identity || identity.teamId !== profile.teamId) throw new ApplicationError('PARTICIPATION_SIDECAR_ROSTER_MISMATCH', 'Prepared sidecar содержит несовместимую стабильную команду.', 409);
   }
 
-  const policy = PARTICIPATION_RATING_POLICIES[selector];
   let active: ReturnType<typeof buildActiveParticipationRating>;
   try {
-    active = buildActiveParticipationRating(artifact, sidecar, selector);
+    active = buildActiveParticipationRating(artifact, sidecar);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'PARTICIPATION_SIDECAR_INVALID';
     if (code === 'PARTICIPATION_SIDECAR_ROSTER_MISMATCH') {
@@ -148,7 +152,12 @@ export function buildParticipationRatingReport(
     calibrated: active.calibrated,
     causalBlame: active.causalBlame,
     scorerVersion: active.scorerVersion,
-    policy: { selector, policyId: policy.id, policyDigest: policy.digest, harmMultiplier: policy.harmMultiplier },
+    policy: {
+      selector: H2_PARTICIPATION_RATING_POLICY.selector,
+      policyId: H2_PARTICIPATION_RATING_POLICY.id,
+      policyDigest: H2_PARTICIPATION_RATING_POLICY.digest,
+      harmMultiplier: H2_PARTICIPATION_RATING_POLICY.harmMultiplier
+    },
     prepared: {
       schemaVersion: sidecar.schemaVersion,
       preparedInputDigest: sidecar.model.preparedInputDigest,

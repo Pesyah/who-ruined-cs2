@@ -8,9 +8,9 @@
 
 Ordinary deaths, low ratings and negative family values are not automatically tactical errors. Missing evidence remains unavailable and can withhold a rating.
 
-## Active H2/H1 participation rating
+## Active H2 participation rating
 
-H2 is the default primary owner policy. H1 is the permanent fallback. They share one kernel and projection path; only the direct-harm multiplier differs.
+H2 is the only executable participation-rating policy for new and rebuilt results.
 
 For the five non-harm family inputs \(v_i\) and the already softened direct-harm input \(H\):
 
@@ -22,7 +22,6 @@ g(z) = z                                      when z <= 0.25
 
 rating = 1 + 10P - g(5N) + hH
 h = 2 for H2
-h = 1 for H1
 ~~~
 
 The five negative non-harm attributions split \(-g(5N)\) proportionally to their negative mass. Positive inputs use a linear factor of 10. Direct harm uses \(hH\).
@@ -43,7 +42,7 @@ The active DTO records the reconstructed value and requires `exactWithinToleranc
 | COMBAT | confirmed combat outcomes and model combat axes | an aggregate contribution can include baseline/residual terms |
 | SUPPORT | confirmed assists/support evidence | only evidence represented by the stored prepared input is used |
 | DEATH_RELATED | recorded death-related model axes | a death is a fact, not automatically blame |
-| DIRECT_HARM | confirmed friendly harm after the kernel softening | H2/H1 multiplier is applied here only |
+| DIRECT_HARM | confirmed friendly harm after the kernel softening | the frozen H2 multiplier is applied here only |
 | CONTEXT | centered/saturated contextual factors | a negative value can come from centering, not a bad action |
 | OBJECTIVES | typed bomb/hostage objective factors | positive/negative caps can make it aggregate rather than event-local |
 
@@ -63,9 +62,7 @@ buildCanonicalMatchResult
 
 The active API reads the stored active DTO. Its compatibility builder `buildParticipationRatingReport` delegates to `buildActiveParticipationRating` after validating the same sidecar.
 
-The explanation reprojects the private seed through `projectP72ParticipationRatings`; that name is a compatibility alias of `projectParticipationRatings`, not a second implementation. It verifies raw inputs, final attributions and the reconstruction against the stored active rating before returning a DTO.
-
-An older worker-only `scoreParticipationSidecar` helper still contains historical report arithmetic and is used by a compatibility test, not the canonical parse/API path. It is listed for P6 migration/removal review in [compatibility adapters](compatibility-adapters.md); its persisted IDs must remain unchanged.
+The explanation reprojects the private seed through `projectParticipationRatings`. It first requires the canonical result to carry the frozen H2 ID/digest, then verifies raw inputs, final attributions and the reconstruction against the stored active rating before returning a DTO.
 
 ## Availability and awards
 
@@ -113,17 +110,17 @@ When no qualifying moment exists, the DTO contains an empty list.
 
 The canonical result still embeds compatible `m3-score-1` reports for existing consumers and RESCORE. They are deterministic rule-based reports from explicit configuration hashes. They are not substituted for the active participation rating.
 
-`POST /rescore` recomputes a requested compatible legacy report from stored normalized data. H2/H1 active-policy rebuild is a separate owner CLI operation that uses the canonical recompute seed.
+`POST /rescore` recomputes a requested compatible legacy report from stored normalized data. `rating:rebuild` is a separate owner CLI operation that always rebuilds H2 from the canonical recompute seed.
 
 ## Compatibility identities
 
-The following historical names remain public aliases in `@who-ruined/scoring`:
+The following historical names remain public aliases in `@who-ruined/scoring` where they do not reintroduce policy selection:
 
-- `P72_*`, `projectP72ParticipationRatings`, `selectP72Awards`;
+- `P72_POLICY`, `P72_PARTICIPATION_SCORER_VERSION`, `projectP72ParticipationRatings`, `selectP72Awards`;
 - `C2S2_*`, `scoreC2S2PreparedProfile(s)`;
 - matching historical TypeScript types.
 
-New implementation code should prefer `PARTICIPATION_*`, `projectParticipationRatings` and `scoreParticipationPreparedProfile(s)`. Do not rename serialized versions, policy IDs, digests, hashing inputs or the order of arithmetic.
+New implementation code should prefer `H2_PARTICIPATION_RATING_POLICY`, `PARTICIPATION_*`, `projectParticipationRatings` and `scoreParticipationPreparedProfile(s)`. The historical H1 ID/digest and selector remain accepted only by persisted schemas and old sidecar identity metadata. They are not executable. Do not rename serialized versions, hashing inputs or the order of arithmetic.
 
 ## Evidence boundary
 

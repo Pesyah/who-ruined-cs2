@@ -7,6 +7,10 @@ approved design target; [the current architecture map](../backend-map.md) owns
 exact runtime paths and data flow.  
 Primary constraint: behavior and compatibility are frozen while internals move.
 
+The H1/H2 references below describe the P1–P6 compatibility target. Executable
+H1 was retired afterward; [ADR-011](../decisions.md) and the
+[current scoring reference](../scoring.md) own the H2-only runtime decision.
+
 ## Design goals
 
 The target is a modular monolith, not microservices. API, worker and web remain

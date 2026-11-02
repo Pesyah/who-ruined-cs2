@@ -5,8 +5,20 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NORMALIZER_VERSION } from '@who-ruined/parser-adapter';
-import { participationExplanationReportSchema } from '@who-ruined/contracts';
-import { buildActiveParticipationRating, buildCanonicalMatchResult, buildImportantMoments, buildParticipationExplanation, C2S2_MODEL_VERSION, C2S2_POLICY_DIGEST, C2S2_REFERENCE_VERSION, P72_POLICIES, rebuildCanonicalMatchResult } from '@who-ruined/scoring';
+import { canonicalMatchResultSchema, participationExplanationReportSchema } from '@who-ruined/contracts';
+import {
+  buildActiveParticipationRating,
+  buildCanonicalMatchResult,
+  buildImportantMoments,
+  buildParticipationExplanation,
+  C2S2_MODEL_VERSION,
+  C2S2_POLICY_DIGEST,
+  C2S2_REFERENCE_VERSION,
+  H2_PARTICIPATION_RATING_POLICY,
+  HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY,
+  PARTICIPATION_SIDECAR_POLICY_IDENTITIES,
+  rebuildCanonicalMatchResult
+} from '@who-ruined/scoring';
 
 const findUnique = vi.fn();
 const readFile = vi.fn();
@@ -68,7 +80,12 @@ function fixture(absentPlayerIndex: number | null = null) {
   });
   const stable = {
     binding: { matchId: match.matchId, fileSha256: match.fileSha256, parserVersion: match.provenance.parserVersion, normalizerVersion: NORMALIZER_VERSION },
-    model: { preparedInputModel: C2S2_MODEL_VERSION, preparedInputDigest: C2S2_POLICY_DIGEST, referenceVersion: C2S2_REFERENCE_VERSION, policies: [P72_POLICIES.H2, P72_POLICIES.H1].map(({ id, digest, harmMultiplier }) => ({ id, digest, harmMultiplier })) },
+    model: {
+      preparedInputModel: C2S2_MODEL_VERSION,
+      preparedInputDigest: C2S2_POLICY_DIGEST,
+      referenceVersion: C2S2_REFERENCE_VERSION,
+      policies: PARTICIPATION_SIDECAR_POLICY_IDENTITIES.map(({ id, digest, harmMultiplier }) => ({ id, digest, harmMultiplier }))
+    },
     scenario: 'BOMB' as const, participation: [], profiles,
     provenance: { source: 'RAW_DEMO_EVENTS_AND_TICKS' as const, lifecycleEvents: [], contextTags: ['OPENING','TRADE','FAST_TRADE','MULTI_KILL','DISADVANTAGE','ALIVE_LEAD_TAKEN','POSTPLANT','FLASH_ASSIST','FLASH_TEAM_KILL_WINDOW','FLASH_TEAM_DAMAGE_WINDOW','LOW_EQUIP_COMBAT'], s2AppliedBy: '@who-ruined/scoring scoreC2S2PreparedProfiles' }
   };
@@ -100,15 +117,28 @@ function mockStored(data: ReturnType<typeof fixture>, sidecarOverride: unknown =
 
 function mockCanonical(data: ReturnType<typeof fixture>, absentPlayerIndex: number | null = null) {
   const source = absentPlayerIndex === null ? data : fixture(absentPlayerIndex);
-  const result = buildCanonicalMatchResult({ artifact: source.artifact, sidecar: source.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+  const result = buildCanonicalMatchResult({ artifact: source.artifact, sidecar: source.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
   const compressed = gzipSync(Buffer.from(JSON.stringify(result)));
   findUnique.mockResolvedValue({
     id: source.match.matchId, deletionState: null, normalizedFilePath: null, rawFilePath: null,
     resultFilePath: 'results/synthetic/result.json.gz', resultSha256: createHash('sha256').update(compressed).digest('hex'),
-    resultPolicyId: P72_POLICIES.H2.id, resultPolicyDigest: P72_POLICIES.H2.digest
+    resultPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
+    resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest
   });
   readFile.mockResolvedValue(compressed);
   return { source, result };
+}
+
+function withHistoricalH1Identity(result: ReturnType<typeof buildCanonicalMatchResult>) {
+  return canonicalMatchResultSchema.parse({
+    ...result,
+    internal: {
+      ...result.internal,
+      selectedPolicyId: HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY.id,
+      selectedPolicyDigest: HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY.digest,
+      selectedPolicySelector: 'H1'
+    }
+  });
 }
 
 describe('P7.2-F participation rating API', () => {
@@ -125,8 +155,8 @@ describe('P7.2-F participation rating API', () => {
 
   it('maps the legacy envelope from the same active rating result', () => {
     const data = fixture();
-    const active = buildActiveParticipationRating(data.artifact, data.sidecar, 'H2');
-    const legacy = buildParticipationRatingReport(data.artifact, data.sidecar, 'H2');
+    const active = buildActiveParticipationRating(data.artifact, data.sidecar);
+    const legacy = buildParticipationRatingReport(data.artifact, data.sidecar);
     expect(legacy.players).toEqual(active.players);
     expect(legacy.ordering).toEqual(active.ordering);
     expect(legacy.losingTeamOrdering).toEqual(active.losingTeamOrdering);
@@ -148,19 +178,21 @@ describe('P7.2-F participation rating API', () => {
     await expect(createTestApiFacade().participationExplanation('match')).rejects.toMatchObject({ code: 'REPORT_NOT_READY', status: 409 });
   });
 
-  it('uses the owner-selected policy while keeping the public DTO policy-neutral', async () => {
+  it('always calculates H2 and ignores the retired environment selector', async () => {
     const data = fixture(); mockStored(data);
     const service = createTestApiFacade();
     const h2First = await service.participationRating(data.match.matchId);
     process.env.ACTIVE_RATING_POLICY = 'H1';
-    const h1 = await service.participationRating(data.match.matchId);
+    const h2Second = await service.participationRating(data.match.matchId);
     expect(h2First.schemaVersion).toBe('m4.3-participation-rating@1');
     expect('policy' in h2First).toBe(false);
     expect('prepared' in h2First).toBe(false);
     for (let index = 0; index < 10; index += 1) {
-      const primary = h2First.players[index]!.rating; const fallback = h1.players[index]!.rating;
-      expect(primary).not.toBeNull(); expect(fallback).not.toBeNull();
-      expect(Math.abs((primary!.value - fallback!.value) - primary!.rawFamilyInputs.DIRECT_HARM)).toBeLessThanOrEqual(1e-12);
+      const first = h2First.players[index]!.rating;
+      const second = h2Second.players[index]!.rating;
+      expect(first).not.toBeNull();
+      expect(second).toEqual(first);
+      expect(first!.finalAttribution.DIRECT_HARM).toBe(2 * first!.rawFamilyInputs.DIRECT_HARM);
     }
   });
 
@@ -174,7 +206,7 @@ describe('P7.2-F participation rating API', () => {
 
   it('rescues a stored UNKNOWN cs_ result as HOSTAGE while keeping OBJECTIVES at zero', () => {
     const data = legacyUnknownHostageFixture();
-    const result = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const result = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
     expect(result.activeRating.scenario).toBe('HOSTAGE');
     expect(result.activeRating.applicability).toEqual({ status: 'SUPPORTED', reason: null });
     expect(result.internal.recomputeSeed.scenario).toBe('HOSTAGE');
@@ -185,7 +217,7 @@ describe('P7.2-F participation rating API', () => {
       expect(player.rating!.rawFamilyInputs.OBJECTIVES).toBe(0);
       expect(player.rating!.finalAttribution.OBJECTIVES).toBe(0);
     }
-    const rebuilt = rebuildCanonicalMatchResult(result, 'H1');
+    const rebuilt = rebuildCanonicalMatchResult(result);
     expect(rebuilt.activeRating.players.every((player) => player.rating !== null)).toBe(true);
     const explanation = buildParticipationExplanation(rebuilt);
     for (const player of explanation.players) {
@@ -196,12 +228,12 @@ describe('P7.2-F participation rating API', () => {
 
   it('builds a synthetic six-family explanation that exactly reconstructs H2 without invented event attribution', () => {
     const data = fixture();
-    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
     const explanation = buildParticipationExplanation(canonicalResult);
     expect(participationExplanationReportSchema.parse(explanation)).toEqual(explanation);
     expect(explanation.schemaVersion).toBe('m4.6-participation-explanation@1');
     expect(JSON.stringify(explanation)).not.toContain('recomputeSeed');
-    expect(JSON.stringify(explanation)).not.toContain(P72_POLICIES.H2.digest);
+    expect(JSON.stringify(explanation)).not.toContain(H2_PARTICIPATION_RATING_POLICY.digest);
     for (const player of explanation.players) {
       expect(player.rating).not.toBeNull();
       expect(player.rating!.families).toHaveLength(6);
@@ -220,7 +252,7 @@ describe('P7.2-F participation rating API', () => {
 
   it('preserves a synthetic null rating while still returning independently verified moments', () => {
     const data = fixture(7);
-    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
     const explanation = buildParticipationExplanation(canonicalResult);
     expect(explanation.players[7]).toMatchObject({ availability: { status: 'PARTICIPATION_ABSENT_GT_2_ROUNDS' }, rating: null, importantMoments: [] });
   });
@@ -265,16 +297,27 @@ describe('P7.2-F participation rating API', () => {
 
   it('reads the ready DTO from one canonical result and fails closed on owner-policy mismatch', async () => {
     const data = fixture();
-    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
     const compressed = gzipSync(Buffer.from(JSON.stringify(canonicalResult)));
     findUnique.mockResolvedValue({
       id: data.match.matchId, deletionState: null, normalizedFilePath: null, rawFilePath: null,
       resultFilePath: 'results/synthetic/result.json.gz', resultSha256: createHash('sha256').update(compressed).digest('hex'),
-      resultPolicyId: P72_POLICIES.H2.id, resultPolicyDigest: P72_POLICIES.H2.digest
+      resultPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
+      resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest
     });
     readFile.mockResolvedValue(compressed);
     await expect(createTestApiFacade().participationRating(data.match.matchId)).resolves.toEqual(JSON.parse(JSON.stringify(canonicalResult.activeRating)));
-    process.env.ACTIVE_RATING_POLICY = 'H1';
+
+    const historical = withHistoricalH1Identity(canonicalResult);
+    const historicalBytes = gzipSync(Buffer.from(JSON.stringify(historical)));
+    findUnique.mockResolvedValue({
+      id: data.match.matchId, deletionState: null, normalizedFilePath: null, rawFilePath: null,
+      resultFilePath: 'results/synthetic/result-h1.json.gz',
+      resultSha256: createHash('sha256').update(historicalBytes).digest('hex'),
+      resultPolicyId: HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY.id,
+      resultPolicyDigest: HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY.digest
+    });
+    readFile.mockResolvedValue(historicalBytes);
     await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_POLICY_MISMATCH', status: 409 });
   });
 
@@ -284,37 +327,49 @@ describe('P7.2-F participation rating API', () => {
     const response = await createTestApiFacade().participationExplanation(data.match.matchId);
     expect(response).toEqual(JSON.parse(JSON.stringify(buildParticipationExplanation(result))));
     expect(response.provenance).toEqual({ source: 'match-result@1', originalDemoParsedAtRequest: false });
-    process.env.ACTIVE_RATING_POLICY = 'H1';
-    await expect(createTestApiFacade().participationExplanation(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_POLICY_MISMATCH', status: 409 });
-    process.env.ACTIVE_RATING_POLICY = 'H2';
+
+    const historical = withHistoricalH1Identity(result);
+    const historicalBytes = gzipSync(Buffer.from(JSON.stringify(historical)));
     const row = await findUnique.mock.results[0]?.value;
+    findUnique.mockResolvedValue({
+      ...row,
+      resultFilePath: 'results/synthetic/result-h1.json.gz',
+      resultSha256: createHash('sha256').update(historicalBytes).digest('hex'),
+      resultPolicyId: HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY.id,
+      resultPolicyDigest: HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY.digest
+    });
+    readFile.mockResolvedValue(historicalBytes);
+    await expect(createTestApiFacade().participationExplanation(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_POLICY_MISMATCH', status: 409 });
+
     findUnique.mockResolvedValue({ ...row, resultSha256: '0'.repeat(64) });
     await expect(createTestApiFacade().participationExplanation(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
   });
 
-  it('rebuilds one retained canonical input H2 to H1 and back to identical H2 values and awards', () => {
+  it('rebuilds a historical H1-identified result to the exact pre-removal H2 result', () => {
     const data = fixture();
-    const before = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
-    const h1 = rebuildCanonicalMatchResult(before, 'H1');
-    const after = rebuildCanonicalMatchResult(h1, 'H2');
-    expect(h1.internal.selectedPolicyId).toBe(P72_POLICIES.H1.id);
-    expect(after.internal.selectedPolicyId).toBe(P72_POLICIES.H2.id);
-    expect(after.activeRating.awards).toEqual(before.activeRating.awards);
-    expect(after.activeRating.ordering).toEqual(before.activeRating.ordering);
-    for (const player of before.activeRating.players) {
-      const rebuilt = after.activeRating.players.find((candidate) => candidate.playerId === player.playerId)!;
-      expect(rebuilt.rating?.value ?? null).toBe(player.rating?.value ?? null);
-    }
+    const before = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const historical = withHistoricalH1Identity(before);
+    const after = rebuildCanonicalMatchResult(historical);
+    expect(historical.internal.selectedPolicyId).toBe(HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY.id);
+    expect(after.internal).toMatchObject({
+      selectedPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
+      selectedPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest,
+      selectedPolicySelector: 'H2'
+    });
+    expect(after.activeRating).toEqual(before.activeRating);
+    expect(after.internal.recomputeSeed).toEqual(before.internal.recomputeSeed);
+    expect(() => buildParticipationExplanation(historical)).toThrow('PARTICIPATION_EXPLANATION_REQUIRES_H2_RESULT');
   });
 
   it('fails closed when the canonical result bytes do not match the SQLite checksum', async () => {
     const data = fixture();
-    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
     const compressed = gzipSync(Buffer.from(JSON.stringify(canonicalResult)));
     findUnique.mockResolvedValue({
       id: data.match.matchId, deletionState: null, normalizedFilePath: null, rawFilePath: null,
       resultFilePath: 'results/synthetic/result.json.gz', resultSha256: '0'.repeat(64),
-      resultPolicyId: P72_POLICIES.H2.id, resultPolicyDigest: P72_POLICIES.H2.digest
+      resultPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
+      resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest
     });
     readFile.mockResolvedValue(compressed);
     await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
@@ -322,12 +377,13 @@ describe('P7.2-F participation rating API', () => {
 
   it('fails closed when a valid canonical file is pointed at by another match row', async () => {
     const data = fixture();
-    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], selector: 'H2', sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
     const compressed = gzipSync(Buffer.from(JSON.stringify(canonicalResult)));
     findUnique.mockResolvedValue({
       id: 'another-match', deletionState: null, normalizedFilePath: null, rawFilePath: null,
       resultFilePath: 'results/synthetic/result.json.gz', resultSha256: createHash('sha256').update(compressed).digest('hex'),
-      resultPolicyId: P72_POLICIES.H2.id, resultPolicyDigest: P72_POLICIES.H2.digest
+      resultPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
+      resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest
     });
     readFile.mockResolvedValue(compressed);
     await expect(createTestApiFacade().participationRating(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });

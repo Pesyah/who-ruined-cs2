@@ -42,16 +42,16 @@ The script:
 - refuses the repository's owner `data` path;
 - renders and verifies the effective Compose mounts;
 - verifies that published ports are loopback-only;
-- enables the experimental participation endpoints with H2 by default;
+- enables the experimental participation endpoints; H2 is the only policy;
 - runs Prisma migrations inside the API container;
 - starts API, worker and web.
 
 Open `http://127.0.0.1:5173`. API and Swagger are at `http://127.0.0.1:3000/api/v1` and `http://127.0.0.1:3000/api/docs`.
 
-Choose H1 or a non-default API port without editing files:
+Choose a non-default API port without editing files:
 
 ~~~powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1 -ApiPort 3010 -RatingPolicy H1
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1 -ApiPort 3010
 ~~~
 
 The Docker web port and Compose project name are intentionally fixed for this owner profile. Stop it before starting a second Compose copy:
@@ -76,7 +76,6 @@ $sqlitePath = (Join-Path $devData 'app.db').Replace('\', '/')
 $env:DATA_DIR = $devData
 $env:DATABASE_URL = "file:$sqlitePath"
 $env:ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '1'
-$env:ACTIVE_RATING_POLICY = 'H2'
 $env:RETAIN_SOURCE_DEMO = '1'
 ~~~
 
@@ -128,7 +127,6 @@ A copied `.env` is input to Docker Compose; native Node processes do not load it
 | `API_CORS_ORIGINS` | API | comma-separated exact HTTP origins |
 | `API_URL` | Vite | development proxy target; `http://127.0.0.1:3000` default |
 | `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING` | API | `1` enables rating and explanation routes |
-| `ACTIVE_RATING_POLICY` | API, worker | `H2` default or `H1`; keep both processes aligned |
 | `RETAIN_SOURCE_DEMO` | worker | `0` default; delete only after verified result binding |
 | `MAX_UPLOAD_BYTES`, `MIN_UPLOAD_FREE_BYTES` | API | streamed upload ceiling and disk reserve |
 | `MAX_CONCURRENT_UPLOADS`, `MAX_QUEUED_JOBS` | API | per-process upload admission and shared queue guard |
@@ -212,7 +210,7 @@ The config uses `strictPort`. Stop the other process or pass a new port as shown
 
 ### API is healthy but jobs do not advance
 
-Confirm the worker is running with the same `DATABASE_URL` and `DATA_DIR`. Compare `ACTIVE_RATING_POLICY` and the experimental flag in both terminals. Inspect the job DTO and worker log request/job IDs.
+Confirm the worker is running with the same `DATABASE_URL` and `DATA_DIR`. Check the experimental flag in the API terminal. Inspect the job DTO and worker log request/job IDs.
 
 ### Prisma cannot open SQLite
 
@@ -220,7 +218,7 @@ Use an absolute `file:<forward-slash-path>` URL, ensure its parent exists and ma
 
 ### Rating endpoint returns disabled or policy errors
 
-Set `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1` in the API. Set exactly `H2` or `H1` in both API and worker. Do not add a `policy` query parameter.
+Set `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1` in the API. Do not add a `policy` query parameter. `REPORT_POLICY_MISMATCH` means the stored historical result must be explicitly rebuilt to H2 with `rating:rebuild`.
 
 ### Report/replay is corrupt or not ready
 

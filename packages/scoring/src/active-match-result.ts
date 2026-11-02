@@ -16,14 +16,13 @@ import {
   type ParticipationFamily,
 } from './participation-family-kernel.js';
 import {
-  PARTICIPATION_RATING_POLICIES,
   PARTICIPATION_RATING_SCORER_VERSION,
   projectParticipationRatings,
   selectParticipationAwards,
   type CalculatedParticipationRating,
-  type ParticipationRatingPolicySelector,
   type ParticipationRatingPreparedProfile,
 } from './participation-rating.js';
+import { H2_PARTICIPATION_RATING_POLICY } from './participation-policy.js';
 
 const tolerance = 1e-12;
 
@@ -97,8 +96,7 @@ function resolveMapScenario(artifact: MatchArtifact, sidecar: ParticipationSidec
 
 export function buildActiveParticipationRating(
   artifact: MatchArtifact,
-  sidecar: ParticipationSidecar,
-  selector: ParticipationRatingPolicySelector
+  sidecar: ParticipationSidecar
 ): ActiveParticipationRatingReport {
   sidecar = resolveMapScenario(artifact, sidecar);
   const { match, analytics } = artifact;
@@ -114,7 +112,7 @@ export function buildActiveParticipationRating(
       p4CPlus: { status: profile.prepared.p4CPlus.status, reason: profile.prepared.p4CPlus.reason ?? null, familyContributions: compactFamilies(profile.prepared.p4CPlus.familyContributions), objectiveSignals: profile.prepared.p4CPlus.objectiveSignals ?? null, episodeContributions: profile.prepared.p4CPlus.episodeContributions ?? null }
     }
   }));
-  const projected = projectParticipationRatings(preparedProfiles, selector);
+  const projected = projectParticipationRatings(preparedProfiles);
   const projectionByPlayer = new Map(projected.map((row) => [row.playerId, row]));
   const calculated = projected.filter((row): row is CalculatedParticipationRating => row.status === 'CALCULATED_RESEARCH_ONLY');
   const ordering = [...calculated].sort((left, right) => right.rating - left.rating || left.profileKey.localeCompare(right.profileKey)).map((row) => row.playerId);
@@ -166,28 +164,28 @@ export function buildCanonicalMatchResult(options: {
   artifact: MatchArtifact;
   sidecar: ParticipationSidecar;
   productionReports: ScoringReport[];
-  selector: ParticipationRatingPolicySelector;
   sourceDemoRetained: boolean;
   createdAt?: string;
 }): CanonicalMatchResult {
   const sidecar = resolveMapScenario(options.artifact, options.sidecar);
   if (sidecar.binding.matchId !== options.artifact.match.matchId || sidecar.binding.fileSha256 !== options.artifact.match.fileSha256) throw new Error('PARTICIPATION_SIDECAR_STALE');
   if (sidecar.model.preparedInputModel !== PARTICIPATION_MODEL_VERSION || sidecar.model.preparedInputDigest !== PARTICIPATION_FAMILY_POLICY_DIGEST || sidecar.model.referenceVersion !== PARTICIPATION_REFERENCE_VERSION) throw new Error('PARTICIPATION_SIDECAR_POLICY_MISMATCH');
-  const policy = PARTICIPATION_RATING_POLICIES[options.selector];
   return canonicalMatchResultSchema.parse({
     schemaVersion: 'match-result@1', createdAt: options.createdAt ?? new Date().toISOString(),
     internal: {
-      selectedPolicyId: policy.id, selectedPolicyDigest: policy.digest, selectedPolicySelector: options.selector,
+      selectedPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
+      selectedPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest,
+      selectedPolicySelector: H2_PARTICIPATION_RATING_POLICY.selector,
       sourceBindingDigest: stableSha256(sidecar.binding),
       recomputeSeed: { schemaVersion: 'match-result-recompute-seed@1', binding: sidecar.binding, model: sidecar.model, scenario: sidecar.scenario, profiles: sidecar.profiles }
     },
     artifact: options.artifact, productionReports: options.productionReports,
-    activeRating: buildActiveParticipationRating(options.artifact, sidecar, options.selector),
+    activeRating: buildActiveParticipationRating(options.artifact, sidecar),
     storage: { sourceDemoRetained: options.sourceDemoRetained }
   });
 }
 
-export function rebuildCanonicalMatchResult(value: CanonicalMatchResult, selector: ParticipationRatingPolicySelector): CanonicalMatchResult {
+export function rebuildCanonicalMatchResult(value: CanonicalMatchResult): CanonicalMatchResult {
   const seed = value.internal.recomputeSeed;
   const sidecar = {
     schemaVersion: 'm3c8-participation-prepared@1.0.0-experimental' as const,
@@ -196,5 +194,10 @@ export function rebuildCanonicalMatchResult(value: CanonicalMatchResult, selecto
     binding: seed.binding, model: seed.model, scenario: seed.scenario, participation: [], profiles: seed.profiles,
     provenance: { source: 'RAW_DEMO_EVENTS_AND_TICKS' as const, lifecycleEvents: [], contextTags: [], s2AppliedBy: '@who-ruined/scoring scoreC2S2PreparedProfiles' }
   };
-  return buildCanonicalMatchResult({ artifact: value.artifact, sidecar, productionReports: value.productionReports, selector, sourceDemoRetained: value.storage.sourceDemoRetained });
+  return buildCanonicalMatchResult({
+    artifact: value.artifact,
+    sidecar,
+    productionReports: value.productionReports,
+    sourceDemoRetained: value.storage.sourceDemoRetained
+  });
 }

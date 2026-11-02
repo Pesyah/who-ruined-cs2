@@ -76,7 +76,7 @@ POST .dem
   -> parser-adapter decodes rows into NormalizationInput
   -> match-domain normalizes roster teams, rounds and events
   -> features computes factual analytics with availability
-  -> scoring builds legacy reports + active H2/H1 result
+  -> scoring builds legacy reports + active H2 result
   -> replay builder publishes index + round artifacts when evidence is available
   -> artifact store publishes match-result@1 immutably
   -> database transaction binds result path/SHA and terminal job state
@@ -104,7 +104,7 @@ Replay reads validate the replay index first, then the requested round and its b
 
 `POST /api/v1/matches/:id/rescore` creates a `RESCORE` job for a requested compatible scoring report. The worker reads the normalized artifact embedded in `match-result@1`, recomputes that report, publishes a new immutable result and swaps the database pointer. It does not need the original `.dem`.
 
-The owner-only `rating:rebuild` command is the separate H2/H1 policy path. It reconstructs prepared input from the private recompute seed, calls the same active rating builder used by new parses, then conditionally replaces the canonical result. Legacy artifacts without sufficient stored input fail instead of inventing evidence.
+The owner-only `rating:rebuild` command reconstructs H2 from the private recompute seed, calls the same active rating builder used by new parses, then conditionally replaces the canonical result. It is the explicit transition path for historical H1 results. Legacy artifacts without sufficient stored input fail instead of inventing evidence.
 
 ## Dependency direction
 

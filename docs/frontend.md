@@ -4,7 +4,7 @@
 
 ## Responsibilities
 
-The frontend owns routing, interaction, accessibility, localization, responsive layout and presentation adapters. It does not parse demos, compute M2 features, calculate H2/H1, select awards or infer missing events.
+The frontend owns routing, interaction, accessibility, localization, responsive layout and presentation adapters. It does not parse demos, compute M2 features, calculate H2, select awards or infer missing events.
 
 Server DTOs come from `@who-ruined/contracts`. A view adapter may reorganize a DTO for rendering, but it must preserve roster `teamId`, `null`, availability, coverage and typed errors.
 
@@ -70,7 +70,7 @@ Vite proxies same-origin `/api` requests to `API_URL` and removes the developmen
 
 `participation-rating` consumes only `m4.3-participation-rating@1`. It renders:
 
-- the real owner-selected H2/H1 value;
+- the real backend-calculated H2 value;
 - `null` and typed unavailability without a legacy fallback;
 - coverage and incomplete award pools;
 - deterministic ties, draw scope and roster-based teams;

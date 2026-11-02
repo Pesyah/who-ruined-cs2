@@ -19,14 +19,14 @@ describe('worker runtime config', () => {
       maxResultCompressedBytes: 8 * 1024 * 1024,
       maxResultJsonBytes: 64 * 1024 * 1024,
       maxResultJsonDepth: 128,
-      activeRatingPolicy: 'H2',
       retainSourceDemo: false
     });
   });
 
-  it('validates owner policy and debug source retention', () => {
-    expect(resolveWorkerRuntimeConfig({ ACTIVE_RATING_POLICY: 'H1', RETAIN_SOURCE_DEMO: '1' })).toMatchObject({ activeRatingPolicy: 'H1', retainSourceDemo: true });
-    expect(() => resolveWorkerRuntimeConfig({ ACTIVE_RATING_POLICY: 'H3' })).toThrow('ACTIVE_RATING_POLICY');
+  it('ignores the retired policy selector and validates debug source retention', () => {
+    const config = resolveWorkerRuntimeConfig({ ACTIVE_RATING_POLICY: 'H1', RETAIN_SOURCE_DEMO: '1' });
+    expect(config).toMatchObject({ retainSourceDemo: true });
+    expect(config).not.toHaveProperty('activeRatingPolicy');
     expect(() => resolveWorkerRuntimeConfig({ RETAIN_SOURCE_DEMO: 'maybe' })).toThrow('RETAIN_SOURCE_DEMO');
   });
 

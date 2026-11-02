@@ -87,7 +87,7 @@ export async function processJob(
     const terminal = validated.quality === 'VALID' ? 'COMPLETED' : 'PARTIAL';
     const canonical = buildCanonicalMatchResult({
       artifact, sidecar: preparedSidecar, productionReports: reports,
-      selector: config.activeRatingPolicy, sourceDemoRetained: config.retainSourceDemo
+      sourceDemoRetained: config.retainSourceDemo
     });
     const published = await publishCanonicalMatchResult(dataRoot, canonical, assertOwned);
     await options.hooks?.afterStage?.('RESULT_PUBLISHED');

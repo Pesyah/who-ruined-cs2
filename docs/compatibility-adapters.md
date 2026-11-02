@@ -26,22 +26,25 @@ HTTP controllers, routes and responses were unchanged.
 
 The test-only worker `scoreParticipationSidecar` helper was removed. Its fixture
 now uses the same active participation projection and award selector as the
-canonical and API paths, while retaining H1/H2 identity and delta assertions.
+canonical and API paths. H2 exact-output assertions remain; historical H1
+identity is covered only as persisted sidecar/canonical compatibility data.
 
 ## Retained compatibility surface
 
-`@who-ruined/scoring` deliberately keeps its historical C2S2 and P72 public
-exports as aliases of the domain-named participation implementation. Internal
-production imports now use `Participation*` names where doing so is meaningful.
-The aliases remain covered by `participation-compatibility-aliases.test.ts` and
-are retained because removing a package export would be an unapproved source API
-break.
+`@who-ruined/scoring` deliberately keeps historical C2S2 and P72 public
+exports that do not reintroduce policy selection as aliases of the
+domain-named participation implementation. `P72_POLICIES` and the selector
+types were removed with executable H1. Internal production imports use
+`Participation*` names where doing so is meaningful. The retained aliases
+remain covered by `participation-compatibility-aliases.test.ts`.
 
 The following compatibility identities also remain intentionally unchanged:
 
 - versioned REST routes, response schemas and machine error codes;
 - `match-result@1`, rating/explanation and replay schema versions;
-- H1/H2 policy IDs, digests, ordering, tie/null and award behavior;
+- the active H2 ID/digest/arithmetic and tie/null/award behavior;
+- the historical H1 selector/ID/digest only in persisted schemas and old
+  sidecar fingerprint metadata;
 - persisted artifact paths, fingerprints, bindings and SQLite pointers;
 - the parser-adapter package `index.ts` public barrel and other package root
   barrels used as supported package entry points;

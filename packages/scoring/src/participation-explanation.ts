@@ -7,11 +7,11 @@ import {
 } from '@who-ruined/contracts';
 import { PARTICIPATION_FAMILY_POLICY, type ParticipationEpisodeContribution, type ParticipationFamily } from './participation-family-kernel.js';
 import {
-  PARTICIPATION_RATING_POLICIES,
   projectParticipationRatings,
   type CalculatedParticipationRating,
   type ParticipationRatingPreparedProfile
 } from './participation-rating.js';
+import { H2_PARTICIPATION_RATING_POLICY } from './participation-policy.js';
 import { buildImportantMoments } from './important-moments.js';
 
 const EPSILON = 1e-12;
@@ -20,6 +20,16 @@ const FAMILY_ORDER = ['COMBAT','SUPPORT','DEATH_RELATED','OBJECTIVES','CONTEXT',
 type Calculated = CalculatedParticipationRating;
 type Source = ParticipationExplanationFamilyRow['sources'][number];
 type Transform = ParticipationExplanationFamilyRow['transformations'][number];
+
+function assertH2CanonicalResult(result: CanonicalMatchResult): void {
+  if (
+    result.internal.selectedPolicySelector !== H2_PARTICIPATION_RATING_POLICY.selector
+    || result.internal.selectedPolicyId !== H2_PARTICIPATION_RATING_POLICY.id
+    || result.internal.selectedPolicyDigest !== H2_PARTICIPATION_RATING_POLICY.digest
+  ) {
+    throw new Error('PARTICIPATION_EXPLANATION_REQUIRES_H2_RESULT');
+  }
+}
 
 function compactFamilies(value: { [K in ParticipationFamily]?: number | undefined } | null | undefined): Partial<Record<ParticipationFamily, number>> | null {
   if (!value) return null;
@@ -143,8 +153,7 @@ function directHarmSources(
   projection: Calculated,
   episodes: ParticipationEpisodeContribution[],
   eventById: ReadonlyMap<string, MatchEvent>,
-  roundIds: readonly string[],
-  multiplier: 1 | 2
+  roundIds: readonly string[]
 ): Source[] {
   const sources = Object.entries(projection.kernel.directHarmRoundAllocation).map(([anchorRoundId, rawContribution]): Source => {
     const allocationEvidence = eventEvidence(anchorRoundId, eventById, roundIds);
@@ -155,7 +164,7 @@ function directHarmSources(
     });
     return {
       kind: related.length > 0 ? 'EVENT' : 'AGGREGATE', reason: 'CONFIRMED_FRIENDLY_HARM', rawContribution,
-      finalContribution: multiplier * rawContribution,
+      finalContribution: H2_PARTICIPATION_RATING_POLICY.harmMultiplier * rawContribution,
       roundIds: actualRoundId ? [actualRoundId] : [],
       evidenceEventIds: [...new Set([...allocationEvidence.evidenceEventIds, ...related])]
     };
@@ -164,7 +173,7 @@ function directHarmSources(
   return sources;
 }
 
-function transforms(family: ParticipationFamily, projection: Calculated, harmMultiplier: 1 | 2): Transform[] {
+function transforms(family: ParticipationFamily, projection: Calculated): Transform[] {
   const rawInput = projection.rawFamilyInputs[family];
   const finalAttribution = projection.finalAttribution[family];
   if (family === 'DIRECT_HARM') {
@@ -175,7 +184,8 @@ function transforms(family: ParticipationFamily, projection: Calculated, harmMul
       },
       {
         code: 'DIRECT_HARM_MULTIPLIER', scope: 'FAMILY', input: rawInput,
-        output: harmMultiplier * rawInput, adjustment: finalAttribution - rawInput
+        output: H2_PARTICIPATION_RATING_POLICY.harmMultiplier * rawInput,
+        adjustment: finalAttribution - rawInput
       }
     ];
   }
@@ -199,13 +209,12 @@ function familyRows(result: CanonicalMatchResult, projection: Calculated): Parti
   const eventById = new Map(result.artifact.match.events.map((event) => [event.id, event]));
   const roundIds = result.artifact.match.rounds.map((round) => round.id);
   const episodes = profile.prepared.p4CPlus.episodeContributions ?? profile.prepared.p4BPlus.episodeContributions ?? [];
-  const harmMultiplier = PARTICIPATION_RATING_POLICIES[result.internal.selectedPolicySelector].harmMultiplier;
   return FAMILY_ORDER.map((family) => {
     let sources: Source[];
     if (family === 'COMBAT' || family === 'SUPPORT' || family === 'DEATH_RELATED') {
       sources = physicalSources(family, projection.rawFamilyInputs[family], episodes, eventById, roundIds);
     } else if (family === 'DIRECT_HARM') {
-      sources = directHarmSources(projection, episodes, eventById, roundIds, harmMultiplier);
+      sources = directHarmSources(projection, episodes, eventById, roundIds);
     } else {
       sources = aggregateSources(family, projection, projection.playerId, result.artifact.match.events, roundIds);
     }
@@ -214,12 +223,13 @@ function familyRows(result: CanonicalMatchResult, projection: Calculated): Parti
       rawInput: projection.rawFamilyInputs[family],
       finalAttribution: projection.finalAttribution[family],
       sources,
-      transformations: transforms(family, projection, harmMultiplier)
+      transformations: transforms(family, projection)
     };
   });
 }
 
 export function buildParticipationExplanation(result: CanonicalMatchResult): ParticipationExplanationReport {
+  assertH2CanonicalResult(result);
   const profiles: ParticipationRatingPreparedProfile[] = result.internal.recomputeSeed.profiles.map((profile) => ({
     profileKey: profile.profileKey,
     playerId: profile.playerId,
@@ -245,7 +255,7 @@ export function buildParticipationExplanation(result: CanonicalMatchResult): Par
       }
     }
   }));
-  const projections = new Map(projectParticipationRatings(profiles, result.internal.selectedPolicySelector)
+  const projections = new Map(projectParticipationRatings(profiles)
     .map((projection) => [projection.playerId, projection]));
   const moments = buildImportantMoments(result.artifact);
   const players = result.activeRating.players.map((activePlayer) => {

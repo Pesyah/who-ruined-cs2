@@ -6,10 +6,9 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { SafeExceptionFilter } from './safe-exception.filter.js';
 import { dataDir } from './storage.js';
-import { resolveActiveRatingPolicy, resolveApiRuntimeConfig } from './runtime-config.js';
+import { resolveApiRuntimeConfig } from './runtime-config.js';
 import { configureApiHttp } from './http-hardening.js';
 
-resolveActiveRatingPolicy();
 const runtime = resolveApiRuntimeConfig();
 await Promise.all(['uploads','cache','reports','results'].map((name) => mkdir(new URL(name + '/', dataDir), { recursive: true })));
 const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });

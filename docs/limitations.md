@@ -14,9 +14,9 @@
 
 ## Rating and explanation
 
-- H2/H1 is experimental, uncalibrated and non-causal. It is not a probability, general skill rating, proof of intent or proof that a player caused a defeat.
+- H2 is experimental, uncalibrated and non-causal. It is not a probability, general skill rating, proof of intent or proof that a player caused a defeat.
 - The active rating expects a supported two-team 5v5 roster and sufficient participation evidence. A player can have `rating: null`; award pools can be incomplete.
-- H2 and H1 differ only in the direct-harm multiplier. Absolute values are not guaranteed to be comparable across modes or future policies.
+- H2 uses its frozen direct-harm multiplier. Absolute values are not guaranteed to be comparable across modes or future policies.
 - A negative contribution is not necessarily an event-level mistake. CONTEXT can be negative because of centering; negative-mass softening is cross-family.
 - Explanation links only resolvable anchors. Aggregate transforms and residual baselines are exposed as such rather than invented as events.
 - “Who Ruined” is a deterministic label within the eligible pool and configured model, not a causal finding.

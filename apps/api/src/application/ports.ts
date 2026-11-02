@@ -127,7 +127,6 @@ export interface ArtifactDeletionPort {
 export interface ApiSettingsPort {
   maxQueuedJobs(): number;
   participationRatingEnabled(): boolean;
-  activeRatingPolicy(): 'H2' | 'H1';
 }
 
 export interface ClockPort {

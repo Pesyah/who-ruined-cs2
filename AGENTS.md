@@ -4,7 +4,7 @@
 - Keep native parser, parser adapter, normalized domain, factual features, scoring, artifacts/database, API and UI as separate boundaries.
 - Never infer stable team identity from T/CT; team IDs are roster-based and side is round-specific.
 - Missing parser values stay `null`/unavailable. Never invent evidence, convert unknown to zero or call a synthetic fixture real-demo validation.
-- Ordinary deaths are facts, not tactical blame. H2/H1 is experimental, uncalibrated and non-causal.
+- Ordinary deaths are facts, not tactical blame. H2 is experimental, uncalibrated and non-causal.
 - Do not run real `.dem`, golden real-demo tests, Docker, owner SQLite/data or mass archives without explicit owner permission.
 
 ## Architecture

@@ -24,11 +24,11 @@ The pinned Windows parser binding panicked on a deliberately malformed tiny inpu
 
 ## ADR-006: factual analytics and scoring remain separate
 
-M2 features are factual and availability-aware. Legacy v1/successor reports remain versioned compatibility outputs. The active H2/H1 participation rating is a separate experimental projection with frozen policy IDs/digests and one shared arithmetic path. Ordinary deaths are not blame.
+M2 features are factual and availability-aware. Legacy v1/successor reports remain versioned compatibility outputs. The participation rating is a separate experimental projection with frozen identities and one arithmetic path. Ordinary deaths are not blame. The original H1-selection portion of this decision is superseded by ADR-011.
 
 ## ADR-007: artifact-only rescore
 
-A RESCORE job reads normalized analytics embedded in `match-result@1` (or a compatible legacy normalized artifact) and never invokes the demo parser. Insufficient stored input produces a typed failure. Active H2/H1 owner-policy rebuild is separate and uses the canonical private recompute seed, also without a demo.
+A RESCORE job reads normalized analytics embedded in `match-result@1` (or a compatible legacy normalized artifact) and never invokes the demo parser. Insufficient stored input produces a typed failure. H2 rebuild is separate and uses the canonical private recompute seed, also without a demo.
 
 ## ADR-008: immutable artifacts before database pointers
 
@@ -41,3 +41,14 @@ React routes are thin composition roots. Feature modules own endpoint/query/view
 ## ADR-010: local product and public deployment are different designs
 
 The implemented system assumes one trusted owner, loopback services, a shared local data root and SQLite. Resource bounds harden that environment but do not provide authentication, tenant isolation or public-service admission control. Public hosting requires a separate threat model, persistence/backup design and operations review; no `PUBLIC_MODE` flag can provide those guarantees.
+
+## ADR-011: H2 is the only executable participation policy
+
+New parses, canonical migrations and explicit rating rebuilds always use the
+frozen H2 ID, digest and arithmetic. Environment variables, CLI flags and
+internal function parameters cannot select H1. Persisted schemas still
+recognize the historical H1 selector/ID so old results remain readable, and
+old sidecars retain both identity records because they are part of the
+fingerprint. API reads reject a historical H1 canonical result with
+`REPORT_POLICY_MISMATCH`; `rating:rebuild` transitions it to H2 from the
+stored recompute seed without reopening a demo.

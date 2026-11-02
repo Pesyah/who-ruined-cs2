@@ -7,12 +7,10 @@ import { participationSidecarRelativePath, readParticipationSidecar } from './pa
 import { loadArtifactForMigration } from './migration-support.js';
 import { publishCanonicalMatchResult } from './match-result-storage.js';
 import { resolveDataPath } from './storage.js';
-import { resolveWorkerRuntimeConfig } from './runtime-config.js';
 
 const args = new Set(process.argv.slice(2));
 const apply = args.has('--apply'); const dryRun = args.has('--dry-run');
 if (apply === dryRun) throw new Error('Specify exactly one of --dry-run or --apply');
-const config = resolveWorkerRuntimeConfig();
 const dataRoot = path.resolve(process.env.DATA_DIR ?? path.resolve(process.cwd(), 'data'));
 const matches = await prisma.match.findMany({ where: { resultFilePath: null }, orderBy: { id: 'asc' } });
 const bytes = async (relative: string | null): Promise<number | null> => {
@@ -39,7 +37,12 @@ for (const match of matches) {
     const reports = [scoreMatch(artifact, V1_CONFIG), scoreMatch(artifact, SUCCESSOR_75_25_CONFIG)];
     const legacyReports = await prisma.report.findMany({ where: { matchId: match.id } });
     inventory.reports = (await Promise.all(legacyReports.map((report) => bytes(report.jsonFilePath)))).reduce<number>((sum, value) => sum + (value ?? 0), 0);
-    const result = buildCanonicalMatchResult({ artifact, sidecar, productionReports: reports, selector: config.activeRatingPolicy, sourceDemoRetained: match.rawFilePath !== null });
+    const result = buildCanonicalMatchResult({
+      artifact,
+      sidecar,
+      productionReports: reports,
+      sourceDemoRetained: match.rawFilePath !== null
+    });
     migratable += 1;
     if (!apply) { process.stdout.write(`${match.id}\tMIGRATABLE\t${JSON.stringify(inventory)}\n`); continue; }
     const published = await publishCanonicalMatchResult(dataRoot, result, async () => {

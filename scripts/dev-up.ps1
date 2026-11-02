@@ -1,9 +1,7 @@
 [CmdletBinding()]
 param(
   [ValidateRange(1, 65535)]
-  [int]$ApiPort = 3000,
-  [ValidateSet('H2', 'H1')]
-  [string]$RatingPolicy = 'H2'
+  [int]$ApiPort = 3000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,7 +23,6 @@ New-Item -ItemType Directory -Force -Path (Join-Path $devRoot 'logs') | Out-Null
 $env:LOCAL_DATA_DIR = $dataRoot
 $env:API_PORT = [string]$ApiPort
 $env:ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '1'
-$env:ACTIVE_RATING_POLICY = $RatingPolicy
 $env:API_CORS_ORIGINS = 'http://127.0.0.1:5173,http://localhost:5173'
 
 $compose = @('compose', '-p', $project, '-f', $baseCompose, '-f', $devCompose)
