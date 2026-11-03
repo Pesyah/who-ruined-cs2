@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const findUnique = vi.fn();
 const readFile = vi.fn();
-vi.mock('@who-ruined/database', () => ({ prisma: { match: { findUnique }, report: { findUnique: vi.fn() }, job: { create: vi.fn() } } }));
+vi.mock('@who-ruined/database', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@who-ruined/database')>()),
+  prisma: { match: { findUnique }, report: { findUnique: vi.fn() }, job: { create: vi.fn() } },
+}));
 vi.mock('node:fs/promises', async (original) => ({ ...(await original<typeof import('node:fs/promises')>()), readFile }));
 
 const { createTestApiFacade } = await import('./test-api-facade.js');

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../generated/client/index.js';
-
-export const ACTIVE_JOB_STAGES = ['PARSING', 'NORMALIZING', 'VALIDATING', 'FEATURIZING', 'SCORING'] as const;
+import { ACTIVE_JOB_STAGES } from './job-status.js';
 
 export interface JobLeasePolicy {
   leaseMs: number;

@@ -1,6 +1,7 @@
 export { prisma } from './client.js';
+export { Prisma, PrismaClient } from '../generated/client/index.js';
+export { ACTIVE_JOB_STAGES, UNFINISHED_JOB_STATUSES } from './job-status.js';
 export {
-  ACTIVE_JOB_STAGES,
   createJobRepository,
   type ClaimedJob,
   type CompleteOwnedJobInput,

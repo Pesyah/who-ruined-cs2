@@ -4,10 +4,7 @@ import {
   ArtifactDeletionPort,
   ClockPort,
   MatchCommandPort,
-  UNFINISHED_JOB_STATUSES,
 } from '../ports.js';
-
-const unfinishedJobStatuses: ReadonlySet<string> = new Set(UNFINISHED_JOB_STATUSES);
 
 @Injectable()
 export class DeleteMatch {
@@ -18,13 +15,15 @@ export class DeleteMatch {
   ) {}
 
   async execute(id: string): Promise<void> {
-    const match = await this.matches.findDeletionCandidate(id);
-    if (!match) throw new ApplicationError('MATCH_NOT_FOUND', 'Матч не найден.', 404);
-    if (match.jobs.some((job) => unfinishedJobStatuses.has(job.status))) {
+    const deletion = await this.matches.beginMatchDeletion(id, this.clock.now());
+    if (deletion.kind === 'MATCH_NOT_FOUND') {
+      throw new ApplicationError('MATCH_NOT_FOUND', 'Матч не найден.', 404);
+    }
+    if (deletion.kind === 'MATCH_ACTIVE' || deletion.kind === 'CONCURRENT_WRITE') {
       throw new ApplicationError('MATCH_ACTIVE', 'Активный анализ необходимо завершить перед удалением матча.', 409);
     }
 
-    await this.matches.markDeleting(id, match.deletionRequestedAt ?? this.clock.now());
+    const { match } = deletion;
     const files = new Set<string>();
     for (const candidate of [
       match.rawFilePath,
@@ -35,6 +34,9 @@ export class DeleteMatch {
       if (candidate) files.add(candidate);
     }
     await this.artifacts.deleteMatchFiles(id, files);
-    await this.matches.deleteMatch(id);
+    const completion = await this.matches.completeMatchDeletion(id);
+    if (completion.kind === 'CONCURRENT_WRITE') {
+      throw new ApplicationError('STORAGE_FAILURE', 'Не удалось завершить удаление матча.', 503);
+    }
   }
 }
