@@ -19,7 +19,7 @@ const rounds: MatchData['rounds'] = Array.from({ length: 21 }, (_, index) => {
   const sideByTeamId = { 'roster-alpha': index < 12 ? 'CT' as const : 'T' as const, 'roster-bravo': index < 12 ? 'T' as const : 'CT' as const };
   return { id: 'sample-round-' + index, ordinal: index + 1, startTick: index * 6400, freezeEndTick: index * 6400 + 960,
     endTick: index * 6400 + 6200, winnerTeamId, winnerSide: sideByTeamId[winnerTeamId as keyof typeof sideByTeamId],
-    sideByTeamId, scoreBefore, scoreAfter: { ...scores }, isValid: true, issues: [] };
+    sideByTeamId, scoreBefore, scoreAfter: { ...scores }, isPistol: index === 0 || index === 12, isOvertime: false, isValid: true, issues: [] };
 });
 export const syntheticMatch: MatchData = matchDataSchema.parse({
   schemaVersion: '1', matchId: 'synthetic-design-match', fileSha256: '0'.repeat(64), map: 'de_mirage', tickRate: 64,
@@ -48,11 +48,29 @@ export function previewData(scenario: PreviewScenario): { match: MatchData; anal
     mvp: awardState ?? { state: 'available', playerId: 'sample-player-0', value: 1.42, poolSize: 10, scoreGap: 0.08, close: false, tied: false, tiedPlayerIds: [] },
     whoRuined: awardState ?? { state: 'available', playerId: 'sample-player-9', value: 0.68, poolSize: 5, scoreGap: 0.06, close: false, tied: false, tiedPlayerIds: [], scope: 'LOSING_TEAM_ELIGIBLE' },
     players: Object.fromEntries(players.map((player, index) => [player.id, {
+      // Explicitly synthetic values exercise every factual metric and missing-data rendering.
+      analytics: {
+        playerId: player.id, teamId: player.teamId, roundsPlayed: 21,
+        kills: player.scoreboard?.kills ?? null, deaths: player.scoreboard?.deaths ?? null, assists: player.scoreboard?.assists ?? null,
+        kdaRatio: 2.4, enemyDamage: 2188 - index * 107, teamDamage: index === 9 ? null : index * 4,
+        adr: 104.2 - index * 5.1, kastPercent: 85.7 - index * 2.8, kastRounds: 18, survivedRounds: 9,
+        openingKills: 5 - index % 5, openingDeaths: index % 4, tradeKills: 4 - index % 4,
+        deathsTraded: 3, untradedDeaths: 8, tradeParticipation: 7,
+        multiKills: { two: 4, three: 2, four: 1, five: 0 }, clutches: { '1v1': 2, '1v2': 1 },
+        killsWithAdvantage: 7, killsAtDisadvantage: 3, teamKills: 0, suicides: 0,
+        bomb: { plants: 2, defuses: 1, explosions: 1 },
+        grenades: { flashesThrown: 14, enemiesFlashed: 12, teammatesFlashed: 2, enemyBlindSeconds: 24.5, teamBlindSeconds: 1.8,
+          heThrown: 6, heEnemyDamage: 80 - index * 3, heTeamDamage: 0, infernosStarted: 5,
+          infernoEnemyDamage: 45 - index * 2, infernoTeamDamage: 4, smokesThrown: 8, smokeEffectiveness: null },
+        economy: { availability: 'PARTIAL', freezeEquipmentValueTotal: 68400, freezeRoundsObserved: 18, money: null },
+        facts: [{ category: index < 5 ? 'POSITIVE_CONTRIBUTION' : 'NEUTRAL', kind: index < 5 ? 'KILL' : 'DEATH', roundId: 'sample-round-' + index % 5, eventId: 'sample-event-' + index % 5, value: null }],
+      },
+      participation: { verifiedRounds: 18, partialRounds: 2, unknownRounds: 1, absentFullRounds: 0, globalExcludedRounds: 0, countedOpportunities: 80, excludedOpportunities: 3, sideExposure: { T: 38, CT: 42 }, causeCodes: ['SYNTHETIC_PARTIAL_COVERAGE'] },
       kills: player.scoreboard?.kills ?? null, deaths: player.scoreboard?.deaths ?? null, assists: player.scoreboard?.assists ?? null,
       damage: 2188 - index * 107, adr: 104.2 - index * 5.1, kast: 85.7 - index * 2.8, openingKills: 5 - index % 5, openingDeaths: index % 4,
-      trades: 4 - index % 4, utilityDamage: null, heDamage: 80 - index * 3, fireDamage: 45 - index * 2,
+      trades: 4 - index % 4, utilityDamage: null, heDamage: 80 - index * 3, fireDamage: 45 - index * 2, enemiesFlashed: 12, enemyBlindSeconds: 24.5,
       ratingAvailability: 'CALCULATED_RESEARCH_ONLY', ratingReason: null,
-      ratingCoverage: { verifiedRounds: 21, partialRounds: 0, unknownRounds: 0, absentFullRounds: 0, globalExcludedRounds: 0 },
+      ratingCoverage: { verifiedRounds: 18, partialRounds: 2, unknownRounds: 1, absentFullRounds: 0, globalExcludedRounds: 0 },
       rating: { value: 1.42 - index * 0.08, rank: index + 1, losingTeamRank: index < 5 ? null : index - 4,
         rawFamilyInputs: { COMBAT: 0.04 - index * 0.002, SUPPORT: 0.01, DEATH_RELATED: -0.01, OBJECTIVES: 0.003, CONTEXT: 0.002, DIRECT_HARM: index === 0 ? 0 : -index * 0.001 },
         finalAttribution: { COMBAT: 0.4 - index * 0.02, SUPPORT: 0.1, DEATH_RELATED: -0.03, OBJECTIVES: 0.03, CONTEXT: 0.02, DIRECT_HARM: index === 0 ? 0 : -index * 0.002 } },

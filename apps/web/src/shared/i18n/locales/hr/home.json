@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Otkaži učitavanje",
-  "coming-soon": "Dolazi kasnije",
   "description": "Svaka runda ima svoju priču. Otvorite snimku, istražite meč i otkrijte što brojevi doista govore.",
   "drop-description": "ili kliknite za odabir datoteke",
   "drop-title": "Ispustite snimku ovdje",
@@ -8,7 +7,6 @@
   "empty-title": "Novi početak.",
   "file-input": "Odaberite snimku CS2",
   "limit": "Datoteke CS2 .dem · do 512 MiB",
-  "link-import": "Kod za dijeljenje Steam / FACEIT",
   "load-more": "Učitaj više mečeva",
   "load-more-failed": "Nije moguće učitati više mečeva. Pokušajte ponovno.",
   "map-pending": "Prepoznavanje mape",
@@ -24,15 +22,9 @@
   "step-upload": "Dodajte svoj meč",
   "step-upload-text": "Učitajte spremljenu snimku CS2.",
   "synthetic": "Primjeri podataka",
-  "tag-evidence": "Činjenice na prvom mjestu",
-  "tag-rosters": "Stvarni sastavi",
-  "tag-rounds": "Runda po runda",
   "upload-cancelled": "Učitavanje je zaustavljeno. Poslužitelj je možda već primio snimku.",
   "upload-confirming": "Datoteka je poslana. Čekanje poslužitelja…",
-  "upload-note": "Snimka se šalje postavljenom poslužitelju za analizu. Uvoz putem poveznica još nije dostupan.",
-  "upload-title": "Novo razumijevanje počinje ovdje.",
   "upload-wait": "Ostavite stranicu otvorenu do završetka učitavanja.",
   "uploading": "Učitavanje snimke…",
-  "workflow": "Kako radi analiza",
-  "workspace": "Vaš radni prostor"
+  "workflow": "Kako radi analiza"
 }

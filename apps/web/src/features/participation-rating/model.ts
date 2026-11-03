@@ -38,6 +38,7 @@ export function presentParticipationRating(match: MatchData, base: MatchAnalytic
     const analytics = rated.analytics;
     players[rated.playerId] = {
       ...(players[rated.playerId] ?? emptyMetrics()),
+      analytics, participation: rated.coverage,
       kills: rated.baseStats.kills, deaths: rated.baseStats.deaths, assists: rated.baseStats.assists,
       damage: analytics.enemyDamage, adr: rated.baseStats.adr, kast: rated.baseStats.kastPercent,
       openingKills: analytics.openingKills, openingDeaths: analytics.openingDeaths, trades: analytics.tradeKills,

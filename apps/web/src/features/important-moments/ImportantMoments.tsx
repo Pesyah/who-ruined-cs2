@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { MatchData, ParticipationExplanationReport } from '@who-ruined/contracts';
 import { playerPath, timeAtTick } from '../../entities/match/presentation.js';
 import { Icon } from '../../shared/ui/Icon.js';
-import { Skeleton } from '../../shared/ui/Skeleton.js';
+import { DetailsSkeleton, Skeleton } from '../../shared/ui/Skeleton.js';
 import { ApiClientError } from '../../shared/api/transport.js';
 import { errorMessage } from '../../shared/messages.js';
 import { MatchReplay } from '../match-replay/index.js';
@@ -32,7 +32,7 @@ export function ImportantMoments({ match, report, base, playerId, loading = fals
   const count = new Intl.NumberFormat(i18n.resolvedLanguage);
   const seconds = new Intl.NumberFormat(i18n.resolvedLanguage, { maximumFractionDigits: 2 });
   return <section className="moments-section"><div className="section-heading"><div><p className="eyebrow">{t('facts', 'Recorded facts')}</p><h2>{t('important-moments', 'Important moments')}</h2></div></div>
-    {!entries && loading ? <div className="panel analytics-notice" role="status"><Skeleton className="skeleton-metric"/><span>{t('loading', 'Loading…')}</span></div> :
+    {!entries && loading ? <DetailsSkeleton/> :
       !entries && error instanceof ApiClientError && error.code === 'REPORT_NOT_READY' ? <div className="panel analytics-notice" role="status"><Skeleton className="skeleton-metric"/><span>{t('error-incomplete', 'The match analysis is not complete yet.')}</span></div> :
       !entries && error ? <div className="inline-alert" role="status"><Icon name="warning"/><p>{errorMessage(error, t)}</p>{retry && <button className="button secondary" onClick={retry}>{t('retry', 'Try again')}</button>}</div> :
       !entries ? <div className="panel empty-state"><p>{t('no-important-moments', 'No verified multi-kills or trades were found for this player.')}</p></div> :

@@ -1,6 +1,5 @@
 {
   "data": "Minne tietosi tallennetaan",
-  "data-text": "Ladatut demot ja raportit tallennetaan määritetylle analyysipalvelimelle. Tämä versio on paikallinen työtila ilman tilien eristystä; julkinen palvelu tarvitsee erillisen käyttöoikeus- ja säilytyssuunnitelman.",
   "eyebrow": "Analyysin taustalla",
   "facts": "Mitä näet nyt",
   "facts-text": "Luetut pelaajat, pelaajakokoonpanoon perustuvat joukkueet, kierrokset, K/D/A ja tallennetut tapahtumat. Muut ottelumittarit näkyvät, kun analyysipalvelu toimittaa ne. Joukkueet pysyvät samoina T- ja CT-puolten vaihtuessa.",
@@ -9,8 +8,6 @@
   "faq-ratings": "Missä arviot ovat?",
   "faq-storage": "Minne demoni tallennetaan?",
   "faq-title": "Kysymyksiä ja vastauksia",
-  "future": "Mitä on tulossa",
-  "future-text": "Tilannekohtaiset arviot, joukkueen koordinaatio ja taktiset päätelmät vaativat lisäanalyysiä. Ne eivät ole saatavilla ennen kuin palvelu laskee ne.",
   "intro": "Tulostaulu kertoo, mitä tapahtui. Syyn ymmärtämiseen tarvitaan asiayhteys. Pidämme nämä kaksi erillään.",
   "pipeline-title": "Demosta raportiksi",
   "start": "Analysoi ottelu",

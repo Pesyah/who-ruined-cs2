@@ -61,9 +61,7 @@ export function UploadDemoWorkspace() {
   const formatSize = (size: number) => new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 }).format(size / 1_000_000);
 
   return <>
-    <Story hero label={t('new-analysis', 'New analysis')} title={t('upload-title', 'Your next insight starts here.')} lead={t('description', 'Every round tells a story. Open your demo, explore the match and see what the numbers actually say.')}
-      aside={<div className="story-aside"><span><Icon name="check" size={15}/>{t('tag-rosters', 'Real rosters')}</span><span><Icon name="check" size={15}/>{t('tag-rounds', 'Round by round')}</span><span><Icon name="check" size={15}/>{t('tag-evidence', 'Evidence first')}</span></div>}
-      actions={previewEnabled ? <Link className="button secondary" to="/preview/available">{t('preview-link', 'Explore an example report')}<span className="micro-badge">{t('synthetic', 'Sample data')}</span></Link> : undefined}>
+    <Story hero className="upload-story" title={t('new-analysis', 'New analysis')} lead={t('description', 'Every round tells a story. Open your demo, explore the match and see what the numbers actually say.')}>
       <div className="upload-card">
         <button type="button" disabled={busy} className={`drop-zone ${dragging ? 'dragging' : ''}`}
           onClick={() => input.current?.click()}
@@ -78,11 +76,10 @@ export function UploadDemoWorkspace() {
         <input ref={input} type="file" accept=".dem" className="sr-only" tabIndex={-1} aria-label={t('file-input', 'Choose a CS2 demo')} onChange={(event) => { void select(event.target.files); event.target.value = ''; }}/>
         {file && <div className={`upload-transfer ${busy ? 'is-active' : ''}`}><div className="transfer-heading"><Icon name="rounds" size={18}/><div><strong title={file.name}>{file.name}</strong><small>{formatSize(file.size)}</small></div>{busy && !progress?.sent && <button className="icon-button" onClick={() => controller.current?.abort()} aria-label={t('cancel-upload', 'Cancel upload')}><Icon name="close" size={18}/></button>}</div>{busy && <><progress className={progress?.sent ? 'is-confirming' : ''} max={100} value={percentage} aria-label={t('uploading', 'Uploading your demo…')}/><div className="transfer-status"><span role="status">{progress?.sent ? t('upload-confirming', 'Upload sent. Waiting for the server…') : t('uploading', 'Uploading your demo…')}</span><strong>{percentage === undefined ? '—' : new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent' }).format(percentage / 100)}</strong></div></>}{cancelled && <p className="muted" role="status">{t('upload-cancelled', 'Upload stopped. The server may already have received the demo.')}</p>}{!busy && (error || cancelled) && <button className="button primary" onClick={() => void startUpload(file)}><Icon name="refresh" size={16}/>{common('retry', 'Try again')}</button>}</div>}
         {(error || validation) && <p className="inline-alert danger" role="alert">{validation === 'MULTIPLE_FILES' ? t('one-file', 'Choose one demo at a time.') : validation ? errorCodeMessage(validation, common) : errorMessage(error, common)}</p>}
-        <div className="coming-soon"><Icon name="link" size={17}/><span>{t('link-import', 'Steam share code / FACEIT')}</span><span className="micro-badge">{t('coming-soon', 'Coming later')}</span></div>
-        <p className="stage-footnote">{t('upload-note', 'Your demo is sent to the configured analysis server. Link imports are not available yet.')}</p>
+        {previewEnabled && <Link className="button secondary upload-example" to="/preview/available">{t('preview-link', 'Explore an example report')}<span className="micro-badge">{t('synthetic', 'Sample data')}</span></Link>}
       </div>
     </Story>
-    <Story alt band label={t('workspace', 'Your workspace')} title={t('recent-title', 'Recent matches')} lead={t('recent-note', 'Stored on this analysis server')}>
+    <Story className="recent-story" title={t('recent-title', 'Recent matches')} lead={t('recent-note', 'Stored on this analysis server')}>
       <div className="recent">
         {recent.data && !recent.isFetchNextPageError && <RefreshStatus fetching={recent.isRefetching} error={recent.error} retry={() => void recent.refetch()}/>}
         {recent.isPending ? <RecentSkeleton/> :

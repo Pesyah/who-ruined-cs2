@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Tühista üleslaadimine",
-  "coming-soon": "Tulekul",
   "description": "Iga voor jutustab loo. Ava oma demo, uuri mängu ja vaata, mida numbrid tegelikult ütlevad.",
   "drop-description": "või klõpsa faili valimiseks",
   "drop-title": "Lohista oma demo siia",
@@ -8,7 +7,6 @@
   "empty-title": "Puhas leht.",
   "file-input": "Vali CS2 demo",
   "limit": "CS2 .dem-failid · kuni 512 MiB",
-  "link-import": "Steami jagamiskood / FACEIT",
   "load-more": "Laadi rohkem mänge",
   "load-more-failed": "Rohkem mänge ei saanud laadida. Proovi uuesti.",
   "map-pending": "Kaardi tuvastamine",
@@ -24,15 +22,9 @@
   "step-upload": "Too oma mäng",
   "step-upload-text": "Laadi üles salvestatud CS2 demo.",
   "synthetic": "Näidisandmed",
-  "tag-evidence": "Tõendid esikohal",
-  "tag-rosters": "Tegelikud koosseisud",
-  "tag-rounds": "Voor vooru haaval",
   "upload-cancelled": "Üleslaadimine peatatud. Server võib olla demo juba kätte saanud.",
   "upload-confirming": "Fail saadetud. Serveri vastuse ootamine…",
-  "upload-note": "Sinu demo saadetakse seadistatud analüüsiserverisse. Linkide kaudu importimine pole veel saadaval.",
-  "upload-title": "Sinu järgmine avastus algab siit.",
   "upload-wait": "Hoia leht avatuna, kuni üleslaadimine lõpeb.",
   "uploading": "Sinu demo üleslaadimine…",
-  "workflow": "Kuidas analüüs toimib",
-  "workspace": "Sinu tööruum"
+  "workflow": "Kuidas analüüs toimib"
 }

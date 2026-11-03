@@ -1,3 +1,5 @@
+import type { PlayerAnalytics, ActiveParticipationRatingReport } from '@who-ruined/contracts';
+
 export type RatingFamily = 'COMBAT' | 'SUPPORT' | 'DEATH_RELATED' | 'OBJECTIVES' | 'CONTEXT' | 'DIRECT_HARM';
 export type RatingFamilies = Record<RatingFamily, number>;
 
@@ -14,6 +16,9 @@ export type Award =
   | { state: 'insufficient-data' | 'unavailable'; poolSize?: number; reason?: string | null; tied?: boolean; scope?: 'LOSING_TEAM_ELIGIBLE' | 'DRAW_ALL_ELIGIBLE' | 'UNAVAILABLE' };
 
 export interface PlayerMetrics {
+  /** Original factual DTO, preserved without recomputing or filling missing values. */
+  analytics?: PlayerAnalytics;
+  participation?: ActiveParticipationRatingReport['players'][number]['coverage'];
   kills: number | null;
   deaths: number | null;
   assists: number | null;

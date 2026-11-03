@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Anulează încărcarea",
-  "coming-soon": "În curând",
   "description": "Fiecare rundă spune o poveste. Deschide demoul, explorează meciul și află ce spun cu adevărat cifrele.",
   "drop-description": "sau apasă pentru a alege un fișier",
   "drop-title": "Trage demoul aici",
@@ -8,7 +7,6 @@
   "empty-title": "Un nou început.",
   "file-input": "Alege un demo CS2",
   "limit": "Fișiere CS2 .dem · până la 512 MiB",
-  "link-import": "Cod de partajare Steam / FACEIT",
   "load-more": "Încarcă mai multe meciuri",
   "load-more-failed": "Nu s-au putut încărca mai multe meciuri. Încearcă din nou.",
   "map-pending": "Identificarea hărții",
@@ -24,15 +22,9 @@
   "step-upload": "Adaugă meciul tău",
   "step-upload-text": "Încarcă un demo CS2 înregistrat.",
   "synthetic": "Date de exemplu",
-  "tag-evidence": "Faptele mai întâi",
-  "tag-rosters": "Componențe reale",
-  "tag-rounds": "Rundă cu rundă",
   "upload-cancelled": "Încărcarea s-a oprit. Este posibil ca serverul să fi primit deja demoul.",
   "upload-confirming": "Fișier trimis. Se așteaptă răspunsul serverului…",
-  "upload-note": "Demoul este trimis la serverul de analiză configurat. Importul prin link nu este încă disponibil.",
-  "upload-title": "O nouă perspectivă începe aici.",
   "upload-wait": "Păstrează pagina deschisă până la finalizarea încărcării.",
   "uploading": "Se încarcă demoul…",
-  "workflow": "Cum funcționează analiza",
-  "workspace": "Spațiul tău de lucru"
+  "workflow": "Cum funcționează analiza"
 }

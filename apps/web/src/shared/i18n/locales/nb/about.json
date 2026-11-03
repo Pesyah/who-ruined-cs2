@@ -1,6 +1,5 @@
 {
   "data": "Hvor dataene dine lagres",
-  "data-text": "Opplastede demoer og rapporter lagres på den konfigurerte analyseserveren. Denne versjonen er et lokalt arbeidsområde uten atskilte kontoer; offentlig drift krever en egen løsning for tilgang og oppbevaring.",
   "eyebrow": "Bak analysen",
   "facts": "Hva du kan se i dag",
   "facts-text": "Utleste spillere, lag basert på spillerstall, runder, K/D/A og registrerte hendelser. Flere nøkkeltall fra kampen vises når analysetjenesten leverer dem. Lagene holdes samlet når T og CT bytter side.",
@@ -9,8 +8,6 @@
   "faq-ratings": "Hvor er vurderingene?",
   "faq-storage": "Hvor lagres demoen min?",
   "faq-title": "Spørsmål og svar",
-  "future": "Hva som kommer videre",
-  "future-text": "Kontekstbaserte vurderinger, lagkoordinering og taktiske konklusjoner krever ytterligere analyse. De forblir utilgjengelige til tjenesten har beregnet dem.",
   "intro": "Resultattavlen beskriver hva som skjedde. Å forstå hvorfor krever kontekst. Vi holder de to tingene atskilt.",
   "pipeline-title": "Fra demo til rapport",
   "start": "Analyser en kamp",

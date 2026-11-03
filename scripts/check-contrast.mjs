@@ -43,6 +43,10 @@ const surfaces = [
   ...backdrops.flatMap(([name, value]) => tints.map(([tint, alpha]) => [`${name} + glass ${Math.round(alpha * 100)}%`, over({ r: gr, g: gg, b: gb, a: alpha }, value)])),
   ['solid surface', token('surface-solid')],
 ];
+// Report cards use opaque 6% semantic tints over --bg, not over page glows.
+for (const tone of ['accent', 'team-a', 'positive', 'danger']) {
+  surfaces.push([`report ${tone} 6%`, over({ ...token(tone), a: 0.06 }, bg)]);
+}
 // Coloured fills under text inside a base panel (selected chips, award glows, drop zone) add at most 8%,
 // so the total tint under text never exceeds 16%.
 const OVERLAY = 0.08;

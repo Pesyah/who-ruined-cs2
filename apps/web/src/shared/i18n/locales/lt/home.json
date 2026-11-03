@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Atšaukti įkėlimą",
-  "coming-soon": "Bus vėliau",
   "description": "Kiekvienas raundas turi savo istoriją. Atverkite demo, išnagrinėkite mačą ir sužinokite, ką iš tikrųjų sako skaičiai.",
   "drop-description": "arba spustelėkite, kad pasirinktumėte failą",
   "drop-title": "Įvilkite demo čia",
@@ -8,7 +7,6 @@
   "empty-title": "Nauja pradžia.",
   "file-input": "Pasirinkti CS2 demo",
   "limit": "CS2 .dem failai · iki 512 MiB",
-  "link-import": "Steam bendrinimo kodas / FACEIT",
   "load-more": "Įkelti daugiau mačų",
   "load-more-failed": "Nepavyko įkelti daugiau mačų. Bandykite dar kartą.",
   "map-pending": "Žemėlapio nustatymas",
@@ -24,15 +22,9 @@
   "step-upload": "Pridėkite savo mačą",
   "step-upload-text": "Įkelkite išsaugotą CS2 demo.",
   "synthetic": "Pavyzdiniai duomenys",
-  "tag-evidence": "Pirmiausia faktai",
-  "tag-rosters": "Tikros sudėtys",
-  "tag-rounds": "Raundas po raundo",
   "upload-cancelled": "Įkėlimas sustabdytas. Serveris jau galėjo gauti demo.",
   "upload-confirming": "Failas išsiųstas. Laukiama serverio atsakymo…",
-  "upload-note": "Demo siunčiamas į sukonfigūruotą analizės serverį. Importas iš nuorodų dar nepasiekiamas.",
-  "upload-title": "Naujas supratimas prasideda čia.",
   "upload-wait": "Neužverkite puslapio, kol įkėlimas nebaigtas.",
   "uploading": "Įkeliamas demo…",
-  "workflow": "Kaip veikia analizė",
-  "workspace": "Jūsų darbo erdvė"
+  "workflow": "Kaip veikia analizė"
 }

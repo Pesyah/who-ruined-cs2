@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Prekliči nalaganje",
-  "coming-soon": "Prihaja pozneje",
   "description": "Vsaka runda ima svojo zgodbo. Odprite posnetek, raziščite tekmo in ugotovite, kaj številke res povedo.",
   "drop-description": "ali kliknite za izbiro datoteke",
   "drop-title": "Spustite posnetek sem",
@@ -8,7 +7,6 @@
   "empty-title": "Svež začetek.",
   "file-input": "Izberite posnetek CS2",
   "limit": "Datoteke CS2 .dem · do 512 MiB",
-  "link-import": "Koda za deljenje Steam / FACEIT",
   "load-more": "Naloži več tekem",
   "load-more-failed": "Več tekem ni bilo mogoče naložiti. Poskusite znova.",
   "map-pending": "Prepoznavanje mape",
@@ -24,15 +22,9 @@
   "step-upload": "Dodajte svojo tekmo",
   "step-upload-text": "Naložite shranjen posnetek CS2.",
   "synthetic": "Vzorčni podatki",
-  "tag-evidence": "Najprej dejstva",
-  "tag-rosters": "Dejanske sestave",
-  "tag-rounds": "Runda za rundo",
   "upload-cancelled": "Nalaganje je ustavljeno. Strežnik je morda posnetek že prejel.",
   "upload-confirming": "Datoteka je poslana. Čakanje na strežnik…",
-  "upload-note": "Posnetek se pošlje nastavljenemu strežniku za analizo. Uvoz prek povezav še ni na voljo.",
-  "upload-title": "Novo razumevanje se začne tukaj.",
   "upload-wait": "Stran naj ostane odprta, dokler se nalaganje ne konča.",
   "uploading": "Nalaganje posnetka…",
-  "workflow": "Kako deluje analiza",
-  "workspace": "Vaš delovni prostor"
+  "workflow": "Kako deluje analiza"
 }

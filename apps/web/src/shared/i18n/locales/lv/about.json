@@ -1,6 +1,5 @@
 {
   "data": "Kur nonāk jūsu dati",
-  "data-text": "Augšupielādētie demo ieraksti un pārskati tiek glabāti konfigurētajā analīzes serverī. Šī versija ir lokāla darbvieta bez kontu nošķiršanas; publiskai izvietošanai vajadzīgs atsevišķs piekļuves un datu glabāšanas risinājums.",
   "eyebrow": "Analīzes aizkulises",
   "facts": "Kas pieejams šodien",
   "facts-text": "Nolasītie spēlētāju dati, komandas pēc sastāva, raundi, K/D/A un reģistrētie notikumi. Papildu spēles rādītāji parādās, kad tos sniedz analīzes pakalpojums. Komandas saglabā identitāti, mainoties T un CT pusēm.",
@@ -9,8 +8,6 @@
   "faq-ratings": "Kur ir vērtējumi?",
   "faq-storage": "Kur tiek glabāts mans demo?",
   "faq-title": "Atbildes uz jautājumiem",
-  "future": "Kas sekos",
-  "future-text": "Vērtējumiem pēc konteksta, komandas koordinācijai un taktiskiem secinājumiem vajadzīga papildu analīze. Tie nav pieejami, kamēr pakalpojums tos nav aprēķinājis.",
   "intro": "Rezultātu tabula rāda, kas notika. Lai saprastu iemeslus, vajadzīgs konteksts. Mēs šīs lietas nošķiram.",
   "pipeline-title": "No demo līdz pārskatam",
   "start": "Analizēt spēli",
