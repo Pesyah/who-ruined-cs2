@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Zrušit nahrávání",
-  "coming-soon": "Připravujeme",
   "description": "Každé kolo má svůj příběh. Otevřete demo, prozkoumejte zápas a zjistěte, co čísla skutečně říkají.",
   "drop-description": "nebo kliknutím vyberte soubor",
   "drop-title": "Přetáhněte demo sem",
@@ -8,7 +7,6 @@
   "empty-title": "Čistý začátek.",
   "file-input": "Vybrat demo CS2",
   "limit": "Soubory CS2 .dem · do 512 MiB",
-  "link-import": "Kód sdílení Steam / FACEIT",
   "load-more": "Načíst další zápasy",
   "load-more-failed": "Další zápasy se nepodařilo načíst. Zkuste to znovu.",
   "map-pending": "Rozpoznávání mapy",
@@ -24,15 +22,9 @@
   "step-upload": "Přidejte svůj zápas",
   "step-upload-text": "Nahrajte zaznamenané demo CS2.",
   "synthetic": "Ukázková data",
-  "tag-evidence": "Fakta na prvním místě",
-  "tag-rosters": "Skutečné sestavy",
-  "tag-rounds": "Kolo za kolem",
   "upload-cancelled": "Nahrávání zastaveno. Server již mohl demo přijmout.",
   "upload-confirming": "Soubor odeslán. Čekání na server…",
-  "upload-note": "Demo se odešle na nastavený analytický server. Import z odkazů zatím není dostupný.",
-  "upload-title": "Nové poznání začíná zde.",
   "upload-wait": "Nechte stránku otevřenou do dokončení nahrávání.",
   "uploading": "Nahrávání dema…",
-  "workflow": "Jak funguje analýza",
-  "workspace": "Váš pracovní prostor"
+  "workflow": "Jak funguje analýza"
 }

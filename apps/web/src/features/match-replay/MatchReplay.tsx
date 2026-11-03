@@ -91,7 +91,7 @@ export function MatchReplay({ match, initialRoundId = null, focusTick = null, hi
   if (metadata.rounds.length === 0) return <div className="panel empty-state replay-empty"><Icon name="info"/><h3>{t('replay-title', '2D reconstruction')}</h3><p>{t('no-rounds', 'No rounds available.')}</p></div>;
 
   return <section className={`panel replay-shell ${compact ? 'compact' : ''}`} aria-live="off">
-    <div className="replay-heading"><div><p className="eyebrow">{t('replay-eyebrow', 'Recorded coordinates')}</p><h2>{t('replay-title', '2D reconstruction')}</h2></div><span className="pill">{t('replay-sampling', '{{rate}} snapshots/s', { rate: metadata.sampleRateHz })}</span></div>
+    <div className="replay-heading"><div><p className="eyebrow">{t('replay-eyebrow', 'Recorded coordinates')}</p><h2>{t('replay-title', '2D reconstruction')}</h2></div></div>
     <p className="data-note">{t('replay-accuracy-note', 'Positions are sampled from the demo and smoothly connected only between adjacent verified snapshots. This is not frame-accurate video.')}</p>
     <div className="replay-toolbar">
       <label className="select-label"><span>{t('replay-round', 'Round')}</span><select value={effectiveRoundId ?? ''} onChange={(event) => setRoundId(event.target.value)}>{metadata.rounds.map((item) => <option key={item.id} value={item.id}>{t('round-label', 'Round {{round}}', { round: item.ordinal })}</option>)}</select></label>

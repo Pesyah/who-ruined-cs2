@@ -24,17 +24,19 @@ export function Layout() {
   }, [location.pathname]);
 
   const landing = location.pathname === '/';
+  const report = location.pathname.startsWith('/matches/');
+  const workspace = location.pathname === '/analyze';
   const fallback = location.pathname.startsWith('/jobs/') ? <JobSkeleton/> : location.pathname.startsWith('/matches/') ? <ReportSkeleton kind={location.pathname.includes('/players/') ? 'player' : 'match'}/> : <LoadingState/>;
-  return <div className={`app-shell ${landing ? 'is-landing' : ''}`}>
+  return <div className={`app-shell ${landing ? 'is-landing' : ''} ${report ? 'is-report' : ''} ${workspace ? 'is-workspace' : ''}`}>
     <a className="skip-link" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById('main')?.focus(); }}>{t('skip-content', 'Skip to content')}</a>
-    {!landing && <AsciiField quiet className="ascii-backdrop"/>}
+    {!landing && !report && !workspace && <AsciiField quiet className="ascii-backdrop"/>}
     {!landing && <header className="site-header"><div className="container header-inner">
       <Link to="/" className="brand" aria-label={brand.name}><span className="brand-mark"><Icon name="crosshair" size={23}/></span><span>{brand.shortName}<b>{brand.suffix}</b></span></Link>
       <nav aria-label={t('navigation', 'Main navigation')}>
         <NavLink to="/analyze">{t('nav-analyze', 'Analyze a match')}</NavLink>
         <NavLink to="/about">{t('nav-method', 'How it works')}</NavLink>
       </nav>
-      <div className="header-actions"><span className="local-badge"><span/>{t('local-mode', 'Local workspace')}</span>
+      <div className="header-actions">
         <LanguageSwitcher key={location.pathname}/>
       </div>
     </div></header>}

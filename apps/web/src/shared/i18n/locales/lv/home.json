@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Atcelt augšupielādi",
-  "coming-soon": "Būs pieejams vēlāk",
   "description": "Katram raundam ir savs stāsts. Atveriet demo, izpētiet spēli un noskaidrojiet, ko skaitļi patiesībā rāda.",
   "drop-description": "vai noklikšķiniet, lai izvēlētos failu",
   "drop-title": "Ievelciet demo šeit",
@@ -8,7 +7,6 @@
   "empty-title": "Jauns sākums.",
   "file-input": "Izvēlēties CS2 demo",
   "limit": "CS2 .dem faili · līdz 512 MiB",
-  "link-import": "Steam kopīgošanas kods / FACEIT",
   "load-more": "Ielādēt vairāk spēļu",
   "load-more-failed": "Neizdevās ielādēt vairāk spēļu. Mēģiniet vēlreiz.",
   "map-pending": "Kartes noteikšana",
@@ -24,15 +22,9 @@
   "step-upload": "Pievienojiet savu spēli",
   "step-upload-text": "Augšupielādējiet saglabātu CS2 demo.",
   "synthetic": "Parauga dati",
-  "tag-evidence": "Vispirms fakti",
-  "tag-rosters": "Īstie sastāvi",
-  "tag-rounds": "Raundu pēc raunda",
   "upload-cancelled": "Augšupielāde apturēta. Serveris, iespējams, jau ir saņēmis demo.",
   "upload-confirming": "Fails nosūtīts. Gaida servera atbildi…",
-  "upload-note": "Demo tiek nosūtīts konfigurētajam analīzes serverim. Imports no saitēm vēl nav pieejams.",
-  "upload-title": "Jauna izpratne sākas šeit.",
   "upload-wait": "Neaizveriet lapu, līdz augšupielāde ir pabeigta.",
   "uploading": "Notiek demo augšupielāde…",
-  "workflow": "Kā darbojas analīze",
-  "workspace": "Jūsu darbvieta"
+  "workflow": "Kā darbojas analīze"
 }

@@ -9,9 +9,9 @@ export function AboutPage() {
   const { t: match } = useTranslation('match');
   const facts = [
     { icon: 'rounds' as const, title: t('facts', 'What you can see today'), text: t('facts-text', 'Parsed players, roster-based teams, rounds, K/D/A and recorded events. Additional match metrics appear when the analysis service provides them. Teams stay together when T and CT sides switch.') },
-    { icon: 'chart' as const, title: t('future', 'What comes next'), text: t('future-text', 'Contextual ratings, team coordination and tactical conclusions need additional analysis. They remain unavailable until the service calculates them.') },
+    { icon: 'chart' as const, title: match('active-rating', 'Experimental participation rating'), text: match('rating-noncausal', 'This uncalibrated score describes measured participation. It is not proof of tactical blame or intent.') },
     { icon: 'warning' as const, title: t('uncertainty', 'Gaps stay visible'), text: t('uncertainty-text', 'A dash means unavailable, not zero. Partial matches show their quality issues. An ordinary death is never presented as a proven mistake.') },
-    { icon: 'upload' as const, title: t('data', 'Where your data goes'), text: t('data-text', 'Uploaded demos and reports are stored by your configured analysis server. This version is a local workspace without account isolation; public hosting requires a separate access and retention design.') },
+    { icon: 'upload' as const, title: t('data', 'Where your data goes'), text: home('recent-note', 'Stored on this analysis server') },
   ];
   return <article className="about-page">
     <Story hero label={t('eyebrow', 'Behind the analysis')} title={t('title', 'Evidence over assumptions.')} lead={t('intro', 'A scoreboard describes what happened. Understanding why takes context. We keep those two things separate.')}
@@ -31,9 +31,9 @@ export function AboutPage() {
     <Story alt band label={t('faq-title', 'Questions, answered')} title={t('faq-title', 'Questions, answered')} lead={t('faq-metrics', 'How should I read the metrics?')}>
       <div className="faq">{[
         { question: t('faq-missing', 'Why are some values unavailable?'), answer: t('uncertainty-text', 'A dash means unavailable, not zero. Partial matches show their quality issues. An ordinary death is never presented as a proven mistake.') },
-        { question: t('faq-ratings', 'Where are the ratings?'), answer: t('future-text', 'Contextual ratings, team coordination and tactical conclusions need additional analysis. They remain unavailable until the service calculates them.') },
-        { question: t('faq-metrics', 'How should I read the metrics?'), answer: match('metric-definitions', 'ADR: average damage per round. KAST: rounds with a kill, assist, survival or trade. Opening K/D: the first elimination in a round. TK: team kills. Performance, Impact and Mistakes require contextual calculations from the analysis service.') },
-        { question: t('faq-storage', 'Where is my demo stored?'), answer: t('data-text', 'Uploaded demos and reports are stored by your configured analysis server. This version is a local workspace without account isolation; public hosting requires a separate access and retention design.') },
+        { question: t('faq-ratings', 'Where are the ratings?'), answer: match('rating-noncausal', 'This uncalibrated score describes measured participation. It is not proof of tactical blame or intent.') },
+        { question: t('faq-metrics', 'How should I read the metrics?'), answer: match('metric-definitions-rating', 'ADR is average damage per verified round. KAST is the percentage of rounds with a kill, assist, survival or trade. The dimensionless rating is experimental, uncalibrated and not a claim of intentional harm.') },
+        { question: t('faq-storage', 'Where is my demo stored?'), answer: home('recent-note', 'Stored on this analysis server') },
       ].map((item) => <Disclosure variant="quiet" className="faq-item" level={3} key={item.question} title={item.question}><p>{item.answer}</p></Disclosure>)}</div>
     </Story>
   </article>;

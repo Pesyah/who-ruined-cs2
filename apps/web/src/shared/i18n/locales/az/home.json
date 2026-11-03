@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Yükləməni ləğv et",
-  "coming-soon": "Daha sonra",
   "description": "Hər raundun öz hekayəsi var. Demonuzu açın, matçı araşdırın və rəqəmlərin nə dediyini görün.",
   "drop-description": "və ya fayl seçmək üçün klikləyin",
   "drop-title": "Demonuzu buraya buraxın",
@@ -8,7 +7,6 @@
   "empty-title": "Yeni başlanğıc.",
   "file-input": "CS2 demosu seçin",
   "limit": "CS2 .dem faylları · 512 MiB-dək",
-  "link-import": "Steam paylaşım kodu / FACEIT",
   "load-more": "Daha çox matç yüklə",
   "load-more-failed": "Daha çox matç yüklənmədi. Yenidən cəhd edin.",
   "map-pending": "Xəritə müəyyənləşdirilir",
@@ -24,15 +22,9 @@
   "step-upload": "Matçınızı gətirin",
   "step-upload-text": "Qeydə alınmış CS2 demosunu yükləyin.",
   "synthetic": "Nümunə məlumatlar",
-  "tag-evidence": "Öncə sübut",
-  "tag-rosters": "Həqiqi heyətlər",
-  "tag-rounds": "Raund-raund",
   "upload-cancelled": "Yükləmə dayandırıldı. Server demonu artıq qəbul etmiş ola bilər.",
   "upload-confirming": "Yükləmə göndərildi. Server gözlənilir…",
-  "upload-note": "Demonuz seçilmiş təhlil serverinə göndərilir. Keçidlə idxal hələ əlçatan deyil.",
-  "upload-title": "Yeni kəşfiniz buradan başlayır.",
   "upload-wait": "Yükləmə bitənədək bu səhifəni açıq saxlayın.",
   "uploading": "Demonuz yüklənir…",
-  "workflow": "Təhlil necə işləyir?",
-  "workspace": "İş sahəniz"
+  "workflow": "Təhlil necə işləyir?"
 }

@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Avbryt opplasting",
-  "coming-soon": "Kommer senere",
   "description": "Hver runde forteller en historie. Åpne demoen din, utforsk kampen og se hva tallene faktisk sier.",
   "drop-description": "eller klikk for å velge en fil",
   "drop-title": "Dra demoen din hit",
@@ -8,7 +7,6 @@
   "empty-title": "En ny start.",
   "file-input": "Velg en CS2-demo",
   "limit": "CS2-.dem-filer · opptil 512 MiB",
-  "link-import": "Steam-delingskode / FACEIT",
   "load-more": "Last inn flere kamper",
   "load-more-failed": "Kunne ikke laste inn flere kamper. Prøv igjen.",
   "map-pending": "Identifiserer kartet",
@@ -24,15 +22,9 @@
   "step-upload": "Ta med kampen din",
   "step-upload-text": "Last opp en innspilt CS2-demo.",
   "synthetic": "Eksempeldata",
-  "tag-evidence": "Dokumentasjon først",
-  "tag-rosters": "Ekte lagoppstillinger",
-  "tag-rounds": "Runde for runde",
   "upload-cancelled": "Opplastingen er stoppet. Serveren kan allerede ha mottatt demoen.",
   "upload-confirming": "Filen er sendt. Venter på serveren…",
-  "upload-note": "Demoen din sendes til den konfigurerte analyseserveren. Import via lenker er ikke tilgjengelig ennå.",
-  "upload-title": "Din neste innsikt begynner her.",
   "upload-wait": "Hold denne siden åpen til opplastingen er ferdig.",
   "uploading": "Laster opp demoen din…",
-  "workflow": "Slik fungerer analysen",
-  "workspace": "Arbeidsområdet ditt"
+  "workflow": "Slik fungerer analysen"
 }

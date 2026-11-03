@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Upload abbrechen",
-  "coming-soon": "Später verfügbar",
   "description": "Jede Runde erzählt eine Geschichte. Öffne deine Demo, erkunde das Match und finde heraus, was die Zahlen wirklich aussagen.",
   "drop-description": "oder klicke, um eine Datei auszuwählen",
   "drop-title": "Demo hier ablegen",
@@ -8,7 +7,6 @@
   "empty-title": "Ein unbeschriebenes Blatt.",
   "file-input": "CS2-Demo auswählen",
   "limit": "CS2-.dem-Dateien · bis zu 512 MiB",
-  "link-import": "Steam-Freigabecode / FACEIT",
   "load-more": "Weitere Matches laden",
   "load-more-failed": "Weitere Matches konnten nicht geladen werden. Versuche es erneut.",
   "map-pending": "Karte wird ermittelt",
@@ -24,15 +22,9 @@
   "step-upload": "Dein Match mitbringen",
   "step-upload-text": "Lade eine aufgezeichnete CS2-Demo hoch.",
   "synthetic": "Beispieldaten",
-  "tag-evidence": "Belege zuerst",
-  "tag-rosters": "Echte Aufstellungen",
-  "tag-rounds": "Runde für Runde",
   "upload-cancelled": "Upload gestoppt. Der Server hat die Demo möglicherweise bereits erhalten.",
   "upload-confirming": "Upload gesendet. Warten auf den Server…",
-  "upload-note": "Deine Demo wird an den konfigurierten Analyseserver gesendet. Der Import per Link ist noch nicht verfügbar.",
-  "upload-title": "Deine nächste Erkenntnis beginnt hier.",
   "upload-wait": "Lass diese Seite geöffnet, bis der Upload abgeschlossen ist.",
   "uploading": "Deine Demo wird hochgeladen…",
-  "workflow": "So funktioniert die Analyse",
-  "workspace": "Dein Arbeitsbereich"
+  "workflow": "So funktioniert die Analyse"
 }

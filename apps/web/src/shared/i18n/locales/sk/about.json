@@ -1,6 +1,5 @@
 {
   "data": "Kam putujú vaše údaje",
-  "data-text": "Nahrané demá a prehľady sa ukladajú na nastavenom analytickom serveri. Táto verzia je lokálny pracovný priestor bez oddelenia účtov; verejné nasadenie vyžaduje osobitný návrh prístupu a uchovávania údajov.",
   "eyebrow": "V zákulisí analýzy",
   "facts": "Čo je dostupné dnes",
   "facts-text": "Načítané údaje hráčov, tímy podľa zostáv, kolá, K/D/A a zaznamenané udalosti. Ďalšie metriky zápasu sa zobrazia, keď ich poskytne analytická služba. Tímy si pri výmene strán T a CT zachovávajú identitu.",
@@ -9,8 +8,6 @@
   "faq-ratings": "Kde sú hodnotenia?",
   "faq-storage": "Kde je uložené moje demo?",
   "faq-title": "Odpovede na otázky",
-  "future": "Čo bude nasledovať",
-  "future-text": "Hodnotenia podľa kontextu, tímová koordinácia a taktické závery vyžadujú ďalšiu analýzu. Zostávajú nedostupné, kým ich služba nevypočíta.",
   "intro": "Tabuľka ukazuje, čo sa stalo. Pochopenie príčin vyžaduje kontext. Tieto dve veci oddeľujeme.",
   "pipeline-title": "Od dema k prehľadu",
   "start": "Analyzovať zápas",

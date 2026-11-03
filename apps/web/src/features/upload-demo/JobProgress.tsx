@@ -25,12 +25,12 @@ export function JobProgress({ job, reportPath }: { job: JobDto; reportPath?: str
     lead={stopped ? t('stopped', 'Processing has stopped. You can return and upload a different demo.') : ready ? t('ready', 'Your report is ready.') : t('working', 'Rebuilding the match from your demo. This page updates automatically.')}
     aside={<>{!stopped && !ready && <div className="story-aside">{time && <span><Icon name="clock" size={15}/>{t('elapsed', 'Elapsed {{time}}', { time })}</span>}<span>{t('stage-note', 'Stages show confirmed progress, not an estimated completion time.')}</span></div>}
       {!stopped && !ready && elapsed !== null && elapsed >= 90 && <p className="inline-alert" role="status">{t('taking-longer', 'Still processing. The last confirmed stage is shown; duration depends on the demo.')}</p>}
-      {job.errorCode && <p role="alert" className="inline-alert danger">{errorCodeMessage(job.errorCode, common)}<small>{job.errorCode}</small></p>}</>}
+      {job.errorCode && <p role="alert" className="inline-alert danger">{errorCodeMessage(job.errorCode, common)}</p>}</>}
     actions={<>{ready && <Link className="button primary" to={reportPath ?? `/matches/${encodeURIComponent(job.matchId)}`}>{t('open-report', 'Open report')}<Icon name="arrow" size={16}/></Link>}{stopped && <Link className="button primary" to="/analyze">{t('back', 'Back to upload')}<Icon name="arrow" size={16}/></Link>}{!stopped && !ready && <Link className="button secondary" to="/analyze"><Icon name="back" size={16}/>{t('back', 'Back to upload')}</Link>}</>}>
     <AsciiField className="job-field" progress={progress}/>
     <div className="job-overlay">
       <span className={`pill ${stopped ? 'warning' : 'success'}`}><Icon name={stopped ? 'warning' : ready ? 'check' : 'clock'} size={14}/>{stopped || ready ? statusLabel(job.status, common) : t('live-status', 'Live status')}</span>
-      <ol className="job-stages">{stages.slice(0, Math.max(5, activeStage + 1)).map((stage, index) => <li className={index === activeStage && !ready && !stopped ? 'active' : index < activeStage || ready ? 'done' : ''} key={stage} aria-current={index === activeStage ? 'step' : undefined}><span>{index < activeStage || ready ? <Icon name="check" size={14}/> : digits.format(index + 1)}</span>{statusLabel(stage, common)}</li>)}</ol>
+      <ol className="job-stages">{stages.map((stage, index) => <li className={index === activeStage && !ready && !stopped ? 'active' : index < activeStage || ready ? 'done' : ''} key={stage} aria-current={index === activeStage ? 'step' : undefined}><span>{index < activeStage || ready ? <Icon name="check" size={14}/> : digits.format(index + 1)}</span>{statusLabel(stage, common)}</li>)}</ol>
     </div>
   </Story>;
 }

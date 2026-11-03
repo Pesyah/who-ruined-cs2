@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Upload annuleren",
-  "coming-soon": "Komt later",
   "description": "Elke ronde vertelt een verhaal. Open je demo, verken de wedstrijd en ontdek wat de cijfers echt zeggen.",
   "drop-description": "of klik om een bestand te kiezen",
   "drop-title": "Sleep je demo hierheen",
@@ -8,7 +7,6 @@
   "empty-title": "Een schone lei.",
   "file-input": "Kies een CS2-demo",
   "limit": "CS2-.dem-bestanden · maximaal 512 MiB",
-  "link-import": "Steam-deelcode / FACEIT",
   "load-more": "Meer wedstrijden laden",
   "load-more-failed": "Meer wedstrijden konden niet worden geladen. Probeer het opnieuw.",
   "map-pending": "Kaart bepalen",
@@ -24,15 +22,9 @@
   "step-upload": "Breng je wedstrijd mee",
   "step-upload-text": "Upload een opgenomen CS2-demo.",
   "synthetic": "Voorbeeldgegevens",
-  "tag-evidence": "Bewijs eerst",
-  "tag-rosters": "Echte teamsamenstellingen",
-  "tag-rounds": "Ronde voor ronde",
   "upload-cancelled": "Upload gestopt. De server heeft de demo mogelijk al ontvangen.",
   "upload-confirming": "Bestand verstuurd. Wachten op de server…",
-  "upload-note": "Je demo wordt naar de ingestelde analyseserver gestuurd. Importeren via een link is nog niet beschikbaar.",
-  "upload-title": "Je volgende inzicht begint hier.",
   "upload-wait": "Houd deze pagina open totdat de upload klaar is.",
   "uploading": "Je demo uploaden…",
-  "workflow": "Zo werkt de analyse",
-  "workspace": "Je werkruimte"
+  "workflow": "Zo werkt de analyse"
 }

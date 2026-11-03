@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Yüklemeyi iptal et",
-  "coming-soon": "Daha sonra",
   "description": "Her raundun bir hikâyesi var. Demonuzu açın, maçı inceleyin ve sayıların ne söylediğini görün.",
   "drop-description": "veya dosya seçmek için tıklayın",
   "drop-title": "Demonuzu buraya bırakın",
@@ -8,7 +7,6 @@
   "empty-title": "Yeni bir başlangıç.",
   "file-input": "CS2 demosu seçin",
   "limit": "CS2 .dem dosyaları · en fazla 512 MiB",
-  "link-import": "Steam paylaşım kodu / FACEIT",
   "load-more": "Daha fazla maç yükle",
   "load-more-failed": "Daha fazla maç yüklenemedi. Tekrar deneyin.",
   "map-pending": "Harita belirleniyor",
@@ -24,15 +22,9 @@
   "step-upload": "Maçınızı getirin",
   "step-upload-text": "Kaydedilmiş bir CS2 demosu yükleyin.",
   "synthetic": "Örnek veriler",
-  "tag-evidence": "Önce kanıt",
-  "tag-rosters": "Gerçek kadrolar",
-  "tag-rounds": "Raund raund",
   "upload-cancelled": "Yükleme durduruldu. Sunucu demoyu zaten almış olabilir.",
   "upload-confirming": "Yükleme gönderildi. Sunucu bekleniyor…",
-  "upload-note": "Demonuz yapılandırılmış analiz sunucusuna gönderilir. Bağlantıdan içe aktarma henüz kullanılamaz.",
-  "upload-title": "Yeni keşfiniz burada başlıyor.",
   "upload-wait": "Yükleme bitene kadar bu sayfayı açık tutun.",
   "uploading": "Demonuz yükleniyor…",
-  "workflow": "Analiz nasıl çalışır?",
-  "workspace": "Çalışma alanınız"
+  "workflow": "Analiz nasıl çalışır?"
 }

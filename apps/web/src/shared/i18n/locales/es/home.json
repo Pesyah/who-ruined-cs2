@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Cancelar subida",
-  "coming-soon": "Próximamente",
   "description": "Cada ronda cuenta una historia. Abre tu demo, explora la partida y descubre qué dicen realmente las cifras.",
   "drop-description": "o haz clic para elegir un archivo",
   "drop-title": "Arrastra tu demo aquí",
@@ -8,7 +7,6 @@
   "empty-title": "Todo por empezar.",
   "file-input": "Elegir una demo de CS2",
   "limit": "Archivos .dem de CS2 · hasta 512 MiB",
-  "link-import": "Código compartido de Steam / FACEIT",
   "load-more": "Cargar más partidas",
   "load-more-failed": "No se pudieron cargar más partidas. Inténtalo de nuevo.",
   "map-pending": "Identificando el mapa",
@@ -24,15 +22,9 @@
   "step-upload": "Trae tu partida",
   "step-upload-text": "Sube una demo grabada de CS2.",
   "synthetic": "Datos de ejemplo",
-  "tag-evidence": "Primero, las pruebas",
-  "tag-rosters": "Alineaciones reales",
-  "tag-rounds": "Ronda a ronda",
   "upload-cancelled": "Subida detenida. Es posible que el servidor ya haya recibido la demo.",
   "upload-confirming": "Archivo enviado. Esperando al servidor…",
-  "upload-note": "Tu demo se envía al servidor de análisis configurado. La importación mediante enlaces aún no está disponible.",
-  "upload-title": "Tu próximo descubrimiento empieza aquí.",
   "upload-wait": "Mantén esta página abierta hasta que termine la subida.",
   "uploading": "Subiendo tu demo…",
-  "workflow": "Cómo funciona el análisis",
-  "workspace": "Tu espacio de trabajo"
+  "workflow": "Cómo funciona el análisis"
 }

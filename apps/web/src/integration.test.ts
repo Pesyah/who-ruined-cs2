@@ -13,8 +13,49 @@ import { presentParticipationRating } from './features/participation-rating/mode
 import { Scoreboard } from './features/match-report/index.js';
 import { canRetryRatingError } from './shared/scoring.js';
 import { isReportPending } from './features/rating-explanation/queries.js';
+import { presentAnalytics } from './entities/match/adapter.js';
+import { metricGroups, compareMetricValues } from './entities/match/metric-groups.js';
 
 const ids = Array.from({ length: 10 }, (_, index) => `player_${String(index + 1).padStart(2, '0')}`);
+
+describe('factual metric presentation', () => {
+  it('preserves the complete factual DTO and coverage in both report adapters', () => {
+    const report = makeReport(null);
+    report.players[0]!.analytics.grenades.heTeamDamage = null;
+    report.players[0]!.analytics.clutches = { '1v2': 3 };
+    const base = presentAnalytics(match, {
+      schemaVersion: 'm2-1', featureVersion: 'm2-0.1.0', matchId: match.matchId,
+      generatedAt: '2026-11-02T00:00:00Z', tradeWindowSeconds: 5,
+      availability: { damage: 'PARTIAL', flashes: 'AVAILABLE', economy: 'AVAILABLE', aliveContext: 'PARTIAL' },
+      players: report.players.map(player => player.analytics), limitations: [],
+    });
+    expect(base.players.player_01?.analytics).toEqual(report.players[0]!.analytics);
+    const view = presentParticipationRating(match, base, report);
+    expect(view.players.player_01?.analytics).toEqual(report.players[0]!.analytics);
+    expect(view.players.player_01?.participation).toEqual(report.players[0]!.coverage);
+    expect(view.players.player_01?.analytics?.grenades.heTeamDamage).toBeNull();
+  });
+
+  it('keeps unknown values last in either direction and preserves ties', () => {
+    const collator = new Intl.Collator('en', { numeric: true });
+    const values = [null, 0, 8, undefined, 2];
+    expect([...values].sort((a, b) => compareMetricValues(a, b, 'asc', collator))).toEqual([0, 2, 8, null, undefined]);
+    expect([...values].sort((a, b) => compareMetricValues(a, b, 'desc', collator))).toEqual([8, 2, 0, null, undefined]);
+    expect(compareMetricValues(2, 2, 'desc', collator)).toBe(0);
+    expect(compareMetricValues('player2', 'player10', 'asc', collator)).toBeLessThan(0);
+  });
+
+  it('never fills missing clutch records with invented zeros', async () => {
+    const i18n = createInstance();
+    await i18n.init({ lng: 'en', resources: { en: { match: {} } } });
+    const groups = metricGroups(i18n.getFixedT('en', 'match'));
+    const view = presentParticipationRating(match, undefined, makeReport(null));
+    const clutch = groups.find(group => group.id === 'clutches')!;
+    expect(clutch.columns.find(column => column.id === '1v5')!.value(view.players.player_01)).toBeUndefined();
+    expect(clutch.columns.find(column => column.id === '5k')!.value(view.players.player_01)).toBe(0);
+    expect(groups.flatMap(group => group.columns).every(column => column.value(undefined) == null)).toBe(true);
+  });
+});
 const match: MatchData = matchDataSchema.parse({
   schemaVersion: '1', matchId: 'synthetic-m4-web-match', fileSha256: 'a'.repeat(64), map: 'de_fixture', tickRate: 64,
   teams: [

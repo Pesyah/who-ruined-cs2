@@ -19,6 +19,7 @@ export function presentAnalytics(match: MatchData, source: AnalyticsDto): MatchA
     const player = match.players.find((candidate) => candidate.id === item.playerId);
     if (!player || player.teamId !== item.teamId || Object.hasOwn(players, item.playerId)) throw new ApiClientError('INVALID_RESPONSE');
     players[item.playerId] = {
+      analytics: item,
       ...emptyMetrics(), kills: item.kills, deaths: item.deaths, assists: item.assists,
       damage: item.enemyDamage, adr: item.adr, kast: item.kastPercent,
       openingKills: item.openingKills, openingDeaths: item.openingDeaths, trades: item.tradeKills,

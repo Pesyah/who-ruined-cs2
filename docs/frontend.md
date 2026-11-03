@@ -133,6 +133,10 @@ Do not use acknowledgement to hide an unreviewed translation.
 
 ## Accessibility and responsive behavior
 
+At widths up to 760px, the scoreboard uses player cards with K/D/A, the selected group's first metric and the rating. The group's remaining metrics are available in each card's disclosure. Wider layouts use the table; both views share metric formatting and sorting. Group selection resets sorting to rating descending.
+
+The upload workspace keeps the file picker near the page heading, followed by recent matches. Decorative landing-page sizing does not apply to this route.
+
 Interactive controls must remain keyboard reachable, visibly focused and correctly labeled. Layouts must tolerate long localized labels and narrow intermediate widths, not only named device breakpoints. Arabic is right-to-left; identifiers and numeric data can keep their appropriate direction.
 
 Animations, skeletons, replay playback decorations and reveals must respect `prefers-reduced-motion`. Color use must preserve the project contrast gate.

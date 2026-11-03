@@ -1,6 +1,5 @@
 {
   "cancel-upload": "Feltöltés megszakítása",
-  "coming-soon": "Később érkezik",
   "description": "Minden kör egy történetet mesél el. Nyisd meg a demódat, vizsgáld meg a meccset, és nézd meg, mit mondanak valójában a számok.",
   "drop-description": "vagy kattints a fájl kiválasztásához",
   "drop-title": "Húzd ide a demódat",
@@ -8,7 +7,6 @@
   "empty-title": "Tiszta lap.",
   "file-input": "CS2-demó kiválasztása",
   "limit": "CS2 .dem fájlok · legfeljebb 512 MiB",
-  "link-import": "Steam-megosztási kód / FACEIT",
   "load-more": "További meccsek betöltése",
   "load-more-failed": "Nem sikerült további meccseket betölteni. Próbáld újra.",
   "map-pending": "Pálya azonosítása",
@@ -24,15 +22,9 @@
   "step-upload": "Hozd el a meccsedet",
   "step-upload-text": "Tölts fel egy rögzített CS2-demót.",
   "synthetic": "Mintaadatok",
-  "tag-evidence": "A bizonyíték az első",
-  "tag-rosters": "Valós csapatösszeállítások",
-  "tag-rounds": "Körről körre",
   "upload-cancelled": "A feltöltés leállt. Lehet, hogy a szerver már megkapta a demót.",
   "upload-confirming": "Fájl elküldve. Várakozás a szerverre…",
-  "upload-note": "A demód a beállított elemzőszerverre kerül. A hivatkozáson keresztüli importálás még nem érhető el.",
-  "upload-title": "A következő felismerésed itt kezdődik.",
   "upload-wait": "Hagyd nyitva az oldalt a feltöltés befejezéséig.",
   "uploading": "Demód feltöltése…",
-  "workflow": "Így működik az elemzés",
-  "workspace": "A munkaterületed"
+  "workflow": "Így működik az elemzés"
 }
