@@ -1,5 +1,10 @@
 import path from 'node:path';
-import { assertJobLease, prisma } from '@who-ruined/database';
+import {
+  assertJobLease,
+  completeOwnedJob,
+  failOwnedJob,
+  prisma,
+} from '@who-ruined/database';
 import { type ScoringConfig, type ScoringReport } from '@who-ruined/contracts';
 import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION } from '@who-ruined/parser-adapter';
 import { buildCanonicalMatchResult, scoreMatch, SUCCESSOR_75_25_CONFIG, V1_CONFIG } from '@who-ruined/scoring';
@@ -8,9 +13,8 @@ import { publishCanonicalMatchResult } from './match-result-storage.js';
 import { persistReplayArtifacts } from './replay-artifact.js';
 import {
   cleanupRawAfterPublication,
-  completeOwnedJob,
-  failOwnedJob,
   reachOwnedStage,
+  runPostCommitCleanup,
   type JobFaultHooks,
 } from './job-lifecycle.js';
 import {
@@ -58,7 +62,8 @@ export async function processJob(
       });
       return;
     }
-    if (job.type !== 'PARSE' || !match.rawFilePath) throw new Error('RAW_DEMO_UNAVAILABLE');
+    const rawFilePath = match.rawFilePath;
+    if (job.type !== 'PARSE' || !rawFilePath) throw new Error('RAW_DEMO_UNAVAILABLE');
     const {
       artifact,
       preparedSidecar,
@@ -68,7 +73,7 @@ export async function processJob(
       jobId,
       matchId,
       leaseToken,
-      rawFilePath: match.rawFilePath,
+      rawFilePath,
       fileSha256: match.fileSha256,
       config,
       ...(options.signal ? { signal: options.signal } : {}),
@@ -111,8 +116,17 @@ export async function processJob(
         parserVersion: PARSER_LIBRARY_VERSION, normalizerVersion: NORMALIZER_VERSION
       }
     });
-    await options.hooks?.afterStage?.('DB_POINTER_COMMITTED');
-    if (!config.retainSourceDemo) await cleanupRawAfterPublication(dataRoot, matchId, match.rawFilePath, options.hooks);
+    await runPostCommitCleanup('post_commit_cleanup_failed', async () => {
+      await options.hooks?.afterStage?.('DB_POINTER_COMMITTED');
+      if (!config.retainSourceDemo) {
+        await cleanupRawAfterPublication(
+          dataRoot,
+          matchId,
+          rawFilePath,
+          options.hooks,
+        );
+      }
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'UNKNOWN_WORKER_ERROR';
     if (message === 'STALE_JOB_OWNER') return;
@@ -123,7 +137,15 @@ export async function processJob(
     const errorMessage = timeout ? 'Превышено время разбора демо.' : validationFailure
       ? 'Нормализованные данные не прошли обязательную валидацию.'
       : scoringFailure ? 'Не удалось детерминированно построить scoring-отчёт.' : 'Парсер не смог безопасно обработать демо.';
-    console.error(JSON.stringify({ level: 'error', event: 'job_failed', stage: currentStage, code: errorCode }));
-    await failOwnedJob(jobId, matchId, leaseToken, job.type, errorCode, errorMessage);
+    const failed = await failOwnedJob(jobId, leaseToken, errorCode, errorMessage);
+    if (failed) {
+      console.error(JSON.stringify({
+        level: 'error', event: 'job_failed', stage: currentStage, code: errorCode,
+      }));
+    } else {
+      console.warn(JSON.stringify({
+        level: 'warn', event: 'stale_job_failure_ignored', stage: currentStage, code: errorCode,
+      }));
+    }
   }
 }

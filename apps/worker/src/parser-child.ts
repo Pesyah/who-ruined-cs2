@@ -2,7 +2,11 @@ import { open, mkdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
-import { parseDemoReplaySnapshot, parseDemoSnapshot, validateParsedDemoSnapshot, validateParsedReplaySnapshot, type ReplaySamplingRequest } from '@who-ruined/parser-adapter';
+import {
+  parseDemoMatchSnapshot,
+  parseDemoReplaySnapshot,
+  type ReplaySamplingRequest,
+} from '@who-ruined/parser-adapter';
 import { resolveDataPath } from './storage.js';
 
 const zip = promisify(gzip);
@@ -14,6 +18,7 @@ type Request = {
   rawRelative: string;
   outputRelative: string;
   maxArtifactBytes: number;
+  maxArtifactOutputBytes: number;
   replay?: { tickRate: number; sampleRateHz: number; rounds: Array<[string, number, number, number | null, number]> };
 };
 let request: Request;
@@ -29,12 +34,13 @@ const outputSuffix = request.kind === 'REPLAY' ? '.replay-snapshot.json.gz' : '.
 if ((request.kind !== 'PARSE' && request.kind !== 'REPLAY') ||
     !safeRelative(request.rawRelative, 'uploads/', '.dem') ||
     !safeRelative(request.outputRelative, 'worker-tmp/', outputSuffix) ||
-    !Number.isSafeInteger(request.maxArtifactBytes) || request.maxArtifactBytes < 1) process.exit(64);
+    !Number.isSafeInteger(request.maxArtifactBytes) || request.maxArtifactBytes < 1 ||
+    !Number.isSafeInteger(request.maxArtifactOutputBytes) || request.maxArtifactOutputBytes < 1) process.exit(64);
 
 const dataRoot = path.resolve(process.env.DATA_DIR ?? path.resolve(process.cwd(), 'data'));
 const rawPath = resolveDataPath(dataRoot, request.rawRelative);
 const outputPath = resolveDataPath(dataRoot, request.outputRelative);
-const temporaryPath = `${outputPath}.${process.pid}.tmp`;
+const temporaryPath = `${outputPath}.tmp`;
 
 try {
   const replay = request.replay ? {
@@ -43,9 +49,13 @@ try {
     rounds: request.replay.rounds.map(([id, ordinal, startTick, freezeEndTick, endTick]) => ({ id, ordinal, startTick, freezeEndTick, endTick }))
   } satisfies ReplaySamplingRequest : undefined;
   const snapshot = request.kind === 'REPLAY'
-    ? validateParsedReplaySnapshot(parseDemoReplaySnapshot(rawPath, replay as ReplaySamplingRequest))
-    : validateParsedDemoSnapshot(parseDemoSnapshot(rawPath));
-  const compressed = await zip(Buffer.from(JSON.stringify(snapshot)));
+    ? parseDemoReplaySnapshot(rawPath, replay as ReplaySamplingRequest)
+    : parseDemoMatchSnapshot(rawPath);
+  const serialized = JSON.stringify(snapshot);
+  if (Buffer.byteLength(serialized) > request.maxArtifactOutputBytes) {
+    throw new Error('PARSE_ARTIFACT_OUTPUT_TOO_LARGE');
+  }
+  const compressed = await zip(serialized);
   if (compressed.length > request.maxArtifactBytes) throw new Error('PARSE_ARTIFACT_TOO_LARGE');
   await mkdir(path.dirname(outputPath), { recursive: true });
   const handle = await open(temporaryPath, 'wx');

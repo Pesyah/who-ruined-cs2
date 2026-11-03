@@ -39,8 +39,9 @@
 
 ## Runtime and storage
 
-- The native parser is synchronous but isolated in a supervised child process. Timeout means the owned child is killed; it is not cooperative cancellation inside demoparser2.
-- The full event/tick parse is isolated, but upload preflight still invokes native `parseHeader` inside API infrastructure after size/magic checks. That narrow local-trust boundary is not a hardened public upload sandbox.
+- The native parser is synchronous but isolated in a directly owned child process. Timeout or lease-loss abort kills that child; cancellation is not cooperative inside demoparser2.
+- Upload preflight reads a bounded Source 2 magic prefix and validates the native header in a short, time-bounded child. Event, tick, participation and replay parsing happens in the worker child.
+- Gzip/JSON bounds limit artifact allocations but do not impose an OS-level native RSS ceiling. A container/job-object memory limit is still required for a hard memory guarantee against the native library.
 - Upload, parser, gzip, JSON depth, replay and queue bounds protect a local process. They do not provide multi-user quotas.
 - The upload semaphore is per API process; SQLite is the shared queue authority.
 - SQLite and filesystem publication cannot be one transaction. Immutable create/reuse/conflict, checksums, lease fencing, conditional pointer updates and reconciliation cover tested crash windows but are not distributed transactional storage.

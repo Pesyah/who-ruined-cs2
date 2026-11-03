@@ -4,13 +4,13 @@ import { open, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import {
-  isSource2Header,
-  loadNativeParser,
   NORMALIZER_VERSION,
   PARSER_LIBRARY_VERSION,
+  validateSource2HeaderInChild,
 } from '@who-ruined/parser-adapter';
 import type { DemoFilePort } from '../application/ports.js';
 import { ApplicationError } from '../application/application-error.js';
+import { resolveApiRuntimeConfig } from '../runtime-config.js';
 import { dataRoot, safeDataPath } from '../storage.js';
 
 @Injectable()
@@ -44,14 +44,13 @@ export class LocalDemoFiles implements DemoFilePort {
     }
   }
 
-  source2HeaderStatus(filePath: string): 'VALID' | 'INVALID' | 'UNREADABLE' {
-    let header: unknown;
-    try {
-      header = loadNativeParser().parseHeader(filePath);
-    } catch {
-      return 'UNREADABLE';
-    }
-    return isSource2Header(header) ? 'VALID' : 'INVALID';
+  async source2HeaderStatus(
+    filePath: string,
+  ): Promise<'VALID' | 'INVALID' | 'UNREADABLE'> {
+    return validateSource2HeaderInChild(
+      filePath,
+      resolveApiRuntimeConfig().headersTimeoutMs,
+    );
   }
 
   async sha256(filePath: string): Promise<string> {

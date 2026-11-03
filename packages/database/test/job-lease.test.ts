@@ -76,6 +76,44 @@ describe('durable job ownership', () => {
       .resolves.toBeUndefined();
   });
 
+  it('rejects every ownership operation after expiry even while the token is unchanged', async () => {
+    const { first } = await fixture();
+    const repository = createJobRepository(first);
+    const claimed = await repository.claimNextJob(
+      { leaseMs: 1_000, maxAttempts: 3 },
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+    expect(claimed).not.toBeNull();
+    const expiredAt = new Date('2026-01-01T00:00:02.000Z');
+
+    await expect(repository.renewLease('job', claimed!.leaseToken, 1_000, expiredAt))
+      .resolves.toBe(false);
+    await expect(repository.assertLease('job', claimed!.leaseToken, expiredAt))
+      .rejects.toThrow('STALE_JOB_OWNER');
+    await expect(repository.advanceStage('job', claimed!.leaseToken, 'SCORING', 1_000, expiredAt))
+      .rejects.toThrow('STALE_JOB_OWNER');
+    await expect(repository.completeOwnedJob({
+      jobId: 'job',
+      matchId: 'match',
+      leaseToken: claimed!.leaseToken,
+      terminal: 'COMPLETED',
+      matchData: { status: 'COMPLETED' },
+    }, expiredAt)).rejects.toThrow('STALE_JOB_OWNER');
+    await expect(repository.failOwnedJob(
+      'job', claimed!.leaseToken, 'EXPIRED', 'expired owner', expiredAt,
+    )).resolves.toBe(false);
+    await expect(repository.releaseLeaseForRetry(
+      'job',
+      claimed!.leaseToken,
+      3,
+      expiredAt,
+    )).resolves.toBe(false);
+    await expect(first.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({
+      status: 'PARSING',
+      leaseToken: claimed!.leaseToken,
+    });
+  });
+
   it('terminally fails an expired job after its finite attempt budget', async () => {
     const { first } = await fixture();
     await first.job.update({
@@ -85,5 +123,197 @@ describe('durable job ownership', () => {
     const result = await createJobRepository(first).recoverExpiredJobs({ leaseMs: 1_000, maxAttempts: 3 }, new Date('2026-01-01T00:00:01.000Z'));
     expect(result).toEqual({ requeued: 0, failed: 1 });
     await expect(first.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({ status: 'FAILED', errorCode: 'WORKER_RECOVERY_EXHAUSTED', leaseToken: null });
+    await expect(first.match.findUnique({ where: { id: 'match' } })).resolves.toMatchObject({ status: 'FAILED', quality: 'UNSUPPORTED' });
+  });
+
+  it('never claims a queued job after its finite attempt budget', async () => {
+    const { first } = await fixture();
+    await first.job.update({
+      where: { id: 'job' },
+      data: { attempts: 3 },
+    });
+    await expect(createJobRepository(first).claimNextJob({ leaseMs: 1_000, maxAttempts: 3 }))
+      .resolves.toBeNull();
+    await expect(first.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({
+      status: 'FAILED',
+      errorCode: 'WORKER_RECOVERY_EXHAUSTED',
+      attempts: 3,
+    });
+    await expect(first.match.findUnique({ where: { id: 'match' } })).resolves.toMatchObject({
+      status: 'FAILED',
+      quality: 'UNSUPPORTED',
+    });
+  });
+
+  it('fences complete, fail and release from a superseded worker', async () => {
+    const { first, second } = await fixture();
+    const policy = { leaseMs: 1_000, maxAttempts: 3 };
+    const oldRepository = createJobRepository(first);
+    const newRepository = createJobRepository(second);
+    const old = await oldRepository.claimNextJob(
+      policy,
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+    const replacement = await newRepository.claimNextJob(
+      policy,
+      new Date('2026-01-01T00:00:02.000Z'),
+    );
+    expect(replacement?.attempt).toBe(2);
+    const currentTime = new Date('2026-01-01T00:00:02.100Z');
+
+    await expect(oldRepository.completeOwnedJob({
+      jobId: 'job',
+      matchId: 'match',
+      leaseToken: old!.leaseToken,
+      terminal: 'COMPLETED',
+      matchData: { status: 'COMPLETED' },
+    }, currentTime)).rejects.toThrow('STALE_JOB_OWNER');
+    await expect(oldRepository.failOwnedJob(
+      'job', old!.leaseToken, 'OLD_FAILURE', 'late old worker', currentTime,
+    )).resolves.toBe(false);
+    await expect(oldRepository.releaseLeaseForRetry(
+      'job', old!.leaseToken, policy.maxAttempts, currentTime,
+    )).resolves.toBe(false);
+    await expect(newRepository.completeOwnedJob({
+      jobId: 'job',
+      matchId: 'match',
+      leaseToken: replacement!.leaseToken,
+      terminal: 'COMPLETED',
+      matchData: {
+        status: 'COMPLETED',
+        quality: 'VALID',
+        resultFilePath: 'results/match/current.json.gz',
+      },
+    }, currentTime)).resolves.toBeUndefined();
+    await expect(newRepository.failOwnedJob(
+      'job',
+      replacement!.leaseToken,
+      'POST_COMMIT_CLEANUP_FAILED',
+      'synthetic cleanup failure',
+      currentTime,
+    )).resolves.toBe(false);
+    await expect(newRepository.releaseLeaseForRetry(
+      'job',
+      replacement!.leaseToken,
+      policy.maxAttempts,
+      currentTime,
+    )).resolves.toBe(false);
+
+    await expect(second.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({
+      status: 'COMPLETED',
+      leaseToken: null,
+      errorCode: null,
+    });
+    await expect(second.match.findUnique({ where: { id: 'match' } })).resolves.toMatchObject({
+      status: 'COMPLETED',
+      quality: 'VALID',
+      resultFilePath: 'results/match/current.json.gz',
+    });
+  });
+
+  it('atomically fails both PARSE job and match when shutdown exhausts attempts', async () => {
+    const { first } = await fixture();
+    const repository = createJobRepository(first);
+    const claimed = await repository.claimNextJob(
+      { leaseMs: 1_000, maxAttempts: 1 },
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+    await expect(repository.releaseLeaseForRetry(
+      'job',
+      claimed!.leaseToken,
+      1,
+      new Date('2026-01-01T00:00:00.500Z'),
+    )).resolves.toBe(true);
+    await expect(first.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({
+      status: 'FAILED',
+      errorCode: 'WORKER_RECOVERY_EXHAUSTED',
+      leaseToken: null,
+    });
+    await expect(first.match.findUnique({ where: { id: 'match' } })).resolves.toMatchObject({
+      status: 'FAILED',
+      quality: 'UNSUPPORTED',
+    });
+  });
+
+  it('atomically records a pre-commit PARSE failure on both job and match', async () => {
+    const { first } = await fixture();
+    const repository = createJobRepository(first);
+    const claimed = await repository.claimNextJob(
+      { leaseMs: 1_000, maxAttempts: 3 },
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+    await expect(repository.failOwnedJob(
+      'job',
+      claimed!.leaseToken,
+      'PARSE_FAILED',
+      'synthetic pre-commit failure',
+      new Date('2026-01-01T00:00:00.500Z'),
+    )).resolves.toBe(true);
+
+    await expect(first.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({
+      status: 'FAILED',
+      errorCode: 'PARSE_FAILED',
+      leaseToken: null,
+    });
+    await expect(first.match.findUnique({ where: { id: 'match' } })).resolves.toMatchObject({
+      status: 'FAILED',
+      quality: 'UNSUPPORTED',
+    });
+  });
+
+  it('fails a RESCORE job without damaging the previously completed match', async () => {
+    const { first } = await fixture();
+    await first.match.update({
+      where: { id: 'match' },
+      data: { status: 'COMPLETED', quality: 'VALID', resultFilePath: 'results/stable.json.gz' },
+    });
+    await first.job.update({ where: { id: 'job' }, data: { type: 'RESCORE' } });
+    const repository = createJobRepository(first);
+    const claimed = await repository.claimNextJob(
+      { leaseMs: 1_000, maxAttempts: 3 },
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+    await expect(repository.failOwnedJob(
+      'job',
+      claimed!.leaseToken,
+      'SCORING_FAILED',
+      'synthetic rescore failure',
+      new Date('2026-01-01T00:00:00.500Z'),
+    )).resolves.toBe(true);
+
+    await expect(first.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({
+      status: 'FAILED',
+      errorCode: 'SCORING_FAILED',
+    });
+    await expect(first.match.findUnique({ where: { id: 'match' } })).resolves.toMatchObject({
+      status: 'COMPLETED',
+      quality: 'VALID',
+      resultFilePath: 'results/stable.json.gz',
+    });
+  });
+
+  it('rolls back terminal state when the match update fails', async () => {
+    const { first } = await fixture();
+    const repository = createJobRepository(first);
+    const claimed = await repository.claimNextJob(
+      { leaseMs: 1_000, maxAttempts: 3 },
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+    await expect(repository.completeOwnedJob({
+      jobId: 'job',
+      matchId: 'match',
+      leaseToken: claimed!.leaseToken,
+      terminal: 'COMPLETED',
+      matchData: { fieldThatDoesNotExist: 'synthetic fault' },
+    }, new Date('2026-01-01T00:00:00.500Z'))).rejects.toThrow();
+
+    await expect(first.job.findUnique({ where: { id: 'job' } })).resolves.toMatchObject({
+      status: 'PARSING',
+      leaseToken: claimed!.leaseToken,
+    });
+    await expect(first.match.findUnique({ where: { id: 'match' } })).resolves.toMatchObject({
+      status: 'QUEUED',
+      quality: null,
+    });
   });
 });

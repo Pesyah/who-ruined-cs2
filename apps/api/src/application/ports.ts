@@ -114,7 +114,7 @@ export abstract class DemoFilePort {
   abstract normalizerVersion(): string;
   abstract ownedUploadPath(filePath: string): string;
   abstract hasSource2Magic(filePath: string): Promise<boolean>;
-  abstract source2HeaderStatus(filePath: string): 'VALID' | 'INVALID' | 'UNREADABLE';
+  abstract source2HeaderStatus(filePath: string): Promise<'VALID' | 'INVALID' | 'UNREADABLE'>;
   abstract sha256(filePath: string): Promise<string>;
   abstract storedRelativePath(filePath: string): string;
   abstract remove(filePath: string): Promise<void>;

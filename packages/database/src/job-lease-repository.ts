@@ -16,6 +16,14 @@ export interface ClaimedJob {
   attempt: number;
 }
 
+export interface CompleteOwnedJobInput {
+  jobId: string;
+  matchId: string;
+  leaseToken: string;
+  terminal: 'COMPLETED' | 'PARTIAL';
+  matchData: Record<string, unknown>;
+}
+
 type DatabaseClient = PrismaClient;
 
 function activeStageFor(type: string): string {
@@ -119,18 +127,141 @@ export function createJobRepository(client: DatabaseClient) {
     if (updated.count !== 1) throw new Error('STALE_JOB_OWNER');
   }
 
-  async function releaseLeaseForRetry(jobId: string, leaseToken: string, maxAttempts: number): Promise<boolean> {
-    const job = await client.job.findFirst({ where: { id: jobId, leaseToken }, select: { attempts: true } });
-    if (!job) return false;
-    const retry = job.attempts < maxAttempts;
-    const updated = await client.job.updateMany({
-      where: { id: jobId, leaseToken, status: { in: [...ACTIVE_JOB_STAGES] } },
-      data: retry
-        ? { status: 'QUEUED', stage: 'QUEUED', leaseUntil: null, leaseToken: null, errorCode: 'WORKER_STOPPED_RETRY', errorMessage: 'Worker остановлен; задача возвращена в очередь.' }
-        : { status: 'FAILED', stage: 'FAILED', leaseUntil: null, leaseToken: null, errorCode: 'WORKER_RECOVERY_EXHAUSTED', errorMessage: 'Лимит безопасных попыток восстановления исчерпан.' }
+  async function releaseLeaseForRetry(
+    jobId: string,
+    leaseToken: string,
+    maxAttempts: number,
+    now = new Date(),
+  ): Promise<boolean> {
+    return client.$transaction(async (transaction) => {
+      const job = await transaction.job.findFirst({
+        where: {
+          id: jobId,
+          leaseToken,
+          status: { in: [...ACTIVE_JOB_STAGES] },
+          leaseUntil: { gte: now },
+        },
+        select: { attempts: true, matchId: true, type: true },
+      });
+      if (!job) return false;
+
+      const retry = job.attempts < maxAttempts;
+      const updated = await transaction.job.updateMany({
+        where: {
+          id: jobId,
+          leaseToken,
+          status: { in: [...ACTIVE_JOB_STAGES] },
+          leaseUntil: { gte: now },
+        },
+        data: retry
+          ? {
+              status: 'QUEUED', stage: 'QUEUED', leaseUntil: null, leaseToken: null,
+              errorCode: 'WORKER_STOPPED_RETRY',
+              errorMessage: 'Worker остановлен; задача возвращена в очередь.',
+            }
+          : {
+              status: 'FAILED', stage: 'FAILED', leaseUntil: null, leaseToken: null,
+              errorCode: 'WORKER_RECOVERY_EXHAUSTED',
+              errorMessage: 'Лимит безопасных попыток восстановления исчерпан.',
+            },
+      });
+      if (updated.count !== 1) return false;
+      if (!retry && job.type === 'PARSE') {
+        await transaction.match.update({
+          where: { id: job.matchId },
+          data: { status: 'FAILED', quality: 'UNSUPPORTED' },
+        });
+      }
+      return true;
     });
-    return updated.count === 1;
   }
 
-  return { recoverExpiredJobs, claimNextJob, renewLease, assertLease, advanceStage, releaseLeaseForRetry };
+  async function completeOwnedJob(
+    options: CompleteOwnedJobInput,
+    now = new Date(),
+  ): Promise<void> {
+    await client.$transaction(async (transaction) => {
+      const ownership = {
+        id: options.jobId,
+        matchId: options.matchId,
+        leaseToken: options.leaseToken,
+        status: { in: [...ACTIVE_JOB_STAGES] },
+        leaseUntil: { gte: now },
+      };
+      const owned = await transaction.job.count({ where: ownership });
+      if (owned !== 1) throw new Error('STALE_JOB_OWNER');
+
+      await transaction.match.update({
+        where: { id: options.matchId },
+        data: options.matchData,
+      });
+      const terminal = await transaction.job.updateMany({
+        where: ownership,
+        data: {
+          status: options.terminal,
+          stage: options.terminal,
+          leaseUntil: null,
+          leaseToken: null,
+        },
+      });
+      if (terminal.count !== 1) throw new Error('STALE_JOB_OWNER');
+    });
+  }
+
+  async function failOwnedJob(
+    jobId: string,
+    leaseToken: string,
+    errorCode: string,
+    errorMessage: string,
+    now = new Date(),
+  ): Promise<boolean> {
+    return client.$transaction(async (transaction) => {
+      const job = await transaction.job.findFirst({
+        where: {
+          id: jobId,
+          leaseToken,
+          status: { in: [...ACTIVE_JOB_STAGES] },
+          leaseUntil: { gte: now },
+        },
+        select: { matchId: true, type: true },
+      });
+      if (!job) return false;
+
+      const failed = await transaction.job.updateMany({
+        where: {
+          id: jobId,
+          leaseToken,
+          status: { in: [...ACTIVE_JOB_STAGES] },
+          leaseUntil: { gte: now },
+        },
+        data: {
+          status: 'FAILED',
+          stage: 'FAILED',
+          leaseUntil: null,
+          leaseToken: null,
+          errorCode,
+          errorMessage,
+        },
+      });
+      if (failed.count !== 1) return false;
+      if (job.type === 'PARSE') {
+        await transaction.match.update({
+          where: { id: job.matchId },
+          data: { status: 'FAILED', quality: 'UNSUPPORTED' },
+        });
+      }
+      return true;
+    });
+  }
+
+  return {
+    recoverExpiredJobs,
+    claimNextJob,
+    renewLease,
+    assertLease,
+    advanceStage,
+    releaseLeaseForRetry,
+    completeOwnedJob,
+    failOwnedJob,
+  };
 }

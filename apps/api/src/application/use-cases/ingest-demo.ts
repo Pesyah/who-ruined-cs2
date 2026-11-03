@@ -17,6 +17,8 @@ export interface IngestDemoResult {
   duplicate: boolean;
 }
 
+const MINIMUM_SOURCE2_PREFLIGHT_BYTES = 16;
+
 @Injectable()
 export class IngestDemo {
   constructor(
@@ -40,17 +42,19 @@ export class IngestDemo {
     try {
       if (!file.originalname.toLowerCase().endsWith('.dem')) throw new ApplicationError('INVALID_DEMO', 'Поддерживаются только файлы .dem.', 415);
       if (file.size === 0) throw new ApplicationError('INVALID_DEMO', 'Файл пуст.', 422);
-      if (file.size < 16 || !(await this.demoFiles.hasSource2Magic(temporaryPath))) {
+      if (
+        file.size < MINIMUM_SOURCE2_PREFLIGHT_BYTES
+        || !(await this.demoFiles.hasSource2Magic(temporaryPath))
+      ) {
         throw new ApplicationError('INVALID_DEMO', 'Файл не содержит заголовок CS2 Source 2 demo.', 422);
       }
-      const headerStatus = this.demoFiles.source2HeaderStatus(temporaryPath);
+      const headerStatus = await this.demoFiles.source2HeaderStatus(temporaryPath);
       if (headerStatus === 'UNREADABLE') {
         throw new ApplicationError('INVALID_DEMO', 'Не удалось прочитать заголовок демо.', 422);
       }
       if (headerStatus === 'INVALID') {
         throw new ApplicationError('INVALID_DEMO', 'Файл не подтверждён как CS2 Source 2 demo.', 422);
       }
-
       const fileHash = await this.demoFiles.sha256(temporaryPath);
       const parserVersion = this.demoFiles.parserVersion();
       const normalizerVersion = this.demoFiles.normalizerVersion();

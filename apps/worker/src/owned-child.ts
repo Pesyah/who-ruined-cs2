@@ -44,9 +44,13 @@ export async function runOwnedChild(options: {
   let timedOut = false;
   let aborted = false;
   let termination: Promise<void> | null = null;
+  let rejectLifecycle: ((error: Error) => void) | null = null;
   const terminate = (reason: 'timeout' | 'abort') => {
     if (reason === 'timeout') timedOut = true; else aborted = true;
-    termination ??= terminateAndWait(child, options.killGraceMs);
+    if (!termination) {
+      termination = terminateAndWait(child, options.killGraceMs);
+      void termination.catch((error: Error) => rejectLifecycle?.(error));
+    }
   };
   const timeout = setTimeout(() => terminate('timeout'), options.timeoutMs);
   timeout.unref();
@@ -54,8 +58,10 @@ export async function runOwnedChild(options: {
   options.signal?.addEventListener('abort', abort, { once: true });
   try {
     const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      rejectLifecycle = reject;
       child.once('error', reject);
       child.once('exit', (code, signal) => resolve({ code, signal }));
+      if (options.signal?.aborted) terminate('abort');
     });
     if (termination) await termination;
     return { ...result, timedOut, aborted, durationMs: performance.now() - started };

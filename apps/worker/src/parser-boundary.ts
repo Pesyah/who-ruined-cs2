@@ -1,17 +1,116 @@
-import { fork } from 'node:child_process';
-import { readFile, rm } from 'node:fs/promises';
+import { open, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import {
-  validateParsedDemoSnapshot, validateParsedReplaySnapshot,
-  type ParsedDemoSnapshot, type ParsedReplaySnapshot, type ReplaySamplingRequest
+  validateParsedMatchSnapshotEnvelope,
+  validateParsedReplaySnapshot,
+  type ParsedMatchSnapshotEnvelope,
+  type ParsedReplaySnapshot,
+  type ReplaySamplingRequest,
 } from '@who-ruined/parser-adapter';
+import { runOwnedChild } from './owned-child.js';
 import { resolveDataPath } from './storage.js';
 import type { WorkerRuntimeConfig } from './runtime-config.js';
 
 const unzip = promisify(gunzip);
-const supervisorEntrypoint = fileURLToPath(new URL('./parser-supervisor.js', import.meta.url));
+const parserChildEntrypoint = fileURLToPath(new URL('./parser-child.js', import.meta.url));
+
+type ParseChildRequest = {
+  kind: 'PARSE' | 'REPLAY';
+  rawRelative: string;
+  outputRelative: string;
+  maxArtifactBytes: number;
+  maxArtifactOutputBytes: number;
+  replay?: {
+    tickRate: number;
+    sampleRateHz: number;
+    rounds: Array<[string, number, number, number | null, number]>;
+  };
+};
+
+async function readBoundedFile(filePath: string, maximumBytes: number): Promise<Buffer> {
+  const handle = await open(filePath, 'r');
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile() || metadata.size < 1 || metadata.size > maximumBytes) {
+      throw new Error('PARSE_CHILD_OUTPUT_INVALID');
+    }
+    const bytes = Buffer.allocUnsafe(metadata.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const read = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (read.bytesRead === 0) throw new Error('PARSE_CHILD_OUTPUT_INVALID');
+      offset += read.bytesRead;
+    }
+    const overflow = Buffer.allocUnsafe(1);
+    if ((await handle.read(overflow, 0, 1, bytes.length)).bytesRead !== 0) {
+      throw new Error('PARSE_CHILD_OUTPUT_INVALID');
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function readChildJson(
+  outputPath: string,
+  compressedLimit: number,
+  decompressedLimit: number,
+): Promise<unknown> {
+  try {
+    const compressed = await readBoundedFile(outputPath, compressedLimit);
+    const decoded = await unzip(compressed, { maxOutputLength: decompressedLimit });
+    return JSON.parse(decoded.toString('utf8')) as unknown;
+  } catch (error) {
+    throw new Error('PARSE_CHILD_OUTPUT_INVALID', { cause: error });
+  }
+}
+
+async function runParserChild(options: {
+  dataRoot: string;
+  outputRelative: string;
+  request: ParseChildRequest;
+  timeoutMs: number;
+  killGraceMs: number;
+  compressedLimit: number;
+  decompressedLimit: number;
+  signal?: AbortSignal;
+  childEntrypoint?: string;
+}): Promise<unknown> {
+  const outputPath = resolveDataPath(options.dataRoot, options.outputRelative);
+  const encoded = Buffer.from(JSON.stringify(options.request)).toString('base64url');
+  console.log(JSON.stringify({
+    level: 'info',
+    event: 'childSpawned',
+    kind: options.request.kind === 'PARSE' ? 'parser-child' : 'replay-parser-child',
+  }));
+  try {
+    const result = await runOwnedChild({
+      entrypoint: options.childEntrypoint ?? parserChildEntrypoint,
+      args: [encoded],
+      timeoutMs: options.timeoutMs,
+      killGraceMs: options.killGraceMs,
+      environment: { ...process.env, DATA_DIR: options.dataRoot },
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    if (result.timedOut) throw new Error('PARSE_TIMEOUT');
+    if (result.aborted) throw new Error('STALE_JOB_OWNER');
+    if (result.code !== 0) {
+      throw new Error(options.request.kind === 'REPLAY' ? 'REPLAY_PARSE_FAILED' : 'PARSE_FAILED');
+    }
+    return await readChildJson(
+      outputPath,
+      options.compressedLimit,
+      options.decompressedLimit,
+    );
+  } finally {
+    await Promise.all([
+      rm(outputPath, { force: true }),
+      rm(`${outputPath}.tmp`, { force: true }),
+    ]);
+  }
+}
 
 export async function parseInKillableProcess(options: {
   dataRoot: string;
@@ -20,45 +119,29 @@ export async function parseInKillableProcess(options: {
   config: WorkerRuntimeConfig;
   signal?: AbortSignal;
   /** Programmatic test seam only; never populated from HTTP or environment. */
-  supervisorEntrypoint?: string;
-}): Promise<ParsedDemoSnapshot> {
-  const outputPath = resolveDataPath(options.dataRoot, options.outputRelative);
-  const supervisor = fork(options.supervisorEntrypoint ?? supervisorEntrypoint, [], {
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-    env: { ...process.env, DATA_DIR: options.dataRoot }
+  childEntrypoint?: string;
+}): Promise<ParsedMatchSnapshotEnvelope> {
+  const value = await runParserChild({
+    dataRoot: options.dataRoot,
+    outputRelative: options.outputRelative,
+    request: {
+      kind: 'PARSE',
+      rawRelative: options.rawRelative,
+      outputRelative: options.outputRelative,
+      maxArtifactBytes: options.config.maxParseArtifactBytes,
+      maxArtifactOutputBytes: options.config.maxParseArtifactOutputBytes,
+    },
+    timeoutMs: options.config.parseTimeoutMs,
+    killGraceMs: options.config.childKillGraceMs,
+    compressedLimit: options.config.maxParseArtifactBytes,
+    decompressedLimit: options.config.maxParseArtifactOutputBytes,
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.childEntrypoint ? { childEntrypoint: options.childEntrypoint } : {}),
   });
-  const abort = () => { if (supervisor.connected) supervisor.disconnect(); };
-  options.signal?.addEventListener('abort', abort, { once: true });
-  console.log(JSON.stringify({ level: 'info', event: 'childSpawned', kind: 'parser-supervisor' }));
   try {
-    const result = await new Promise<{ ok: boolean; code?: string }>((resolve, reject) => {
-      let messageReceived = false;
-      supervisor.once('error', reject);
-      supervisor.on('message', (message: unknown) => {
-        messageReceived = true;
-        resolve(message as { ok: boolean; code?: string });
-      });
-      supervisor.once('exit', (code) => {
-        if (!messageReceived) reject(new Error(code === 124 ? 'PARSE_TIMEOUT' : options.signal?.aborted ? 'STALE_JOB_OWNER' : 'PARSE_SUPERVISOR_EXITED'));
-      });
-      supervisor.send({
-        kind: 'PARSE', rawRelative: options.rawRelative, outputRelative: options.outputRelative,
-        timeoutMs: options.config.parseTimeoutMs, killGraceMs: options.config.childKillGraceMs,
-        maxArtifactBytes: options.config.maxParseArtifactBytes
-      });
-    });
-    if (!result.ok) {
-      console.log(JSON.stringify({ level: 'info', event: result.code === 'PARSE_TIMEOUT' ? 'childTimedOut' : 'childExited', code: result.code ?? 'PARSE_FAILED' }));
-      throw new Error(result.code ?? 'PARSE_FAILED');
-    }
-    const compressed = await readFile(outputPath);
-    if (compressed.length > options.config.maxParseArtifactBytes) throw new Error('PARSE_CHILD_OUTPUT_INVALID');
-    const decoded = await unzip(compressed, { maxOutputLength: options.config.maxParseArtifactOutputBytes });
-    return validateParsedDemoSnapshot(JSON.parse(decoded.toString('utf8')) as unknown);
-  } finally {
-    options.signal?.removeEventListener('abort', abort);
-    if (supervisor.connected) supervisor.disconnect();
-    await rm(outputPath, { force: true });
+    return validateParsedMatchSnapshotEnvelope(value);
+  } catch (error) {
+    throw new Error('PARSE_CHILD_OUTPUT_INVALID', { cause: error });
   }
 }
 
@@ -70,42 +153,39 @@ export async function parseReplayInKillableProcess(options: {
   config: WorkerRuntimeConfig;
   signal?: AbortSignal;
   /** Programmatic test seam only; never populated from HTTP or environment. */
-  supervisorEntrypoint?: string;
+  childEntrypoint?: string;
 }): Promise<ParsedReplaySnapshot> {
-  const outputPath = resolveDataPath(options.dataRoot, options.outputRelative);
-  const supervisor = fork(options.supervisorEntrypoint ?? supervisorEntrypoint, [], {
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-    env: { ...process.env, DATA_DIR: options.dataRoot }
+  const value = await runParserChild({
+    dataRoot: options.dataRoot,
+    outputRelative: options.outputRelative,
+    request: {
+      kind: 'REPLAY',
+      rawRelative: options.rawRelative,
+      outputRelative: options.outputRelative,
+      maxArtifactBytes: options.config.maxReplayParseArtifactBytes,
+      maxArtifactOutputBytes: options.config.maxReplayParseArtifactOutputBytes,
+      replay: {
+        tickRate: options.replay.tickRate,
+        sampleRateHz: options.replay.sampleRateHz,
+        rounds: options.replay.rounds.map((round) => [
+          round.id,
+          round.ordinal,
+          round.startTick,
+          round.freezeEndTick,
+          round.endTick,
+        ]),
+      },
+    },
+    timeoutMs: options.config.parseTimeoutMs,
+    killGraceMs: options.config.childKillGraceMs,
+    compressedLimit: options.config.maxReplayParseArtifactBytes,
+    decompressedLimit: options.config.maxReplayParseArtifactOutputBytes,
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.childEntrypoint ? { childEntrypoint: options.childEntrypoint } : {}),
   });
-  const abort = () => { if (supervisor.connected) supervisor.disconnect(); };
-  options.signal?.addEventListener('abort', abort, { once: true });
-  console.log(JSON.stringify({ level: 'info', event: 'childSpawned', kind: 'replay-parser-supervisor' }));
   try {
-    const result = await new Promise<{ ok: boolean; code?: string }>((resolve, reject) => {
-      let messageReceived = false;
-      supervisor.once('error', reject);
-      supervisor.on('message', (message: unknown) => {
-        messageReceived = true;
-        resolve(message as { ok: boolean; code?: string });
-      });
-      supervisor.once('exit', (code) => {
-        if (!messageReceived) reject(new Error(code === 124 ? 'PARSE_TIMEOUT' : options.signal?.aborted ? 'STALE_JOB_OWNER' : 'PARSE_SUPERVISOR_EXITED'));
-      });
-      supervisor.send({
-        kind: 'REPLAY', rawRelative: options.rawRelative, outputRelative: options.outputRelative,
-        replay: options.replay,
-        timeoutMs: options.config.parseTimeoutMs, killGraceMs: options.config.childKillGraceMs,
-        maxArtifactBytes: options.config.maxReplayParseArtifactBytes
-      });
-    });
-    if (!result.ok) throw new Error(result.code ?? 'REPLAY_PARSE_FAILED');
-    const compressed = await readFile(outputPath);
-    if (compressed.length > options.config.maxReplayParseArtifactBytes) throw new Error('PARSE_CHILD_OUTPUT_INVALID');
-    const decoded = await unzip(compressed, { maxOutputLength: options.config.maxReplayParseArtifactOutputBytes });
-    return validateParsedReplaySnapshot(JSON.parse(decoded.toString('utf8')) as unknown);
-  } finally {
-    options.signal?.removeEventListener('abort', abort);
-    if (supervisor.connected) supervisor.disconnect();
-    await rm(outputPath, { force: true });
+    return validateParsedReplaySnapshot(value);
+  } catch (error) {
+    throw new Error('PARSE_CHILD_OUTPUT_INVALID', { cause: error });
   }
 }

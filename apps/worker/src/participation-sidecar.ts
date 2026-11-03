@@ -1,6 +1,12 @@
 import type { C2S2PreparedProfileDto, MatchData } from '@who-ruined/contracts';
 import { sha256Canonical } from '@who-ruined/artifacts';
-import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION, readParticipationEvidenceFacts, type ParsedDemoSnapshot } from '@who-ruined/parser-adapter';
+import {
+  NORMALIZER_VERSION,
+  PARSER_LIBRARY_VERSION,
+  readParticipationEvidenceFacts,
+  type ParsedDemoSnapshot,
+  type ParsedParticipationSupplement,
+} from '@who-ruined/parser-adapter';
 import {
   C2S2_MODEL_VERSION,
   C2S2_POLICY_DIGEST,
@@ -383,10 +389,10 @@ function buildParticipationProfiles(
 export function buildParticipationSidecar(
   snapshot: ParsedDemoSnapshot,
   match: MatchData,
-  demoPath: string,
+  supplement: ParsedParticipationSupplement,
 ): ParticipationSidecar {
-  const evidenceFacts = readParticipationEvidenceFacts(demoPath, snapshot);
-  const base = buildPreparedParticipationInput(snapshot, match, demoPath, {
+  const evidenceFacts = readParticipationEvidenceFacts(snapshot, supplement);
+  const base = buildPreparedParticipationInput(snapshot, match, supplement, {
     allowIncompleteRoster: true,
   });
   const lifecycle = mapLifecycleEvidence(match, evidenceFacts.lifecycle);

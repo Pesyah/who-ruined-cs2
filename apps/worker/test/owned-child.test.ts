@@ -35,7 +35,7 @@ describe('real OS child lifecycle', () => {
     expect(result.code).not.toBe(0);
   });
 
-  it('kills its owned child when the supervisor aborts', async () => {
+  it('kills its owned child when the owner aborts', async () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 100);
     const result = await runOwnedChild({ entrypoint: fixture('hang'), timeoutMs: 5_000, killGraceMs: 2_000, signal: controller.signal });
@@ -43,22 +43,35 @@ describe('real OS child lifecycle', () => {
     expect(result.timedOut).toBe(false);
   });
 
-  it('rejects a supervisor IPC disconnect without accepting a result', async () => {
+  it('terminates the parser child when the parse timeout expires', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'wrc-m42-ipc-'));
     roots.push(root);
     await expect(parseInKillableProcess({
       dataRoot: root, rawRelative: 'uploads/unused.dem', outputRelative: 'worker-tmp/result.snapshot.json.gz',
-      config: resolveWorkerRuntimeConfig({ PARSE_TIMEOUT_MS: '1000' }), supervisorEntrypoint: fixture('silent-supervisor')
-    })).rejects.toThrow('PARSE_SUPERVISOR_EXITED');
+      config: resolveWorkerRuntimeConfig({ PARSE_TIMEOUT_MS: '100' }), childEntrypoint: fixture('hang')
+    })).rejects.toThrow('PARSE_TIMEOUT');
+  });
+
+  it('terminates the parser child when the owning attempt is aborted', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wrc-m42-abort-'));
+    roots.push(root);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    await expect(parseInKillableProcess({
+      dataRoot: root, rawRelative: 'uploads/unused.dem', outputRelative: 'worker-tmp/result.snapshot.json.gz',
+      config: resolveWorkerRuntimeConfig({ PARSE_TIMEOUT_MS: '5000' }),
+      signal: controller.signal,
+      childEntrypoint: fixture('hang')
+    })).rejects.toThrow('STALE_JOB_OWNER');
   });
 
   it('rejects and removes a partial child output', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'wrc-m42-partial-'));
     roots.push(root);
-    const outputRelative = 'worker-tmp/result.snapshot.json.gz';
+    const outputRelative = 'worker-tmp/partial.snapshot.json.gz';
     await expect(parseInKillableProcess({
       dataRoot: root, rawRelative: 'uploads/unused.dem', outputRelative,
-      config: resolveWorkerRuntimeConfig({ PARSE_TIMEOUT_MS: '1000' }), supervisorEntrypoint: fixture('partial-supervisor')
+      config: resolveWorkerRuntimeConfig({ PARSE_TIMEOUT_MS: '1000' }), childEntrypoint: fixture('artifact-child')
     })).rejects.toThrow();
     await expect(access(path.join(root, ...outputRelative.split('/')))).rejects.toMatchObject({ code: 'ENOENT' });
   });

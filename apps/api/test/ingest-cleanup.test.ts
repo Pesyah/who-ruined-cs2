@@ -23,8 +23,7 @@ vi.mock('@who-ruined/database', () => ({
 vi.mock('@who-ruined/parser-adapter', () => ({
   PARSER_LIBRARY_VERSION: 'test-parser',
   NORMALIZER_VERSION: 'test-normalizer',
-  loadNativeParser: () => ({ parseHeader: () => ({ magic: 'PBDEMS2' }) }),
-  isSource2Header: () => true
+  validateSource2HeaderInChild: vi.fn(async () => 'VALID'),
 }));
 
 const { createTestApiFacade } = await import('./test-api-facade.js');

@@ -45,14 +45,17 @@ The worker owns background state transitions and artifact production:
 
 - `runner/worker-runner.ts`: polling, lease acquisition, heartbeat and loop ownership.
 - `job-lifecycle.ts`: stage transitions and fenced completion/failure.
-- `parser-supervisor.ts` and `parser-child.ts`: isolated native parser process, timeout and artifact boundary.
+- `parser-boundary.ts` and `parser-child.ts`: directly owned native parser child, timeout/abort lifecycle and bounded artifact envelope.
 - `parse-pipeline.ts`: normalization, features, reports, participation, replay and canonical result assembly.
 - `rescore-pipeline.ts`: compatible report rebuild from stored `match-result@1`.
 - `replay-artifact.ts`: replay DTO construction/publication.
 - `reconcile.ts`: startup cleanup and crash-window recovery.
 - `runner/worker-dependencies.ts`: composition of repositories, clock, filesystem and pipeline dependencies.
 
-The worker owns full demo parsing and is the only process that requests event/tick snapshots. API ingestion uses a narrow infrastructure adapter for Source 2 preflight/header validation before it queues work; controllers and application use cases do not see native rows.
+The worker owns full demo parsing and is the only production service that requests
+event/tick snapshots. API ingestion performs a bounded Source 2 magic preflight
+and an isolated, time-bounded native header probe, then queues the file for worker
+parsing; controllers and application use cases do not see native rows.
 
 ### `apps/web`
 
@@ -79,7 +82,7 @@ POST .dem
   -> API streams a bounded multipart part to uploads/<match>/<sha>.dem
   -> API transaction creates match + queued PARSE job
   -> worker claims job with lease token
-  -> parser child writes bounded provisional snapshots
+  -> directly owned parser child writes a bounded match envelope and replay snapshot
   -> parser-adapter decodes rows into NormalizationInput
   -> match-domain normalizes roster teams, rounds and events
   -> features computes factual analytics with availability
@@ -118,7 +121,7 @@ The owner-only `rating:rebuild` command reconstructs H2 from the private recompu
 ~~~text
 worker -> parser-adapter -> match-domain -> features -> scoring
 api    -> application ports -> database / artifacts / scoring adapters
-api ingestion infrastructure -> parser-adapter (header validation only)
+api ingestion infrastructure -> parser-adapter (version constants + isolated header probe)
 worker -> database + artifacts
 web    -> contracts + HTTP DTOs
 all versioned boundaries -> contracts

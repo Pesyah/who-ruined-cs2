@@ -94,11 +94,12 @@ For full event/tick/replay parsing, the worker launches the native parser in a c
 
 - owns a monotonic timeout;
 - kills the child after the configured grace period;
-- accepts only bounded gzip snapshots under a lease-specific provisional path;
-- validates the snapshot schema before normalization;
+- rejects an oversized compressed file before allocating or reading it;
+- bounds decompression independently from compressed size;
+- accepts only a validated match envelope containing the normalized snapshot inputs and ordered participation rows under a lease-specific provisional path;
 - removes provisional snapshots after use/recovery.
 
-The native parser is synchronous inside the child, but it cannot block the worker's lease/timeout control process indefinitely. Upload ingestion still performs a narrow native `parseHeader` validation in API infrastructure after cheap Source 2 magic/size checks; it does not normalize events, but it remains a local-trust boundary to revisit for public deployment.
+The native parser is synchronous inside the child, but it cannot block the worker's lease/timeout control process indefinitely. Upload ingestion performs bounded Source 2 magic/size checks and runs its header probe in a separate time-bounded child; the API process itself does not load the native parser. Artifact bounds do not constitute a hard native RSS limit; deployment-level memory isolation remains necessary for that guarantee.
 
 ## RESCORE and policy rebuilds
 
