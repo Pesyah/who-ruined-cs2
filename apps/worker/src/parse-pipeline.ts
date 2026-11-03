@@ -22,7 +22,6 @@ import {
   reachOwnedStage,
   type JobFaultHooks,
 } from './job-lifecycle.js';
-import { resolveDataPath } from './storage.js';
 
 export interface ParsedMatchPipelineResult {
   artifact: MatchArtifact;
@@ -59,13 +58,14 @@ export async function runParsePipeline(options: {
   await reach('PARSING');
   const outputRelative = 'worker-tmp/' + options.jobId + '/'
     + options.leaseToken + '.snapshot.json.gz';
-  const snapshot = await parseInKillableProcess({
+  const parsed = await parseInKillableProcess({
     dataRoot: options.dataRoot,
     rawRelative: options.rawFilePath,
     outputRelative,
     config: options.config,
     ...(options.signal ? { signal: options.signal } : {}),
   });
+  const { snapshot, participation } = parsed;
   await options.assertOwned();
 
   await reach('NORMALIZING');
@@ -118,7 +118,7 @@ export async function runParsePipeline(options: {
     buildParticipationSidecar(
       snapshot,
       validated,
-      resolveDataPath(options.dataRoot, options.rawFilePath),
+      participation,
     ),
   );
   await options.assertOwned();

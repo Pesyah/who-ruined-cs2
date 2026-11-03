@@ -1,4 +1,5 @@
 import { canonicalMatchResultSchema } from '@who-ruined/contracts';
+import { completeOwnedJob } from '@who-ruined/database';
 import { scoreMatch } from '@who-ruined/scoring';
 import type { WorkerRuntimeConfig } from './runtime-config.js';
 import {
@@ -7,8 +8,8 @@ import {
   removeOwnedResult,
 } from './match-result-storage.js';
 import {
-  completeOwnedJob,
   reachOwnedStage,
+  runPostCommitCleanup,
   type JobFaultHooks,
 } from './job-lifecycle.js';
 import {
@@ -51,10 +52,11 @@ export async function runRescorePipeline(options: {
     options.job.requestedConfigHash,
   );
 
-  if (options.match.resultFilePath && options.match.resultSha256) {
+  const previousResultFilePath = options.match.resultFilePath;
+  if (previousResultFilePath && options.match.resultSha256) {
     const current = await readCanonicalMatchResult(
       options.dataRoot,
-      options.match.resultFilePath,
+      previousResultFilePath,
       options.match.resultSha256,
     );
     const report = scoreMatch(current.artifact, selected);
@@ -90,8 +92,10 @@ export async function runRescorePipeline(options: {
         losingTeamId: report.losingTeamId,
       },
     });
-    if (options.match.resultFilePath !== published.relativePath) {
-      await removeOwnedResult(options.dataRoot, options.match.resultFilePath);
+    if (previousResultFilePath !== published.relativePath) {
+      await runPostCommitCleanup('superseded_result_cleanup_failed', async () => {
+        await removeOwnedResult(options.dataRoot, previousResultFilePath);
+      });
     }
     return;
   }

@@ -6,6 +6,7 @@ import {
   PARSER_LIBRARY_VERSION,
   readPreparedParticipationSupplementRows,
   type ParsedDemoSnapshot,
+  type ParsedParticipationSupplement,
   type UnknownRow,
 } from '@who-ruined/parser-adapter';
 import {
@@ -808,8 +809,8 @@ function prepareFamilyProfile(profile: Profile): C2S2PreparedProfileDto {
   };
 }
 
-export function buildPreparedParticipationInput(snapshot:ParsedDemoSnapshot,match:MatchData,demoPath:string,options?:{allowIncompleteRoster?:boolean}):C2S2PreparedSidecar{
-  const { lifecycleRows, hostageRows } = readPreparedParticipationSupplementRows(demoPath, snapshot);
+export function buildPreparedParticipationInput(snapshot:ParsedDemoSnapshot,match:MatchData,supplement:ParsedParticipationSupplement,options?:{allowIncompleteRoster?:boolean}):C2S2PreparedSidecar{
+  const { lifecycleRows, hostageRows } = readPreparedParticipationSupplementRows(supplement);
   const paths = trajectories(
     snapshot,
     match,

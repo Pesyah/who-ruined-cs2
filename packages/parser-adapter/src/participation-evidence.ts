@@ -1,6 +1,35 @@
 import { asText } from './decoding.js';
-import { loadNativeParser, toRows, type UnknownRow } from './native-adapter.js';
+import { z } from 'zod';
+import {
+  loadNativeParser,
+  rowsSchema,
+  toRows,
+  type DemoParserPort,
+  type UnknownRow,
+} from './native-adapter.js';
 import type { ParsedDemoSnapshot } from './normalization-mapping.js';
+
+export const parsedParticipationSupplementSchema = z.object({
+  schemaVersion: z.literal('parser-participation-supplement@1'),
+  evidence: z.object({
+    lifecycleEventNames: z.array(z.string()),
+    lifecycleRows: rowsSchema,
+  }).strict(),
+  prepared: z.object({
+    lifecycleRows: rowsSchema,
+    hostageRows: rowsSchema,
+  }).strict(),
+}).strict();
+
+export type ParsedParticipationSupplement = z.infer<
+  typeof parsedParticipationSupplementSchema
+>;
+
+export function validateParsedParticipationSupplement(
+  value: unknown,
+): ParsedParticipationSupplement {
+  return parsedParticipationSupplementSchema.parse(value);
+}
 
 export interface ParticipationLifecycleFact {
   steamId: string | null;
@@ -36,23 +65,27 @@ function participationInteger(row: UnknownRow, aliases: string[]): number | null
 }
 
 export function readParticipationEvidenceFacts(
-  path: string,
   snapshot: ParsedDemoSnapshot,
+  supplement: ParsedParticipationSupplement,
 ): ParticipationEvidenceFacts {
-  const lifecycleEventNames = [
+  const expectedLifecycleEventNames = [
     'player_disconnect',
     'player_connect',
     'player_connect_full',
     'player_spawn',
     'player_team',
   ].filter((name) => snapshot.eventNames.includes(name));
-  const parser = loadNativeParser();
-  const rows = lifecycleEventNames.length
-    ? toRows(parser.parseEvents(path, lifecycleEventNames))
-    : [];
+  if (
+    expectedLifecycleEventNames.length !== supplement.evidence.lifecycleEventNames.length
+    || expectedLifecycleEventNames.some(
+      (name, index) => supplement.evidence.lifecycleEventNames[index] !== name,
+    )
+  ) {
+    throw new Error('PARTICIPATION_SUPPLEMENT_EVENT_NAMES_MISMATCH');
+  }
   return {
-    lifecycleEventNames,
-    lifecycle: rows.map((row, sourceRowIndex) => ({
+    lifecycleEventNames: supplement.evidence.lifecycleEventNames,
+    lifecycle: supplement.evidence.lifecycleRows.map((row, sourceRowIndex) => ({
       steamId: asText(row, [
         'user_steamid',
         'xuid',
@@ -109,20 +142,42 @@ export function decodeParticipationRow(row: UnknownRow): DecodedParticipationRow
 }
 
 export function readPreparedParticipationSupplementRows(
+  supplement: ParsedParticipationSupplement,
+): { lifecycleRows: UnknownRow[]; hostageRows: UnknownRow[] } {
+  return supplement.prepared;
+}
+
+export function parseParticipationSupplement(
   path: string,
   snapshot: ParsedDemoSnapshot,
-): { lifecycleRows: UnknownRow[]; hostageRows: UnknownRow[] } {
-  const parser = loadNativeParser();
+  parser: DemoParserPort = loadNativeParser(),
+): ParsedParticipationSupplement {
+  const evidenceLifecycleNames = [
+    'player_disconnect',
+    'player_connect',
+    'player_connect_full',
+    'player_spawn',
+    'player_team',
+  ].filter((name) => snapshot.eventNames.includes(name));
   const lifecycleNames = ['player_spawn', 'player_team']
     .filter((name) => snapshot.eventNames.includes(name));
   const hostageNames = snapshot.eventNames
     .filter((name) => name.startsWith('hostage_'));
   return {
-    lifecycleRows: lifecycleNames.length
-      ? toRows(parser.parseEvents(path, lifecycleNames))
-      : [],
-    hostageRows: hostageNames.length
-      ? toRows(parser.parseEvents(path, hostageNames))
-      : [],
+    schemaVersion: 'parser-participation-supplement@1',
+    evidence: {
+      lifecycleEventNames: evidenceLifecycleNames,
+      lifecycleRows: evidenceLifecycleNames.length
+        ? toRows(parser.parseEvents(path, evidenceLifecycleNames))
+        : [],
+    },
+    prepared: {
+      lifecycleRows: lifecycleNames.length
+        ? toRows(parser.parseEvents(path, lifecycleNames))
+        : [],
+      hostageRows: hostageNames.length
+        ? toRows(parser.parseEvents(path, hostageNames))
+        : [],
+    },
   };
 }

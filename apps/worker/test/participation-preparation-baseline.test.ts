@@ -7,46 +7,17 @@ import {
   type MatchRound,
 } from '@who-ruined/contracts';
 import { computeMatchAnalytics } from '@who-ruined/features';
-import type { ParsedDemoSnapshot } from '@who-ruined/parser-adapter';
+import type {
+  ParsedDemoSnapshot,
+  ParsedParticipationSupplement,
+} from '@who-ruined/parser-adapter';
 import {
   buildActiveParticipationRating,
   buildCanonicalMatchResult,
 } from '@who-ruined/scoring';
 
-const parserState = vi.hoisted(() => ({
-  evidence: {
-    lifecycleEventNames: [] as string[],
-    lifecycle: [] as Array<{
-      steamId: string | null;
-      tick: number | null;
-      kind: string | null;
-      sourceRowIndex: number;
-    }>,
-    ticks: [] as Array<{
-      tick: number | null;
-      steamId: string | null;
-      isAlive: boolean | null;
-      sideNumber: number | null;
-    }>,
-  },
-  supplements: {
-    lifecycleRows: [] as Array<Record<string, unknown>>,
-    hostageRows: [] as Array<Record<string, unknown>>,
-  },
-}));
-
-vi.mock('@who-ruined/parser-adapter', async (original) => ({
-  ...(await original<typeof import('@who-ruined/parser-adapter')>()),
-  readParticipationEvidenceFacts: () => parserState.evidence,
-  readPreparedParticipationSupplementRows: () => parserState.supplements,
-}));
-
-const { buildPreparedParticipationInput } = await import(
-  '../src/prepared-participation-input.js'
-);
-const { buildParticipationSidecar } = await import(
-  '../src/participation-sidecar.js'
-);
+import { buildPreparedParticipationInput } from '../src/prepared-participation-input.js';
+import { buildParticipationSidecar } from '../src/participation-sidecar.js';
 
 const GENERATED_AT = '2026-11-03T09:00:00.000Z';
 const TEAM_A = 'team-synthetic-a';
@@ -63,7 +34,21 @@ const TEAM_B_PLAYERS = Array.from(
 type SyntheticFixture = {
   match: MatchData;
   snapshot: ParsedDemoSnapshot;
-  evidence: typeof parserState.evidence;
+  evidence: {
+    lifecycleEventNames: string[];
+    lifecycle: Array<{
+      steamId: string | null;
+      tick: number | null;
+      kind: string | null;
+      sourceRowIndex: number;
+    }>;
+    ticks: Array<{
+      tick: number | null;
+      steamId: string | null;
+      isAlive: boolean | null;
+      sideNumber: number | null;
+    }>;
+  };
 };
 
 function context(
@@ -267,18 +252,51 @@ function removeSteamIdentity(
 }
 
 function observe(fixture: SyntheticFixture) {
-  parserState.evidence = fixture.evidence;
-  parserState.supplements = { lifecycleRows: [], hostageRows: [] };
+  fixture.snapshot.eventNames = [
+    ...new Set([
+      ...fixture.snapshot.eventNames,
+      ...fixture.evidence.lifecycleEventNames,
+    ]),
+  ];
+  const anonymousPlayerIds = new Set(
+    fixture.match.players
+      .filter((player) => player.steamId === null)
+      .map((player) => player.id),
+  );
+  const anonymousPreparedTicks = fixture.snapshot.ticks.filter((row) => (
+    typeof row.steamid === 'string' && anonymousPlayerIds.has(row.steamid)
+  ));
+  fixture.snapshot.ticks = [
+    ...fixture.evidence.ticks.map((row) => ({
+      tick: row.tick,
+      steamid: row.steamId,
+      is_alive: row.isAlive,
+      team_num: row.sideNumber,
+    })),
+    ...anonymousPreparedTicks,
+  ];
+  const supplement: ParsedParticipationSupplement = {
+    schemaVersion: 'parser-participation-supplement@1',
+    evidence: {
+      lifecycleEventNames: fixture.evidence.lifecycleEventNames,
+      lifecycleRows: fixture.evidence.lifecycle.map((row) => ({
+        event_name: row.kind,
+        tick: row.tick,
+        user_steamid: row.steamId,
+      })),
+    },
+    prepared: { lifecycleRows: [], hostageRows: [] },
+  };
   const prepared = buildPreparedParticipationInput(
     fixture.snapshot,
     fixture.match,
-    'synthetic-stage-3.dem',
+    supplement,
     { allowIncompleteRoster: true },
   );
   const sidecar = buildParticipationSidecar(
     fixture.snapshot,
     fixture.match,
-    'synthetic-stage-3.dem',
+    supplement,
   );
   const artifact = matchArtifactSchema.parse({
     schemaVersion: 'm2-artifact-1',
