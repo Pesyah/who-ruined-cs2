@@ -2,19 +2,13 @@ import path from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { ApplicationError } from '../application-error.js';
 import {
-  API_SETTINGS_PORT,
-  AUDIT_LOG_PORT,
-  CLOCK_PORT,
-  DEMO_FILE_PORT,
-  ID_GENERATOR_PORT,
-  MATCH_COMMAND_PORT,
-  type ApiSettingsPort,
-  type AuditLogPort,
-  type ClockPort,
-  type DemoFilePort,
+  ApiSettingsPort,
+  AuditLogPort,
+  ClockPort,
+  DemoFilePort,
   type DuplicateMatch,
-  type IdGeneratorPort,
-  type MatchCommandPort,
+  IdGeneratorPort,
+  MatchCommandPort,
 } from '../ports.js';
 
 export interface IngestDemoResult {
@@ -26,12 +20,12 @@ export interface IngestDemoResult {
 @Injectable()
 export class IngestDemo {
   constructor(
-    @Inject(MATCH_COMMAND_PORT) private readonly matches: MatchCommandPort,
-    @Inject(DEMO_FILE_PORT) private readonly demoFiles: DemoFilePort,
-    @Inject(API_SETTINGS_PORT) private readonly settings: ApiSettingsPort,
-    @Inject(CLOCK_PORT) private readonly clock: ClockPort,
-    @Inject(ID_GENERATOR_PORT) private readonly ids: IdGeneratorPort,
-    @Inject(AUDIT_LOG_PORT) private readonly auditLog: AuditLogPort,
+    @Inject(MatchCommandPort) private readonly matches: MatchCommandPort,
+    @Inject(DemoFilePort) private readonly demoFiles: DemoFilePort,
+    @Inject(ApiSettingsPort) private readonly settings: ApiSettingsPort,
+    @Inject(ClockPort) private readonly clock: ClockPort,
+    @Inject(IdGeneratorPort) private readonly ids: IdGeneratorPort,
+    @Inject(AuditLogPort) private readonly auditLog: AuditLogPort,
   ) {}
 
   private duplicateResult(file: Express.Multer.File, startedAt: number, duplicate: DuplicateMatch): IngestDemoResult {

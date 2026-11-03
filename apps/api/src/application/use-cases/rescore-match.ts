@@ -3,10 +3,8 @@ import { scoringConfigHash } from '@who-ruined/scoring';
 import { ApplicationError } from '../application-error.js';
 import { resolveScoringConfig } from '../scoring-config.js';
 import {
-  ID_GENERATOR_PORT,
-  MATCH_COMMAND_PORT,
-  type IdGeneratorPort,
-  type MatchCommandPort,
+  IdGeneratorPort,
+  MatchCommandPort,
 } from '../ports.js';
 import { StoredMatchAccess } from '../stored-match-access.js';
 
@@ -18,8 +16,8 @@ export interface RescoreMatchRequest {
 @Injectable()
 export class RescoreMatch {
   constructor(
-    @Inject(MATCH_COMMAND_PORT) private readonly matches: MatchCommandPort,
-    @Inject(ID_GENERATOR_PORT) private readonly ids: IdGeneratorPort,
+    @Inject(MatchCommandPort) private readonly matches: MatchCommandPort,
+    @Inject(IdGeneratorPort) private readonly ids: IdGeneratorPort,
     @Inject(StoredMatchAccess) private readonly storedMatches: StoredMatchAccess,
   ) {}
 

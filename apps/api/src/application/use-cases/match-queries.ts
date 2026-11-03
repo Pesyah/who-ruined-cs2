@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { MatchData } from '@who-ruined/contracts';
 import { ApplicationError } from '../application-error.js';
-import { MATCH_QUERY_PORT, type MatchQueryPort } from '../ports.js';
+import { MatchQueryPort } from '../ports.js';
 import { StoredMatchAccess } from '../stored-match-access.js';
 
 @Injectable()
 export class MatchQueries {
   constructor(
-    @Inject(MATCH_QUERY_PORT) private readonly repository: MatchQueryPort,
+    @Inject(MatchQueryPort) private readonly repository: MatchQueryPort,
     @Inject(StoredMatchAccess) private readonly storedMatches: StoredMatchAccess,
   ) {}
 

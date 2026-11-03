@@ -19,18 +19,25 @@ The repository enforces package/app direction through `npm.cmd run architecture:
 
 ### `apps/api`
 
-The Nest application is organized by capability:
+The Nest application keeps transport controllers separated by capability while
+sharing one match provider scope:
 
 - `modules/health`: health route.
-- `modules/matches`: upload, match list/detail, rounds, analytics, job status, deletion and rescore.
-- `modules/reports`: legacy report, active rating and rating explanation reads.
-- `modules/replay`: replay index and round reads.
+- `modules/matches`: provider composition plus upload, match list/detail, rounds,
+  job status and deletion routes.
+- `modules/reports`: legacy report, analytics, rescore, active rating and rating
+  explanation controllers.
+- `modules/replay`: replay index and round controllers.
 - `application/use-cases`: orchestration independent of Nest decorators.
 - `application/ports.ts`: storage/system boundaries used by use cases.
 - `infrastructure`: Prisma/file-backed adapters and runtime services.
 - `http`: public error mapping and request concerns.
 
-Controllers validate transport input and delegate. They do not parse demos or calculate ratings. Root `health.controller.ts` and `matches.controller.ts` are source-compatibility barrels used by existing tests; new code imports capability modules directly.
+`MatchesModule` registers all three match-facing controllers directly; report and
+replay do not add empty pass-through Nest modules. Controllers validate transport
+input and delegate. They do not parse demos or calculate ratings. Root
+`health.controller.ts` and `matches.controller.ts` are source-compatibility barrels
+used by existing tests; new code imports capability controllers directly.
 
 ### `apps/worker`
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { prisma } from '@who-ruined/database';
+import { UNFINISHED_JOB_STATUSES } from '../application/ports.js';
 import type {
   MatchCommandPort,
   MatchDeletionCandidate,
@@ -9,8 +10,6 @@ import type {
   StoredMatch,
   UploadRegistration,
 } from '../application/ports.js';
-
-const activeJobStatuses = ['QUEUED', 'PARSING', 'NORMALIZING', 'VALIDATING', 'FEATURIZING', 'SCORING'] as const;
 
 @Injectable()
 export class PrismaApiRepository implements MatchQueryPort, MatchCommandPort {
@@ -54,7 +53,7 @@ export class PrismaApiRepository implements MatchQueryPort, MatchCommandPort {
   }
 
   countActiveJobs(): Promise<number> {
-    return prisma.job.count({ where: { status: { in: [...activeJobStatuses] } } });
+    return prisma.job.count({ where: { status: { in: [...UNFINISHED_JOB_STATUSES] } } });
   }
 
   async registerUploadedMatch(input: UploadRegistration): Promise<void> {

@@ -8,7 +8,15 @@ import {
   type ParsedDemoSnapshot,
   type UnknownRow,
 } from '@who-ruined/parser-adapter';
-import { C2S2_MODEL_VERSION, C2S2_POLICY_DIGEST, C2S2_REFERENCE_VERSION, participationScenarioForMap, type C2S2EpisodeContribution } from '@who-ruined/scoring';
+import {
+  C2S2_MODEL_VERSION,
+  C2S2_POLICY_DIGEST,
+  C2S2_REFERENCE_VERSION,
+  participationScenarioForMap,
+  type C2S2EpisodeContribution,
+  type ParticipationFamily,
+  type ParticipationPhysicalFamily,
+} from '@who-ruined/scoring';
 
 export const C2S2_SIDECAR_SCHEMA_VERSION = 'm3c8-c2s2-prepared-sidecar-1' as const;
 const CONTEXT_TAGS = ['OPENING','TRADE','FAST_TRADE','MULTI_KILL','DISADVANTAGE','ALIVE_LEAD_TAKEN','POSTPLANT','FLASH_ASSIST','FLASH_TEAM_KILL_WINDOW','FLASH_TEAM_DAMAGE_WINDOW','LOW_EQUIP_COMBAT'] as const;
@@ -29,54 +37,566 @@ const relation = (teams: Map<string,string>, actor: string|null, target: string|
 const inside = (event: MatchEvent, boundary?: Boundary) => Boolean(boundary && event.tick >= boundary.liveStart && event.tick <= boundary.liveEnd);
 
 function baseBoundaries(snapshot: ParsedDemoSnapshot, rounds: MatchRound[]): Map<string, Omit<Boundary,'terminalSource'|'objective'|'eliminationTick'>> {
-  const raw=snapshot.events.map((row,order)=>{const decoded=decodeParticipationRow(row);return{name:decoded.eventName,tick:decoded.tick,order};}).filter((row):row is {name:string|null;tick:number;order:number}=>row.tick!==null);
-  return new Map(rounds.map((round)=>{
-    const start=round.freezeEndTick??round.startTick;
-    const freeze=[...new Set(raw.filter((r)=>r.name==='round_freeze_end'&&r.tick===start).map((r)=>r.tick))];
-    const ends=[...new Set(raw.filter((r)=>r.name==='round_end'&&r.tick>=start&&r.tick<=round.endTick).sort((a,b)=>a.tick-b.tick||a.order-b.order).map((r)=>r.tick))];
-    const official=[...new Set(raw.filter((r)=>r.name==='round_officially_ended'&&r.tick===round.endTick).map((r)=>r.tick))];
-    let end=round.endTick,endSource='NORMALIZED_ROUND_END_FALLBACK',endVerified=false,endReason:string|null='NO_UNIQUE_RAW_ROUND_END';
-    if(ends.length===1){end=ends[0]!;endSource='RAW_ROUND_END';endVerified=true;endReason=null;} else if(!ends.length&&official.length===1){end=official[0]!;endSource='RAW_ROUND_OFFICIALLY_ENDED';endVerified=true;endReason=null;} else if(ends.length>1){end=ends[0]!;endSource='AMBIGUOUS_RAW_ROUND_END';endReason='MULTIPLE_RAW_ROUND_END_CANDIDATES';} else if(official.length>1){endSource='AMBIGUOUS_RAW_OFFICIAL_END';endReason='MULTIPLE_RAW_OFFICIAL_END_CANDIDATES';}
-    const startVerified=freeze.length===1;
-    return [round.id,{liveStart:start,liveEnd:end,baseLiveEnd:end,startSource:startVerified?'RAW_ROUND_FREEZE_END':'NORMALIZED_FREEZE_END_FALLBACK',endSource,complete:startVerified&&endVerified,startVerified,endVerified,reason:!startVerified?'NO_UNIQUE_RAW_FREEZE_END':endReason,evidence:{rawFreezeEndRows:raw.filter((r)=>r.name==='round_freeze_end'&&r.tick===start).length,rawFreezeEndUniqueTicks:freeze.length,rawRoundEndRows:raw.filter((r)=>r.name==='round_end'&&r.tick>=start&&r.tick<=round.endTick).length,rawRoundEndUniqueTicks:ends.length,rawOfficialEndRows:raw.filter((r)=>r.name==='round_officially_ended'&&r.tick===round.endTick).length,rawOfficialEndUniqueTicks:official.length,normalizedStart:start,normalizedEnd:round.endTick}}];
+  const rawEvents = snapshot.events
+    .map((row, order) => {
+      const decoded = decodeParticipationRow(row);
+      return { name: decoded.eventName, tick: decoded.tick, order };
+    })
+    .filter((row): row is { name: string | null; tick: number; order: number } => (
+      row.tick !== null
+    ));
+
+  return new Map(rounds.map((round) => {
+    const liveStart = round.freezeEndTick ?? round.startTick;
+    const freezeEndRows = rawEvents.filter((row) => (
+      row.name === 'round_freeze_end' && row.tick === liveStart
+    ));
+    const roundEndRows = rawEvents.filter((row) => (
+      row.name === 'round_end'
+      && row.tick >= liveStart
+      && row.tick <= round.endTick
+    ));
+    const officialEndRows = rawEvents.filter((row) => (
+      row.name === 'round_officially_ended' && row.tick === round.endTick
+    ));
+    const freezeEndTicks = [...new Set(freezeEndRows.map((row) => row.tick))];
+    const roundEndTicks = [...new Set(
+      roundEndRows
+        .sort((left, right) => left.tick - right.tick || left.order - right.order)
+        .map((row) => row.tick),
+    )];
+    const officialEndTicks = [...new Set(officialEndRows.map((row) => row.tick))];
+
+    let liveEnd = round.endTick;
+    let endSource = 'NORMALIZED_ROUND_END_FALLBACK';
+    let endVerified = false;
+    let endReason: string | null = 'NO_UNIQUE_RAW_ROUND_END';
+    if (roundEndTicks.length === 1) {
+      liveEnd = roundEndTicks[0]!;
+      endSource = 'RAW_ROUND_END';
+      endVerified = true;
+      endReason = null;
+    } else if (!roundEndTicks.length && officialEndTicks.length === 1) {
+      liveEnd = officialEndTicks[0]!;
+      endSource = 'RAW_ROUND_OFFICIALLY_ENDED';
+      endVerified = true;
+      endReason = null;
+    } else if (roundEndTicks.length > 1) {
+      liveEnd = roundEndTicks[0]!;
+      endSource = 'AMBIGUOUS_RAW_ROUND_END';
+      endReason = 'MULTIPLE_RAW_ROUND_END_CANDIDATES';
+    } else if (officialEndTicks.length > 1) {
+      endSource = 'AMBIGUOUS_RAW_OFFICIAL_END';
+      endReason = 'MULTIPLE_RAW_OFFICIAL_END_CANDIDATES';
+    }
+
+    const startVerified = freezeEndTicks.length === 1;
+    return [round.id, {
+      liveStart,
+      liveEnd,
+      baseLiveEnd: liveEnd,
+      startSource: startVerified ? 'RAW_ROUND_FREEZE_END' : 'NORMALIZED_FREEZE_END_FALLBACK',
+      endSource,
+      complete: startVerified && endVerified,
+      startVerified,
+      endVerified,
+      reason: !startVerified ? 'NO_UNIQUE_RAW_FREEZE_END' : endReason,
+      evidence: {
+        rawFreezeEndRows: freezeEndRows.length,
+        rawFreezeEndUniqueTicks: freezeEndTicks.length,
+        rawRoundEndRows: roundEndRows.length,
+        rawRoundEndUniqueTicks: roundEndTicks.length,
+        rawOfficialEndRows: officialEndRows.length,
+        rawOfficialEndUniqueTicks: officialEndTicks.length,
+        normalizedStart: liveStart,
+        normalizedEnd: round.endTick,
+      },
+    }];
   }));
 }
 function startAlive(snapshot: ParsedDemoSnapshot, match: MatchData, boundary: {liveStart:number}, allowIncompleteRoster = false) {
-  const roster=new Set(match.players.map((p)=>p.id)); const byTeam=new Map(match.players.map((p)=>[p.id,p.teamId])); const observed=new Map<string,boolean|null>();
-  for(const row of snapshot.ticks){const decoded=decodeParticipationRow(row);if(decoded.tick!==boundary.liveStart)continue;const id=decoded.tickSteamId;if(id&&roster.has(id))observed.set(id,decoded.isAlive);}
-  const aliveByTeam=new Map(match.teams.map((team)=>[team.id,new Set([...observed].filter(([id,a])=>a===true&&byTeam.get(id)===team.id).map(([id])=>id))]));
-  const complete=allowIncompleteRoster
-    ? match.teams.length===2&&match.teams.every((team)=>(aliveByTeam.get(team.id)?.size??0)>0)
-    : observed.size===roster.size&&match.teams.length===2&&match.teams.every((team)=>team.playerIds.length===5&&aliveByTeam.get(team.id)?.size===5);
-  return {complete,aliveByTeam,reason:complete?null:'FREEZE_ALIVE_SNAPSHOT_INCOMPLETE'};
+  const roster = new Set(match.players.map((player) => player.id));
+  const teamByPlayer = new Map(match.players.map((player) => [player.id, player.teamId]));
+  const observed = new Map<string, boolean | null>();
+  for (const row of snapshot.ticks) {
+    const decoded = decodeParticipationRow(row);
+    if (decoded.tick !== boundary.liveStart) continue;
+    const playerId = decoded.tickSteamId;
+    if (playerId && roster.has(playerId)) observed.set(playerId, decoded.isAlive);
+  }
+
+  const aliveByTeam = new Map(match.teams.map((team) => [
+    team.id,
+    new Set([...observed]
+      .filter(([playerId, isAlive]) => (
+        isAlive === true && teamByPlayer.get(playerId) === team.id
+      ))
+      .map(([playerId]) => playerId)),
+  ]));
+  const complete = allowIncompleteRoster
+    ? match.teams.length === 2
+      && match.teams.every((team) => (aliveByTeam.get(team.id)?.size ?? 0) > 0)
+    : observed.size === roster.size
+      && match.teams.length === 2
+      && match.teams.every((team) => (
+        team.playerIds.length === 5 && aliveByTeam.get(team.id)?.size === 5
+      ));
+  return {
+    complete,
+    aliveByTeam,
+    reason: complete ? null : 'FREEZE_ALIVE_SNAPSHOT_INCOMPLETE',
+  };
 }
 
-function aliveState(deaths: Death[], teamIds: string[], starts: Map<string,Set<string>>, liveStart: number, liveEnd: number, allowIncompleteRoster = false, lifecycle:Array<{name:string;tick:number;identityStatus:string;playerId:string|null}>=[],playerTeams=new Map<string,string>()) {
-  const alive=new Map(teamIds.map((id)=>[id,new Set(starts.get(id)??[])])); let reliable=teamIds.length===2&&teamIds.every((id)=>allowIncompleteRoster?(alive.get(id)?.size??0)>0:alive.get(id)?.size===5); const errors:string[]=[]; const snapshots:Trajectory['state']['snapshots']=[];
-  const groups=new Map<number,Death[]>(); for(const death of unique(deaths.filter((d)=>d.tick>=liveStart&&d.tick<=liveEnd))){const rows=groups.get(death.tick)??[];rows.push(death);groups.set(death.tick,rows);}
-  const life=[...lifecycle].filter((e)=>e.tick>liveStart&&e.tick<liveEnd).sort((a,b)=>a.tick-b.tick||a.name.localeCompare(b.name));let lifeIndex=0;
-  for(const [tick,rows] of [...groups].sort(([a],[b])=>a-b)){while(lifeIndex<life.length&&life[lifeIndex]!.tick<tick){const e=life[lifeIndex++]!;if(e.identityStatus!=='STABLE_ROSTER_ID'||!e.playerId){reliable=false;errors.push('UNKNOWN_IDENTITY_IN_LIVE_LIFECYCLE');continue;}const team=playerTeams.get(e.playerId);if(!team){reliable=false;errors.push('LIFECYCLE_PLAYER_TEAM_UNKNOWN');continue;}if(e.name==='player_disconnect')alive.get(team)?.delete(e.playerId);else if(['player_connect','player_connect_full','player_spawn','player_team'].includes(e.name))alive.get(team)?.add(e.playerId);}const pre=Object.fromEntries(teamIds.map((id)=>[id,alive.get(id)?.size??0]));const victims=new Set<string>();const victimTeams=new Map<string,string>();for(const d of rows){const team=d.targetId?teamIds.find((id)=>alive.get(id)?.has(d.targetId!)):undefined;if(!team||!d.targetId){reliable=false;errors.push('UNKNOWN_OR_ALREADY_DEAD_VICTIM');continue;}if(victims.has(d.targetId)){reliable=false;errors.push('DUPLICATE_VICTIM_IN_TICK_GROUP');continue;}victims.add(d.targetId);victimTeams.set(d.id,team);}for(const d of rows){const team=victimTeams.get(d.id);if(team&&d.targetId)alive.get(team)?.delete(d.targetId);}snapshots.push({tick,pre,post:Object.fromEntries(teamIds.map((id)=>[id,alive.get(id)?.size??0])),eventIds:rows.map((d)=>d.id)});while(lifeIndex<life.length&&life[lifeIndex]!.tick===tick){const e=life[lifeIndex++]!;if(e.name!=='player_disconnect'){reliable=false;errors.push('NON_DISCONNECT_LIFECYCLE_AT_DEATH_TICK');continue;}if(e.identityStatus!=='STABLE_ROSTER_ID'||!e.playerId){reliable=false;errors.push('UNKNOWN_IDENTITY_IN_LIVE_LIFECYCLE');continue;}const team=playerTeams.get(e.playerId);if(team)alive.get(team)?.delete(e.playerId);else{reliable=false;errors.push('LIFECYCLE_PLAYER_TEAM_UNKNOWN');}}}
-  return {reliable,errors:[...new Set(errors)],snapshots};
+type LiveLifecycleEvent = {
+  name: string;
+  tick: number;
+  identityStatus: string;
+  playerId: string | null;
+};
+
+function aliveState(
+  deaths: Death[],
+  teamIds: string[],
+  starts: Map<string, Set<string>>,
+  liveStart: number,
+  liveEnd: number,
+  allowIncompleteRoster = false,
+  lifecycle: LiveLifecycleEvent[] = [],
+  playerTeams = new Map<string, string>(),
+) {
+  const alive = new Map(teamIds.map((teamId) => [
+    teamId,
+    new Set(starts.get(teamId) ?? []),
+  ]));
+  let reliable = teamIds.length === 2 && teamIds.every((teamId) => (
+    allowIncompleteRoster
+      ? (alive.get(teamId)?.size ?? 0) > 0
+      : alive.get(teamId)?.size === 5
+  ));
+  const errors: string[] = [];
+  const snapshots: Trajectory['state']['snapshots'] = [];
+  const deathsByTick = new Map<number, Death[]>();
+  const liveDeaths = unique(deaths.filter((death) => (
+    death.tick >= liveStart && death.tick <= liveEnd
+  )));
+  for (const death of liveDeaths) {
+    const tickDeaths = deathsByTick.get(death.tick) ?? [];
+    tickDeaths.push(death);
+    deathsByTick.set(death.tick, tickDeaths);
+  }
+  const liveLifecycle = [...lifecycle]
+    .filter((event) => event.tick > liveStart && event.tick < liveEnd)
+    .sort((left, right) => (
+      left.tick - right.tick || left.name.localeCompare(right.name)
+    ));
+  let lifecycleIndex = 0;
+
+  const applyLifecycleBeforeDeath = (event: LiveLifecycleEvent): void => {
+    if (event.identityStatus !== 'STABLE_ROSTER_ID' || !event.playerId) {
+      reliable = false;
+      errors.push('UNKNOWN_IDENTITY_IN_LIVE_LIFECYCLE');
+      return;
+    }
+    const teamId = playerTeams.get(event.playerId);
+    if (!teamId) {
+      reliable = false;
+      errors.push('LIFECYCLE_PLAYER_TEAM_UNKNOWN');
+      return;
+    }
+    if (event.name === 'player_disconnect') {
+      alive.get(teamId)?.delete(event.playerId);
+    } else if (
+      ['player_connect', 'player_connect_full', 'player_spawn', 'player_team']
+        .includes(event.name)
+    ) {
+      alive.get(teamId)?.add(event.playerId);
+    }
+  };
+
+  for (const [tick, tickDeaths] of [...deathsByTick].sort(([left], [right]) => left - right)) {
+    while (
+      lifecycleIndex < liveLifecycle.length
+      && liveLifecycle[lifecycleIndex]!.tick < tick
+    ) {
+      applyLifecycleBeforeDeath(liveLifecycle[lifecycleIndex++]!);
+    }
+
+    const pre = Object.fromEntries(teamIds.map((teamId) => [
+      teamId,
+      alive.get(teamId)?.size ?? 0,
+    ]));
+    const victims = new Set<string>();
+    const victimTeamByDeath = new Map<string, string>();
+    for (const death of tickDeaths) {
+      const victimTeamId = death.targetId
+        ? teamIds.find((teamId) => alive.get(teamId)?.has(death.targetId!))
+        : undefined;
+      if (!victimTeamId || !death.targetId) {
+        reliable = false;
+        errors.push('UNKNOWN_OR_ALREADY_DEAD_VICTIM');
+        continue;
+      }
+      if (victims.has(death.targetId)) {
+        reliable = false;
+        errors.push('DUPLICATE_VICTIM_IN_TICK_GROUP');
+        continue;
+      }
+      victims.add(death.targetId);
+      victimTeamByDeath.set(death.id, victimTeamId);
+    }
+    for (const death of tickDeaths) {
+      const victimTeamId = victimTeamByDeath.get(death.id);
+      if (victimTeamId && death.targetId) {
+        alive.get(victimTeamId)?.delete(death.targetId);
+      }
+    }
+    snapshots.push({
+      tick,
+      pre,
+      post: Object.fromEntries(teamIds.map((teamId) => [
+        teamId,
+        alive.get(teamId)?.size ?? 0,
+      ])),
+      eventIds: tickDeaths.map((death) => death.id),
+    });
+
+    while (
+      lifecycleIndex < liveLifecycle.length
+      && liveLifecycle[lifecycleIndex]!.tick === tick
+    ) {
+      const event = liveLifecycle[lifecycleIndex++]!;
+      if (event.name !== 'player_disconnect') {
+        reliable = false;
+        errors.push('NON_DISCONNECT_LIFECYCLE_AT_DEATH_TICK');
+        continue;
+      }
+      if (event.identityStatus !== 'STABLE_ROSTER_ID' || !event.playerId) {
+        reliable = false;
+        errors.push('UNKNOWN_IDENTITY_IN_LIVE_LIFECYCLE');
+        continue;
+      }
+      const teamId = playerTeams.get(event.playerId);
+      if (teamId) {
+        alive.get(teamId)?.delete(event.playerId);
+      } else {
+        reliable = false;
+        errors.push('LIFECYCLE_PLAYER_TEAM_UNKNOWN');
+      }
+    }
+  }
+
+  return { reliable, errors: [...new Set(errors)], snapshots };
 }
 
 function objectiveTerminal(match: MatchData, snapshot: ParsedDemoSnapshot, roundId: string, boundary:{liveStart:number;liveEnd:number}) {
-  const names:Record<string,string>={BOMB_DEFUSED:'bomb_defused',BOMB_EXPLODED:'bomb_exploded'};
-  const rows=match.events.filter((e)=>e.roundId===roundId&&Object.hasOwn(names,e.kind)&&e.tick>=boundary.liveStart&&e.tick<=boundary.liveEnd).map((e)=>{const decoded=decodeParticipationRow(snapshot.events[e.source.rowIndex]??{});return{event:e,verified:decoded.eventName===names[e.kind]&&decoded.tick===e.tick};}).sort((a,b)=>a.event.tick-b.event.tick||a.event.source.rowIndex-b.event.source.rowIndex);
-  const verified=rows.filter((r)=>r.verified); return {tick:verified.length===1?verified[0]!.event.tick:null,kind:verified.length===1?verified[0]!.event.kind:null,candidateCount:rows.length,verifiedCount:verified.length,complete:rows.length===verified.length&&verified.length<=1};
+  const rawNameByKind: Record<string, string> = {
+    BOMB_DEFUSED: 'bomb_defused',
+    BOMB_EXPLODED: 'bomb_exploded',
+  };
+  const candidates = match.events
+    .filter((event) => (
+      event.roundId === roundId
+      && Object.hasOwn(rawNameByKind, event.kind)
+      && event.tick >= boundary.liveStart
+      && event.tick <= boundary.liveEnd
+    ))
+    .map((event) => {
+      const decoded = decodeParticipationRow(snapshot.events[event.source.rowIndex] ?? {});
+      return {
+        event,
+        verified: decoded.eventName === rawNameByKind[event.kind]
+          && decoded.tick === event.tick,
+      };
+    })
+    .sort((left, right) => (
+      left.event.tick - right.event.tick
+      || left.event.source.rowIndex - right.event.source.rowIndex
+    ));
+  const verified = candidates.filter((candidate) => candidate.verified);
+  return {
+    tick: verified.length === 1 ? verified[0]!.event.tick : null,
+    kind: verified.length === 1 ? verified[0]!.event.kind : null,
+    candidateCount: candidates.length,
+    verifiedCount: verified.length,
+    complete: candidates.length === verified.length && verified.length <= 1,
+  };
 }
 
-function trajectories(snapshot:ParsedDemoSnapshot,match:MatchData,lifecycleRows:UnknownRow[],allowIncompleteRoster=false):Trajectory[]{
-  const rounds=match.rounds.filter((r)=>r.isValid);const teamIds=match.teams.map((t)=>t.id);const byTeam=new Map(match.players.map((p)=>[p.id,p.teamId]));const roster=new Set(match.players.map((p)=>p.id));const base=baseBoundaries(snapshot,rounds);
-  const deaths=unique(match.events.filter((e)=>e.kind==='PLAYER_DEATH'&&e.context?.phase==='LIVE')).map((e)=>({...e,order:rowOrder(e),relation:relation(byTeam,e.actorId,e.targetId)}));
-  const plants=match.events.filter((e)=>e.kind==='BOMB_PLANTED'&&e.context?.phase==='LIVE');
-  const lifecycle=lifecycleRows.map((row,order)=>{const decoded=decodeParticipationRow(row),name=decoded.eventName,tick=decoded.tick;if(!name||!['player_disconnect','player_connect','player_connect_full','player_spawn','player_team'].includes(name)||tick===null)return null;const candidates=decoded.candidateSteamIds;const stable=[...new Set(candidates.filter((v)=>roster.has(v)))];return{name,tick,order,playerId:stable.length===1?stable[0]!:null,identityStatus:stable.length===1?'STABLE_ROSTER_ID':stable.length>1?'AMBIGUOUS_ROSTER_ID':candidates.length?'UNMATCHED_IDENTITY':'MISSING_IDENTITY'};}).filter((v):v is NonNullable<typeof v>=>v!==null);
-  return rounds.map((round)=>{const b=base.get(round.id)!;const start=startAlive(snapshot,match,b,allowIncompleteRoster);const rd=deaths.filter((d)=>d.roundId===round.id);const initial=aliveState(rd,teamIds,start.aliveByTeam,b.liveStart,b.liveEnd,allowIncompleteRoster,lifecycle,byTeam);const plantTick=Math.min(Infinity,...plants.filter((p)=>p.roundId===round.id).map((p)=>p.tick));const ct=teamIds.find((id)=>round.sideByTeamId[id]==='CT');const elimination=start.complete&&initial.reliable?initial.snapshots.find((s)=>teamIds.some((id)=>s.post[id]===0&&(id===ct||s.tick<plantTick)))?.tick??null:null;const objective=objectiveTerminal(match,snapshot,round.id,b);const liveEnd=Math.min(...[b.liveEnd,elimination,objective.tick].filter((v):v is number=>Number.isInteger(v)));const terminalSource=liveEnd===objective.tick?'OBJECTIVE_TERMINAL':liveEnd===elimination?'ELIMINATION_TERMINAL':b.endSource;const boundary:Boundary={...b,liveEnd,terminalSource,objective,eliminationTick:elimination,complete:b.complete&&objective.complete,reason:b.complete&&objective.complete?null:b.reason??'OBJECTIVE_SOURCE_AMBIGUOUS'};const state=aliveState(rd,teamIds,start.aliveByTeam,boundary.liveStart,boundary.liveEnd,allowIncompleteRoster,lifecycle,byTeam);const insideLife=lifecycle.filter((e)=>e.tick>boundary.liveStart&&e.tick<boundary.liveEnd);const at=lifecycle.filter((e)=>e.tick===boundary.liveStart||e.tick===boundary.liveEnd);const uncertain=at.filter((e)=>!(['player_spawn','player_team'].includes(e.name)&&start.complete));const reasons:string[]=[];if(!boundary.complete)reasons.push(boundary.reason??'BOUNDARY_INCOMPLETE');if(!start.complete&&start.reason)reasons.push(start.reason);if(!state.reliable)reasons.push(...state.errors);if(!allowIncompleteRoster&&insideLife.some((e)=>e.identityStatus==='STABLE_ROSTER_ID'))reasons.push('IN_LIVE_ROSTER_LIFECYCLE');if(insideLife.some((e)=>e.identityStatus!=='STABLE_ROSTER_ID'))reasons.push('UNKNOWN_IDENTITY_IN_LIVE_LIFECYCLE');if(uncertain.some((e)=>e.identityStatus==='STABLE_ROSTER_ID'))reasons.push('LIFECYCLE_AT_LIVE_BOUNDARY');if(uncertain.some((e)=>e.identityStatus!=='STABLE_ROSTER_ID'))reasons.push('UNKNOWN_IDENTITY_AT_LIVE_BOUNDARY');return{roundId:round.id,boundary,clean:reasons.length===0,reasons:[...new Set(reasons)],state};});
+function trajectories(
+  snapshot: ParsedDemoSnapshot,
+  match: MatchData,
+  lifecycleRows: UnknownRow[],
+  allowIncompleteRoster = false,
+): Trajectory[] {
+  const rounds = match.rounds.filter((round) => round.isValid);
+  const teamIds = match.teams.map((team) => team.id);
+  const teamByPlayer = new Map(match.players.map((player) => [player.id, player.teamId]));
+  const roster = new Set(match.players.map((player) => player.id));
+  const baseBoundaryByRound = baseBoundaries(snapshot, rounds);
+  const deaths = unique(match.events.filter((event) => (
+    event.kind === 'PLAYER_DEATH' && event.context?.phase === 'LIVE'
+  ))).map((event) => ({
+    ...event,
+    order: rowOrder(event),
+    relation: relation(teamByPlayer, event.actorId, event.targetId),
+  }));
+  const plants = match.events.filter((event) => (
+    event.kind === 'BOMB_PLANTED' && event.context?.phase === 'LIVE'
+  ));
+  const lifecycleNames = new Set([
+    'player_disconnect',
+    'player_connect',
+    'player_connect_full',
+    'player_spawn',
+    'player_team',
+  ]);
+  const lifecycle = lifecycleRows
+    .map((row, order) => {
+      const decoded = decodeParticipationRow(row);
+      const name = decoded.eventName;
+      const tick = decoded.tick;
+      if (!name || !lifecycleNames.has(name) || tick === null) return null;
+
+      const candidates = decoded.candidateSteamIds;
+      const stableCandidates = [...new Set(candidates.filter((value) => roster.has(value)))];
+      return {
+        name,
+        tick,
+        order,
+        playerId: stableCandidates.length === 1 ? stableCandidates[0]! : null,
+        identityStatus: stableCandidates.length === 1
+          ? 'STABLE_ROSTER_ID'
+          : stableCandidates.length > 1
+            ? 'AMBIGUOUS_ROSTER_ID'
+            : candidates.length
+              ? 'UNMATCHED_IDENTITY'
+              : 'MISSING_IDENTITY',
+      };
+    })
+    .filter((value): value is NonNullable<typeof value> => value !== null);
+
+  return rounds.map((round) => {
+    const baseBoundary = baseBoundaryByRound.get(round.id)!;
+    const start = startAlive(snapshot, match, baseBoundary, allowIncompleteRoster);
+    const roundDeaths = deaths.filter((death) => death.roundId === round.id);
+    const initialState = aliveState(
+      roundDeaths,
+      teamIds,
+      start.aliveByTeam,
+      baseBoundary.liveStart,
+      baseBoundary.liveEnd,
+      allowIncompleteRoster,
+      lifecycle,
+      teamByPlayer,
+    );
+    const plantTick = Math.min(
+      Infinity,
+      ...plants.filter((plant) => plant.roundId === round.id).map((plant) => plant.tick),
+    );
+    const ctTeamId = teamIds.find((teamId) => round.sideByTeamId[teamId] === 'CT');
+    const eliminationTick = start.complete && initialState.reliable
+      ? initialState.snapshots.find((state) => teamIds.some((teamId) => (
+          state.post[teamId] === 0
+          && (teamId === ctTeamId || state.tick < plantTick)
+        )))?.tick ?? null
+      : null;
+    const objective = objectiveTerminal(match, snapshot, round.id, baseBoundary);
+    const liveEnd = Math.min(...[
+      baseBoundary.liveEnd,
+      eliminationTick,
+      objective.tick,
+    ].filter((value): value is number => Number.isInteger(value)));
+    const terminalSource = liveEnd === objective.tick
+      ? 'OBJECTIVE_TERMINAL'
+      : liveEnd === eliminationTick
+        ? 'ELIMINATION_TERMINAL'
+        : baseBoundary.endSource;
+    const boundary: Boundary = {
+      ...baseBoundary,
+      liveEnd,
+      terminalSource,
+      objective,
+      eliminationTick,
+      complete: baseBoundary.complete && objective.complete,
+      reason: baseBoundary.complete && objective.complete
+        ? null
+        : baseBoundary.reason ?? 'OBJECTIVE_SOURCE_AMBIGUOUS',
+    };
+    const state = aliveState(
+      roundDeaths,
+      teamIds,
+      start.aliveByTeam,
+      boundary.liveStart,
+      boundary.liveEnd,
+      allowIncompleteRoster,
+      lifecycle,
+      teamByPlayer,
+    );
+    const lifecycleInside = lifecycle.filter((event) => (
+      event.tick > boundary.liveStart && event.tick < boundary.liveEnd
+    ));
+    const lifecycleAtBoundary = lifecycle.filter((event) => (
+      event.tick === boundary.liveStart || event.tick === boundary.liveEnd
+    ));
+    const uncertainBoundaryLifecycle = lifecycleAtBoundary.filter((event) => !(
+      ['player_spawn', 'player_team'].includes(event.name) && start.complete
+    ));
+    const reasons: string[] = [];
+    if (!boundary.complete) reasons.push(boundary.reason ?? 'BOUNDARY_INCOMPLETE');
+    if (!start.complete && start.reason) reasons.push(start.reason);
+    if (!state.reliable) reasons.push(...state.errors);
+    if (
+      !allowIncompleteRoster
+      && lifecycleInside.some((event) => event.identityStatus === 'STABLE_ROSTER_ID')
+    ) reasons.push('IN_LIVE_ROSTER_LIFECYCLE');
+    if (lifecycleInside.some((event) => event.identityStatus !== 'STABLE_ROSTER_ID')) {
+      reasons.push('UNKNOWN_IDENTITY_IN_LIVE_LIFECYCLE');
+    }
+    if (
+      uncertainBoundaryLifecycle.some((event) => (
+        event.identityStatus === 'STABLE_ROSTER_ID'
+      ))
+    ) reasons.push('LIFECYCLE_AT_LIVE_BOUNDARY');
+    if (
+      uncertainBoundaryLifecycle.some((event) => (
+        event.identityStatus !== 'STABLE_ROSTER_ID'
+      ))
+    ) reasons.push('UNKNOWN_IDENTITY_AT_LIVE_BOUNDARY');
+
+    return {
+      roundId: round.id,
+      boundary,
+      clean: reasons.length === 0,
+      reasons: [...new Set(reasons)],
+      state,
+    };
+  });
 }
 
-function hpLedger(hurts:MatchEvent[]){const health=new Map<string,number>(),values=new Map<string,number>(),invalid:string[]=[];for(const e of [...hurts].sort((a,b)=>a.tick-b.tick||rowOrder(a)-rowOrder(b))){const raw=e.attrs.rawHealthDamage,after=e.attrs.healthAfter;if(!e.targetId||!finite(raw)||!finite(after)||raw<0||after<0){invalid.push(e.id);continue;}const key=`${e.roundId}|${e.targetId}`,before=health.get(key)??100;values.set(e.id,Math.max(0,Math.min(raw,before)));health.set(key,Math.max(0,after));}return{values,invalid};}
-function lethalLink(death:Death,hurts:MatchEvent[],values:Map<string,number>){const candidates=hurts.filter((h)=>h.roundId===death.roundId&&h.actorId===death.actorId&&h.targetId===death.targetId&&(h.tick<death.tick||h.tick===death.tick&&rowOrder(h)<rowOrder(death))&&death.tick-h.tick<=1&&h.attrs.healthAfter===0&&(values.get(h.id)??0)>0);return candidates.length===1?candidates[0]!.id:null;}
+const DEFAULT_PLAYER_HEALTH = 100;
+const LETHAL_LINK_MAX_TICK_GAP = 1;
+const TRADE_WINDOW_SECONDS = 5;
 
-function tradeLinks(deaths:Death[],tickRate:number){const enemy=unique(deaths).filter((d)=>d.relation==='ENEMY').sort((a,b)=>a.roundId.localeCompare(b.roundId)||a.tick-b.tick||a.order-b.order||a.id.localeCompare(b.id));const output:Array<{original:Death;revenge:Death;delaySeconds:number}>=[];for(const roundId of [...new Set(enemy.map((d)=>d.roundId))]){const rows=enemy.filter((d)=>d.roundId===roundId);const candidates=rows.map((original)=>rows.flatMap((revenge)=>{if(original.id===revenge.id||revenge.targetId!==original.actorId||!original.targetTeamId||revenge.actorTeamId!==original.targetTeamId)return[];const delay=(revenge.tick-original.tick)/tickRate;return delay>0&&delay<=5?[{original,revenge,delaySeconds:delay}]:[];}).sort((a,b)=>a.delaySeconds-b.delaySeconds||a.revenge.tick-b.revenge.tick||a.revenge.id.localeCompare(b.revenge.id)));const memo=new Map<string,{links:typeof output;delay:number;signature:string}>();const solve=(index:number,used:Set<string>):{links:typeof output;delay:number;signature:string}=>{const key=`${index}|${[...used].sort().join(',')}`;const cached=memo.get(key);if(cached)return cached;if(index===rows.length)return{links:[],delay:0,signature:''};let best=solve(index+1,used);for(const c of candidates[index]??[])if(!used.has(c.revenge.id)){const next=new Set(used);next.add(c.revenge.id);const tail=solve(index+1,next);const trial={links:[c,...tail.links],delay:c.delaySeconds+tail.delay,signature:`${c.original.id}>${c.revenge.id}|${tail.signature}`};if(trial.links.length>best.links.length||trial.links.length===best.links.length&&(trial.delay<best.delay||trial.delay===best.delay&&trial.signature<best.signature))best=trial;}memo.set(key,best);return best;};output.push(...solve(0,new Set()).links);}return output;}
+function hpLedger(hurts: MatchEvent[]) {
+  const remainingHealth = new Map<string, number>();
+  const values = new Map<string, number>();
+  const invalid: string[] = [];
+  const orderedHurts = [...hurts]
+    .sort((left, right) => left.tick - right.tick || rowOrder(left) - rowOrder(right));
+
+  for (const hurt of orderedHurts) {
+    const rawDamage = hurt.attrs.rawHealthDamage;
+    const healthAfter = hurt.attrs.healthAfter;
+    if (
+      !hurt.targetId
+      || !finite(rawDamage)
+      || !finite(healthAfter)
+      || rawDamage < 0
+      || healthAfter < 0
+    ) {
+      invalid.push(hurt.id);
+      continue;
+    }
+
+    const healthKey = `${hurt.roundId}|${hurt.targetId}`;
+    const healthBefore = remainingHealth.get(healthKey) ?? DEFAULT_PLAYER_HEALTH;
+    values.set(hurt.id, Math.max(0, Math.min(rawDamage, healthBefore)));
+    remainingHealth.set(healthKey, Math.max(0, healthAfter));
+  }
+  return { values, invalid };
+}
+
+function lethalLink(
+  death: Death,
+  hurts: MatchEvent[],
+  damageByEvent: Map<string, number>,
+) {
+  const candidates = hurts.filter((hurt) => (
+    hurt.roundId === death.roundId
+    && hurt.actorId === death.actorId
+    && hurt.targetId === death.targetId
+    && (
+      hurt.tick < death.tick
+      || (hurt.tick === death.tick && rowOrder(hurt) < rowOrder(death))
+    )
+    && death.tick - hurt.tick <= LETHAL_LINK_MAX_TICK_GAP
+    && hurt.attrs.healthAfter === 0
+    && (damageByEvent.get(hurt.id) ?? 0) > 0
+  ));
+  return candidates.length === 1 ? candidates[0]!.id : null;
+}
+
+type TradeLink = { original: Death; revenge: Death; delaySeconds: number };
+type TradeSolution = { links: TradeLink[]; delay: number; signature: string };
+
+function tradeLinks(deaths: Death[], tickRate: number): TradeLink[] {
+  const enemyDeaths = unique(deaths)
+    .filter((death) => death.relation === 'ENEMY')
+    .sort((left, right) => (
+      left.roundId.localeCompare(right.roundId)
+      || left.tick - right.tick
+      || left.order - right.order
+      || left.id.localeCompare(right.id)
+    ));
+  const selectedLinks: TradeLink[] = [];
+
+  for (const roundId of [...new Set(enemyDeaths.map((death) => death.roundId))]) {
+    const roundDeaths = enemyDeaths.filter((death) => death.roundId === roundId);
+    const candidatesByOriginal = roundDeaths.map((original) => roundDeaths
+      .flatMap((revenge): TradeLink[] => {
+        const isRevenge = original.id !== revenge.id
+          && revenge.targetId === original.actorId
+          && Boolean(original.targetTeamId)
+          && revenge.actorTeamId === original.targetTeamId;
+        if (!isRevenge) return [];
+
+        const delaySeconds = (revenge.tick - original.tick) / tickRate;
+        return delaySeconds > 0 && delaySeconds <= TRADE_WINDOW_SECONDS
+          ? [{ original, revenge, delaySeconds }]
+          : [];
+      })
+      .sort((left, right) => (
+        left.delaySeconds - right.delaySeconds
+        || left.revenge.tick - right.revenge.tick
+        || left.revenge.id.localeCompare(right.revenge.id)
+      )));
+    const memo = new Map<string, TradeSolution>();
+
+    const solve = (index: number, usedRevengeIds: Set<string>): TradeSolution => {
+      const key = `${index}|${[...usedRevengeIds].sort().join(',')}`;
+      const cached = memo.get(key);
+      if (cached) return cached;
+      if (index === roundDeaths.length) return { links: [], delay: 0, signature: '' };
+
+      let best = solve(index + 1, usedRevengeIds);
+      for (const candidate of candidatesByOriginal[index] ?? []) {
+        if (usedRevengeIds.has(candidate.revenge.id)) continue;
+
+        const nextUsedRevengeIds = new Set(usedRevengeIds);
+        nextUsedRevengeIds.add(candidate.revenge.id);
+        const tail = solve(index + 1, nextUsedRevengeIds);
+        const trial = {
+          links: [candidate, ...tail.links],
+          delay: candidate.delaySeconds + tail.delay,
+          signature: `${candidate.original.id}>${candidate.revenge.id}|${tail.signature}`,
+        };
+        const hasMoreLinks = trial.links.length > best.links.length;
+        const hasSameLinksWithBetterTieBreak = trial.links.length === best.links.length
+          && (
+            trial.delay < best.delay
+            || (trial.delay === best.delay && trial.signature < best.signature)
+          );
+        if (hasMoreLinks || hasSameLinksWithBetterTieBreak) best = trial;
+      }
+      memo.set(key, best);
+      return best;
+    };
+
+    selectedLinks.push(...solve(0, new Set()).links);
+  }
+  return selectedLinks;
+}
 
 function scenarioFor(snapshot:ParsedDemoSnapshot,mapName:string|null):'BOMB'|'HOSTAGE'|'UNKNOWN'{const mapScenario=participationScenarioForMap(mapName);if(mapScenario)return mapScenario;const names=new Set(snapshot.eventNames);const bomb=['bomb_beginplant','bomb_abortplant','bomb_planted','bomb_begindefuse','bomb_abortdefuse','bomb_defused','bomb_exploded','bomb_dropped','bomb_pickup'].some((n)=>names.has(n));const hostage=['hostage_follows','hostage_rescued','hostage_rescued_all','hostage_stops_following','hostage_hurt','hostage_killed','hostage_call_for_help'].some((n)=>names.has(n));return bomb&&!hostage?'BOMB':hostage&&!bomb?'HOSTAGE':'UNKNOWN';}
 
@@ -100,14 +620,242 @@ function buildProfiles(snapshot:ParsedDemoSnapshot,match:MatchData,paths:Traject
 }
 function addTag(profile:Profile|undefined,anchorId:string|undefined,tag:ContextTag){const ep=profile?.episodes.find((e)=>e.anchorId===anchorId);if(ep&&!ep.tags.includes(tag))ep.tags=[...ep.tags,tag].sort() as ContextTag[];}
 
-const REFS:Record<string,number>={enemyHp:28.237442028985516,enemyKills:.3197764705882353,enemyArmor:5.049757894736842,assists:.1183588235294118,enemyBlind:.6614618600853558,ownDeaths:.1586729096989967,allyHp:.6540792744080582,allyKills:.012540613564485997,allyBlind:.303433612623422,allyArmor:.05294927459493805};
-const WEIGHTS:Record<string,number>={enemyHp:.14,enemyKills:.175,enemyArmor:.035,assists:.125,enemyBlind:.125,ownDeaths:.2,allyHp:.05,allyKills:.05,allyBlind:.05,allyArmor:.05};
-const DIRECTIONS:Record<string,number>={enemyHp:1,enemyKills:1,enemyArmor:1,assists:1,enemyBlind:1,ownDeaths:-1,allyHp:-1,allyKills:-1,allyBlind:-1,allyArmor:-1};
-const FAMILIES:Record<string,'COMBAT'|'SUPPORT'|'DEATH_RELATED'|'DIRECT_HARM'>={enemyHp:'COMBAT',enemyKills:'COMBAT',enemyArmor:'COMBAT',assists:'SUPPORT',enemyBlind:'SUPPORT',ownDeaths:'DEATH_RELATED',allyHp:'DIRECT_HARM',allyKills:'DIRECT_HARM',allyBlind:'DIRECT_HARM',allyArmor:'DIRECT_HARM'};
-const BASELINES={COMBAT:.6301839531026205,SUPPORT:.36749503251163657,DEATH_RELATED:-.9163102943158531,DIRECT_HARM:0};
-function prepareFamilyProfile(profile:Profile):C2S2PreparedProfileDto{const unavailable=(status:'WITHHELD_REQUIRED_INPUT'|'UNKNOWN_APPLICABILITY',reason:string)=>({status,reason});if(profile.requiredInputStatus!=='COMPLETE')return{...profile,p4BPlus:unavailable('WITHHELD_REQUIRED_INPUT',profile.requiredInputStatus),p4CPlus:unavailable('WITHHELD_REQUIRED_INPUT',profile.requiredInputStatus)};if(!(profile.rounds>0))return{...profile,p4BPlus:unavailable('WITHHELD_REQUIRED_INPUT','NO_VERIFIED_EXPOSURE'),p4CPlus:unavailable('WITHHELD_REQUIRED_INPUT','NO_VERIFIED_EXPOSURE')};const signals={COMBAT:0,SUPPORT:0,DEATH_RELATED:0,DIRECT_HARM:0};const episodeContributions:C2S2EpisodeContribution[]=[];for(const ep of profile.episodes){const components=ep.components??(ep.axis?{[ep.axis]:ep.rawValue!}:{});const candidates=Object.entries(components).filter(([axis,value])=>axis in REFS&&finite(value)).map(([axis,value])=>({axis,value:DIRECTIONS[axis]!*WEIGHTS[axis]!*value/REFS[axis]!/profile.rounds})).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value)||a.axis.localeCompare(b.axis));const chosen=candidates[0];if(!chosen)continue;const family=FAMILIES[chosen.axis]!;signals[family]+=chosen.value;episodeContributions.push({anchorId:ep.anchorId,chosenAxis:chosen.axis,family,base:chosen.value,tags:ep.tags});}const families={COMBAT:.1*(signals.COMBAT-BASELINES.COMBAT),SUPPORT:.1*(signals.SUPPORT-BASELINES.SUPPORT),DEATH_RELATED:.1*(signals.DEATH_RELATED-BASELINES.DEATH_RELATED),DIRECT_HARM:.1*signals.DIRECT_HARM,CONTEXT:0,OBJECTIVES:0};const p4BPlus={status:'CALCULATED_RESEARCH_ONLY' as const,reason:null,familyContributions:families,episodeContributions};let p4CPlus:C2S2PreparedProfileDto['p4CPlus'];if(profile.scenario==='UNKNOWN')p4CPlus={...p4BPlus,objectiveSignals:{}};else{const objectiveSignals=profile.scenario==='BOMB'?{'objective:plants':profile.tRounds>0?.05*profile.objectives.plants/.12355/profile.tRounds:0,'objective:defuses':profile.ctRounds>0?.05*profile.objectives.defuses/.07155950973368645/profile.ctRounds:0}:{'objective:hostageRescues':profile.ctRounds>0?.08*profile.objectives.hostageRescues/.026835947523339676/profile.ctRounds:0,'objective:hostageHurts':-.02*profile.objectives.hostageHurts/.22414985539395899/profile.rounds};p4CPlus={...p4BPlus,objectiveSignals};}return{profileKey:profile.profileKey,playerId:profile.playerId,teamId:profile.teamId,scenario:profile.scenario,rounds:profile.rounds,validRounds:profile.validRounds,tRounds:profile.tRounds,ctRounds:profile.ctRounds,requiredInputStatus:profile.requiredInputStatus,p4BPlus,p4CPlus};}
+const PHYSICAL_REFS: Record<string, number> = {
+  enemyHp: 28.237442028985516,
+  enemyKills: .3197764705882353,
+  enemyArmor: 5.049757894736842,
+  assists: .1183588235294118,
+  enemyBlind: .6614618600853558,
+  ownDeaths: .1586729096989967,
+  allyHp: .6540792744080582,
+  allyKills: .012540613564485997,
+  allyBlind: .303433612623422,
+  allyArmor: .05294927459493805,
+};
+const PHYSICAL_WEIGHTS: Record<string, number> = {
+  enemyHp: .14,
+  enemyKills: .175,
+  enemyArmor: .035,
+  assists: .125,
+  enemyBlind: .125,
+  ownDeaths: .2,
+  allyHp: .05,
+  allyKills: .05,
+  allyBlind: .05,
+  allyArmor: .05,
+};
+const PHYSICAL_DIRECTIONS: Record<string, number> = {
+  enemyHp: 1,
+  enemyKills: 1,
+  enemyArmor: 1,
+  assists: 1,
+  enemyBlind: 1,
+  ownDeaths: -1,
+  allyHp: -1,
+  allyKills: -1,
+  allyBlind: -1,
+  allyArmor: -1,
+};
+const PHYSICAL_FAMILIES: Record<string, ParticipationPhysicalFamily> = {
+  enemyHp: 'COMBAT',
+  enemyKills: 'COMBAT',
+  enemyArmor: 'COMBAT',
+  assists: 'SUPPORT',
+  enemyBlind: 'SUPPORT',
+  ownDeaths: 'DEATH_RELATED',
+  allyHp: 'DIRECT_HARM',
+  allyKills: 'DIRECT_HARM',
+  allyBlind: 'DIRECT_HARM',
+  allyArmor: 'DIRECT_HARM',
+};
+const PHYSICAL_BASELINES = {
+  COMBAT: .6301839531026205,
+  SUPPORT: .36749503251163657,
+  DEATH_RELATED: -.9163102943158531,
+  DIRECT_HARM: 0,
+};
+
+type PhysicalAnchor = {
+  anchorId: string;
+  components: Record<string, number>;
+  tags: string[];
+};
+
+export function preparePhysicalFamilyContributions(
+  anchors: readonly PhysicalAnchor[],
+  rounds: number,
+): {
+  familyContributions: Record<ParticipationFamily, number>;
+  episodeContributions: C2S2EpisodeContribution[];
+} {
+  const signals: Record<ParticipationPhysicalFamily, number> = {
+    COMBAT: 0,
+    SUPPORT: 0,
+    DEATH_RELATED: 0,
+    DIRECT_HARM: 0,
+  };
+  const episodeContributions: C2S2EpisodeContribution[] = [];
+
+  for (const anchor of anchors) {
+    const candidates = Object.entries(anchor.components)
+      .filter(([axis, value]) => axis in PHYSICAL_REFS && finite(value))
+      .map(([axis, value]) => ({
+        axis,
+        value: PHYSICAL_DIRECTIONS[axis]!
+          * PHYSICAL_WEIGHTS[axis]!
+          * value
+          / PHYSICAL_REFS[axis]!
+          / rounds,
+      }))
+      .sort((left, right) => Math.abs(right.value) - Math.abs(left.value)
+        || left.axis.localeCompare(right.axis));
+    const chosen = candidates[0];
+    if (!chosen) continue;
+
+    const family = PHYSICAL_FAMILIES[chosen.axis]!;
+    signals[family] += chosen.value;
+    episodeContributions.push({
+      anchorId: anchor.anchorId,
+      chosenAxis: chosen.axis,
+      family,
+      base: chosen.value,
+      tags: anchor.tags,
+    });
+  }
+
+  return {
+    familyContributions: {
+      COMBAT: .1 * (signals.COMBAT - PHYSICAL_BASELINES.COMBAT),
+      SUPPORT: .1 * (signals.SUPPORT - PHYSICAL_BASELINES.SUPPORT),
+      DEATH_RELATED: .1 * (signals.DEATH_RELATED - PHYSICAL_BASELINES.DEATH_RELATED),
+      DIRECT_HARM: .1 * signals.DIRECT_HARM,
+      CONTEXT: 0,
+      OBJECTIVES: 0,
+    },
+    episodeContributions,
+  };
+}
+
+function prepareFamilyProfile(profile: Profile): C2S2PreparedProfileDto {
+  const unavailable = (
+    status: 'WITHHELD_REQUIRED_INPUT' | 'UNKNOWN_APPLICABILITY',
+    reason: string,
+  ) => ({ status, reason });
+
+  if (profile.requiredInputStatus !== 'COMPLETE') {
+    return {
+      ...profile,
+      p4BPlus: unavailable('WITHHELD_REQUIRED_INPUT', profile.requiredInputStatus),
+      p4CPlus: unavailable('WITHHELD_REQUIRED_INPUT', profile.requiredInputStatus),
+    };
+  }
+  if (!(profile.rounds > 0)) {
+    return {
+      ...profile,
+      p4BPlus: unavailable('WITHHELD_REQUIRED_INPUT', 'NO_VERIFIED_EXPOSURE'),
+      p4CPlus: unavailable('WITHHELD_REQUIRED_INPUT', 'NO_VERIFIED_EXPOSURE'),
+    };
+  }
+
+  const physicalAnchors = profile.episodes.map((episode) => ({
+    anchorId: episode.anchorId,
+    components: episode.components ?? (episode.axis ? { [episode.axis]: episode.rawValue! } : {}),
+    tags: episode.tags,
+  }));
+  const physical = preparePhysicalFamilyContributions(physicalAnchors, profile.rounds);
+  const p4BPlus = {
+    status: 'CALCULATED_RESEARCH_ONLY' as const,
+    reason: null,
+    ...physical,
+  };
+  let p4CPlus: C2S2PreparedProfileDto['p4CPlus'];
+  if (profile.scenario === 'UNKNOWN') {
+    p4CPlus = { ...p4BPlus, objectiveSignals: {} };
+  } else {
+    const objectiveSignals = profile.scenario === 'BOMB'
+      ? {
+          'objective:plants': profile.tRounds > 0
+            ? .05 * profile.objectives.plants / .12355 / profile.tRounds
+            : 0,
+          'objective:defuses': profile.ctRounds > 0
+            ? .05 * profile.objectives.defuses / .07155950973368645 / profile.ctRounds
+            : 0,
+        }
+      : {
+          'objective:hostageRescues': profile.ctRounds > 0
+            ? .08 * profile.objectives.hostageRescues / .026835947523339676 / profile.ctRounds
+            : 0,
+          'objective:hostageHurts': -.02
+            * profile.objectives.hostageHurts
+            / .22414985539395899
+            / profile.rounds,
+        };
+    p4CPlus = { ...p4BPlus, objectiveSignals };
+  }
+
+  return {
+    profileKey: profile.profileKey,
+    playerId: profile.playerId,
+    teamId: profile.teamId,
+    scenario: profile.scenario,
+    rounds: profile.rounds,
+    validRounds: profile.validRounds,
+    tRounds: profile.tRounds,
+    ctRounds: profile.ctRounds,
+    requiredInputStatus: profile.requiredInputStatus,
+    p4BPlus,
+    p4CPlus,
+  };
+}
 
 export function buildPreparedParticipationInput(snapshot:ParsedDemoSnapshot,match:MatchData,demoPath:string,options?:{allowIncompleteRoster?:boolean}):C2S2PreparedSidecar{
-  const {lifecycleRows,hostageRows}=readPreparedParticipationSupplementRows(demoPath,snapshot);const paths=trajectories(snapshot,match,[...snapshot.events,...lifecycleRows],options?.allowIncompleteRoster===true);const built=buildProfiles(snapshot,match,paths,hostageRows);const prepared=built.profiles.map(prepareFamilyProfile);const physicalAnchors=built.profiles.flatMap((p)=>p.episodes.map((e)=>({profileKey:p.profileKey,anchorId:e.anchorId,components:e.components??(e.axis?{[e.axis]:e.rawValue!}:{}),tags:e.tags})));const allowedTags=new Set<string>(CONTEXT_TAGS);const contextTags=physicalAnchors.flatMap((a)=>a.tags.filter((tag):tag is ContextTag=>allowedTags.has(tag)).map((tag)=>({profileKey:a.profileKey,anchorId:a.anchorId,tag})));return c2s2PreparedSidecarSchema.parse({schemaVersion:C2S2_SIDECAR_SCHEMA_VERSION,createdAt:new Date().toISOString(),binding:{matchId:match.matchId,fileSha256:match.fileSha256,parserVersion:PARSER_LIBRARY_VERSION,normalizerVersion:NORMALIZER_VERSION},model:{modelVersion:C2S2_MODEL_VERSION,policyDigest:C2S2_POLICY_DIGEST,referenceVersion:C2S2_REFERENCE_VERSION},scenario:scenarioFor(snapshot,match.map),roundEvidence:paths.map((p)=>({roundId:p.roundId,clean:p.clean,reasons:p.reasons,boundary:p.boundary})),hostageActions:built.hostageActions,armorAxes:built.armorRows,physicalAnchors,contextTagRegistry:CONTEXT_TAGS,contextTags,preparedProfiles:prepared});
+  const { lifecycleRows, hostageRows } = readPreparedParticipationSupplementRows(demoPath, snapshot);
+  const paths = trajectories(
+    snapshot,
+    match,
+    [...snapshot.events, ...lifecycleRows],
+    options?.allowIncompleteRoster === true,
+  );
+  const built = buildProfiles(snapshot, match, paths, hostageRows);
+  const prepared = built.profiles.map(prepareFamilyProfile);
+  const physicalAnchors = built.profiles.flatMap((profile) => profile.episodes.map((episode) => ({
+    profileKey: profile.profileKey,
+    anchorId: episode.anchorId,
+    components: episode.components ?? (episode.axis ? { [episode.axis]: episode.rawValue! } : {}),
+    tags: episode.tags,
+  })));
+  const allowedTags = new Set<string>(CONTEXT_TAGS);
+  const contextTags = physicalAnchors.flatMap((anchor) => anchor.tags
+    .filter((tag): tag is ContextTag => allowedTags.has(tag))
+    .map((tag) => ({ profileKey: anchor.profileKey, anchorId: anchor.anchorId, tag })));
+
+  return c2s2PreparedSidecarSchema.parse({
+    schemaVersion: C2S2_SIDECAR_SCHEMA_VERSION,
+    createdAt: new Date().toISOString(),
+    binding: {
+      matchId: match.matchId,
+      fileSha256: match.fileSha256,
+      parserVersion: PARSER_LIBRARY_VERSION,
+      normalizerVersion: NORMALIZER_VERSION,
+    },
+    model: {
+      modelVersion: C2S2_MODEL_VERSION,
+      policyDigest: C2S2_POLICY_DIGEST,
+      referenceVersion: C2S2_REFERENCE_VERSION,
+    },
+    scenario: scenarioFor(snapshot, match.map),
+    roundEvidence: paths.map((path) => ({
+      roundId: path.roundId,
+      clean: path.clean,
+      reasons: path.reasons,
+      boundary: path.boundary,
+    })),
+    hostageActions: built.hostageActions,
+    armorAxes: built.armorRows,
+    physicalAnchors,
+    contextTagRegistry: CONTEXT_TAGS,
+    contextTags,
+    preparedProfiles: prepared,
+  });
 }
 
