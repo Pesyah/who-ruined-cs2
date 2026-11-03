@@ -8,7 +8,8 @@ vi.mock('../src/bounded-gzip.js', async (original) => ({
   readBoundedGzipJson
 }));
 
-const { readReplayIndex, readReplayRound } = await import('../src/replay-storage.js');
+const { StoredReplayReader } = await import('../src/infrastructure/stored-replay-reader.js');
+const replay = new StoredReplayReader();
 
 const binding = {
   matchId: 'synthetic-replay-match',
@@ -45,21 +46,21 @@ describe('synthetic replay storage validation', () => {
     const replayIndex = index();
     const replayRound = round();
     readBoundedGzipJson.mockReset().mockResolvedValueOnce(replayIndex).mockResolvedValueOnce(replayRound);
-    await expect(readReplayIndex(binding.matchId, binding.fileSha256)).resolves.toEqual(replayIndex);
-    await expect(readReplayRound(replayIndex, 'round-1')).resolves.toEqual(replayRound);
+    await expect(replay.readIndex(binding.matchId, binding.fileSha256)).resolves.toEqual(replayIndex);
+    await expect(replay.readRound(replayIndex, 'round-1')).resolves.toEqual(replayRound);
     expect(readBoundedGzipJson).toHaveBeenLastCalledWith(expect.stringContaining('/rounds/round-1.'), 'b'.repeat(64));
   });
 
   it('fails closed for a changed fingerprint, binding, checksum read, or missing round', async () => {
     readBoundedGzipJson.mockReset().mockResolvedValueOnce({ ...index(), map: 'de_mirage' });
-    await expect(readReplayIndex(binding.matchId, binding.fileSha256)).rejects.toMatchObject({ code: 'REPLAY_CORRUPT', status: 409 });
+    await expect(replay.readIndex(binding.matchId, binding.fileSha256)).rejects.toMatchObject({ code: 'REPLAY_CORRUPT', status: 409 });
 
     readBoundedGzipJson.mockReset().mockResolvedValueOnce({ ...index(), binding: { ...binding, matchId: 'other-match' } });
-    await expect(readReplayIndex(binding.matchId, binding.fileSha256)).rejects.toMatchObject({ code: 'REPLAY_CORRUPT', status: 409 });
+    await expect(replay.readIndex(binding.matchId, binding.fileSha256)).rejects.toMatchObject({ code: 'REPLAY_CORRUPT', status: 409 });
 
     const replayIndex = index();
-    await expect(readReplayRound(replayIndex, 'round-2')).rejects.toMatchObject({ code: 'REPLAY_ROUND_NOT_FOUND', status: 404 });
+    await expect(replay.readRound(replayIndex, 'round-2')).rejects.toMatchObject({ code: 'REPLAY_ROUND_NOT_FOUND', status: 404 });
     readBoundedGzipJson.mockReset().mockRejectedValueOnce(new Error('checksum mismatch'));
-    await expect(readReplayRound(replayIndex, 'round-1')).rejects.toMatchObject({ code: 'REPLAY_CORRUPT', status: 409 });
+    await expect(replay.readRound(replayIndex, 'round-1')).rejects.toMatchObject({ code: 'REPLAY_CORRUPT', status: 409 });
   });
 });

@@ -1,12 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  activeParticipationRatingReportSchema,
-  matchAnalyticsSchema,
-  matchArtifactSchema,
-  participationExplanationReportSchema,
-  scoringReportSchema,
   type ActiveParticipationRatingReport,
   type MatchAnalytics,
+  type MatchArtifact,
   type ParticipationExplanationReport,
   type ScoringReport,
 } from '@who-ruined/contracts';
@@ -14,28 +10,25 @@ import { buildActiveParticipationRating, buildParticipationExplanation, scoringC
 import { ApplicationError } from '../application-error.js';
 import { resolveScoringConfig } from '../scoring-config.js';
 import {
-  API_SETTINGS_PORT,
-  ARTIFACT_READER_PORT,
-  MATCH_QUERY_PORT,
-  type ApiSettingsPort,
-  type ArtifactReaderPort,
-  type MatchQueryPort,
+  ApiSettingsPort,
+  ArtifactReaderPort,
+  MatchQueryPort,
 } from '../ports.js';
 import { StoredMatchAccess } from '../stored-match-access.js';
 
 @Injectable()
 export class ReportQueries {
   constructor(
-    @Inject(MATCH_QUERY_PORT) private readonly repository: MatchQueryPort,
-    @Inject(ARTIFACT_READER_PORT) private readonly artifacts: ArtifactReaderPort,
-    @Inject(API_SETTINGS_PORT) private readonly settings: ApiSettingsPort,
+    @Inject(MatchQueryPort) private readonly repository: MatchQueryPort,
+    @Inject(ArtifactReaderPort) private readonly artifacts: ArtifactReaderPort,
+    @Inject(ApiSettingsPort) private readonly settings: ApiSettingsPort,
     @Inject(StoredMatchAccess) private readonly storedMatches: StoredMatchAccess,
   ) {}
 
   async analytics(id: string): Promise<MatchAnalytics> {
     const analytics = (await this.storedMatches.load(id)).analytics;
     if (!analytics) throw new ApplicationError('INCOMPLETE_MATCH', 'M2-аналитика для этого артефакта отсутствует; требуется повторный разбор.', 409);
-    return matchAnalyticsSchema.parse(analytics);
+    return analytics;
   }
 
   async playerAnalytics(id: string, playerId: string) {
@@ -54,20 +47,18 @@ export class ReportQueries {
     }
     const databaseMatch = await this.storedMatches.requireRecord(id);
     if (databaseMatch.resultFilePath) {
-      return activeParticipationRatingReportSchema.parse(
-        (await this.artifacts.readCanonicalResult(databaseMatch, true)).activeRating,
-      );
+      return (await this.artifacts.readCanonicalResult(databaseMatch, true)).activeRating;
     }
     const stored = await this.storedMatches.load(id);
     if (stored.match.matchId !== id) {
       throw new ApplicationError('PARTICIPATION_SIDECAR_STALE', 'Идентификатор матча в артефакте не совпадает с запросом.', 409);
     }
     if (!stored.analytics) throw new ApplicationError('INCOMPLETE_MATCH', 'Для participation rating нужен совместимый M2-артефакт.', 409);
-    const artifact = matchArtifactSchema.parse({
+    const artifact: MatchArtifact = {
       schemaVersion: 'm2-artifact-1',
       match: stored.match,
       analytics: stored.analytics,
-    });
+    };
     const sidecar = await this.artifacts.readParticipationSidecar(artifact, databaseMatch.rawFilePath);
     return buildActiveParticipationRating(artifact, sidecar);
   }
@@ -80,7 +71,7 @@ export class ReportQueries {
     if (!databaseMatch.resultFilePath) throw new ApplicationError('REPORT_NOT_READY', 'Канонический результат матча ещё не готов.', 409);
     const result = await this.artifacts.readCanonicalResult(databaseMatch, true);
     try {
-      return participationExplanationReportSchema.parse(buildParticipationExplanation(result));
+      return buildParticipationExplanation(result);
     } catch {
       throw new ApplicationError('REPORT_CORRUPT', 'Канонический результат не позволяет достоверно построить объяснение рейтинга.', 409);
     }
@@ -96,7 +87,7 @@ export class ReportQueries {
         item.scorerVersion === config.version && item.configHash === hash
       );
       if (!report) throw new ApplicationError('REPORT_NOT_READY', 'Запрошенный production report отсутствует в каноническом результате.', 409);
-      return scoringReportSchema.parse(report);
+      return report;
     }
     const stored = await this.repository.findScoringReport(id, config.version, hash);
     if (!stored) {

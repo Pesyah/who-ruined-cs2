@@ -5,14 +5,14 @@ import {
   type ReplayRoundArtifact,
 } from '@who-ruined/contracts';
 import { ApplicationError } from '../application-error.js';
-import { REPLAY_READER_PORT, type ReplayReaderPort } from '../ports.js';
+import { ReplayReaderPort } from '../ports.js';
 import { StoredMatchAccess } from '../stored-match-access.js';
 
 @Injectable()
 export class ReplayQueries {
   constructor(
     @Inject(StoredMatchAccess) private readonly storedMatches: StoredMatchAccess,
-    @Inject(REPLAY_READER_PORT) private readonly replay: ReplayReaderPort,
+    @Inject(ReplayReaderPort) private readonly replay: ReplayReaderPort,
   ) {}
 
   async metadata(id: string): Promise<ReplayMetadata> {

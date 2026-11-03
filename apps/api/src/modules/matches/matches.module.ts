@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
 import {
-  API_SETTINGS_PORT,
-  ARTIFACT_DELETION_PORT,
-  ARTIFACT_READER_PORT,
-  AUDIT_LOG_PORT,
-  CLOCK_PORT,
-  DEMO_FILE_PORT,
-  ID_GENERATOR_PORT,
-  MATCH_COMMAND_PORT,
-  MATCH_QUERY_PORT,
-  REPLAY_READER_PORT,
+  ApiSettingsPort,
+  ArtifactDeletionPort,
+  ArtifactReaderPort,
+  AuditLogPort,
+  ClockPort,
+  DemoFilePort,
+  IdGeneratorPort,
+  MatchCommandPort,
+  MatchQueryPort,
+  ReplayReaderPort,
 } from '../../application/ports.js';
 import { StoredMatchAccess } from '../../application/stored-match-access.js';
 import { DeleteMatch } from '../../application/use-cases/delete-match.js';
@@ -29,10 +29,12 @@ import {
   RuntimeApiSettings,
   SystemClock,
 } from '../../infrastructure/system-services.js';
+import { ReplayController } from '../replay/replay.controller.js';
+import { ReportsController } from '../reports/reports.controller.js';
 import { MatchesController } from './matches.controller.js';
 
 @Module({
-  controllers: [MatchesController],
+  controllers: [MatchesController, ReportsController, ReplayController],
   providers: [
     PrismaApiRepository,
     StoredArtifactReader,
@@ -43,16 +45,16 @@ import { MatchesController } from './matches.controller.js';
     SystemClock,
     CryptoIdGenerator,
     ConsoleAuditLog,
-    { provide: MATCH_QUERY_PORT, useExisting: PrismaApiRepository },
-    { provide: MATCH_COMMAND_PORT, useExisting: PrismaApiRepository },
-    { provide: ARTIFACT_READER_PORT, useExisting: StoredArtifactReader },
-    { provide: REPLAY_READER_PORT, useExisting: StoredReplayReader },
-    { provide: DEMO_FILE_PORT, useExisting: LocalDemoFiles },
-    { provide: ARTIFACT_DELETION_PORT, useExisting: LocalArtifactDeletion },
-    { provide: API_SETTINGS_PORT, useExisting: RuntimeApiSettings },
-    { provide: CLOCK_PORT, useExisting: SystemClock },
-    { provide: ID_GENERATOR_PORT, useExisting: CryptoIdGenerator },
-    { provide: AUDIT_LOG_PORT, useExisting: ConsoleAuditLog },
+    { provide: MatchQueryPort, useExisting: PrismaApiRepository },
+    { provide: MatchCommandPort, useExisting: PrismaApiRepository },
+    { provide: ArtifactReaderPort, useExisting: StoredArtifactReader },
+    { provide: ReplayReaderPort, useExisting: StoredReplayReader },
+    { provide: DemoFilePort, useExisting: LocalDemoFiles },
+    { provide: ArtifactDeletionPort, useExisting: LocalArtifactDeletion },
+    { provide: ApiSettingsPort, useExisting: RuntimeApiSettings },
+    { provide: ClockPort, useExisting: SystemClock },
+    { provide: IdGeneratorPort, useExisting: CryptoIdGenerator },
+    { provide: AuditLogPort, useExisting: ConsoleAuditLog },
     StoredMatchAccess,
     IngestDemo,
     MatchQueries,
@@ -61,6 +63,5 @@ import { MatchesController } from './matches.controller.js';
     RescoreMatch,
     DeleteMatch,
   ],
-  exports: [ReportQueries, ReplayQueries, RescoreMatch],
 })
 export class MatchesModule {}

@@ -9,16 +9,15 @@ import type {
   ScoringReport,
 } from '@who-ruined/contracts';
 
-export const MATCH_QUERY_PORT = Symbol('MATCH_QUERY_PORT');
-export const MATCH_COMMAND_PORT = Symbol('MATCH_COMMAND_PORT');
-export const ARTIFACT_READER_PORT = Symbol('ARTIFACT_READER_PORT');
-export const REPLAY_READER_PORT = Symbol('REPLAY_READER_PORT');
-export const DEMO_FILE_PORT = Symbol('DEMO_FILE_PORT');
-export const ARTIFACT_DELETION_PORT = Symbol('ARTIFACT_DELETION_PORT');
-export const API_SETTINGS_PORT = Symbol('API_SETTINGS_PORT');
-export const CLOCK_PORT = Symbol('CLOCK_PORT');
-export const ID_GENERATOR_PORT = Symbol('ID_GENERATOR_PORT');
-export const AUDIT_LOG_PORT = Symbol('AUDIT_LOG_PORT');
+/** Jobs that count toward admission limits and block destructive deletion. */
+export const UNFINISHED_JOB_STATUSES = [
+  'QUEUED',
+  'PARSING',
+  'NORMALIZING',
+  'VALIDATING',
+  'FEATURIZING',
+  'SCORING',
+] as const;
 
 export interface StoredMatch {
   id: string;
@@ -58,11 +57,12 @@ export interface MatchDeletionCandidate extends StoredMatch {
   reports: Array<{ jsonFilePath: string }>;
 }
 
-export interface MatchQueryPort {
-  findMatch(id: string): Promise<StoredMatch | null>;
-  findJob(id: string): Promise<StoredJob | null>;
-  listMatches(cursor: string | undefined, take: number): Promise<StoredMatch[]>;
-  findScoringReport(matchId: string, scoringVersion: string, configHash: string): Promise<{ jsonFilePath: string } | null>;
+// Abstract classes give each application boundary one shared TypeScript and Nest runtime token.
+export abstract class MatchQueryPort {
+  abstract findMatch(id: string): Promise<StoredMatch | null>;
+  abstract findJob(id: string): Promise<StoredJob | null>;
+  abstract listMatches(cursor: string | undefined, take: number): Promise<StoredMatch[]>;
+  abstract findScoringReport(matchId: string, scoringVersion: string, configHash: string): Promise<{ jsonFilePath: string } | null>;
 }
 
 export interface UploadRegistration {
@@ -82,14 +82,14 @@ export interface RescoreRegistration {
   configHash: string;
 }
 
-export interface MatchCommandPort {
-  findDuplicate(fileSha256: string, parserVersion: string, normalizerVersion: string): Promise<DuplicateMatch | null>;
-  countActiveJobs(): Promise<number>;
-  registerUploadedMatch(input: UploadRegistration): Promise<void>;
-  queueRescore(input: RescoreRegistration): Promise<void>;
-  findDeletionCandidate(id: string): Promise<MatchDeletionCandidate | null>;
-  markDeleting(id: string, requestedAt: Date): Promise<void>;
-  deleteMatch(id: string): Promise<void>;
+export abstract class MatchCommandPort {
+  abstract findDuplicate(fileSha256: string, parserVersion: string, normalizerVersion: string): Promise<DuplicateMatch | null>;
+  abstract countActiveJobs(): Promise<number>;
+  abstract registerUploadedMatch(input: UploadRegistration): Promise<void>;
+  abstract queueRescore(input: RescoreRegistration): Promise<void>;
+  abstract findDeletionCandidate(id: string): Promise<MatchDeletionCandidate | null>;
+  abstract markDeleting(id: string, requestedAt: Date): Promise<void>;
+  abstract deleteMatch(id: string): Promise<void>;
 }
 
 export interface StoredMatchArtifact {
@@ -97,47 +97,47 @@ export interface StoredMatchArtifact {
   analytics: MatchAnalytics | null;
 }
 
-export interface ArtifactReaderPort {
-  readMatchArtifact(stored: StoredMatch): Promise<StoredMatchArtifact>;
-  readCanonicalResult(stored: StoredMatch, requireActivePolicy?: boolean): Promise<CanonicalMatchResult>;
-  readParticipationSidecar(artifact: MatchArtifact, rawFilePath: string | null): Promise<ParticipationSidecar>;
-  readScoringReport(relativePath: string): Promise<ScoringReport>;
+export abstract class ArtifactReaderPort {
+  abstract readMatchArtifact(stored: StoredMatch): Promise<StoredMatchArtifact>;
+  abstract readCanonicalResult(stored: StoredMatch, requireActivePolicy?: boolean): Promise<CanonicalMatchResult>;
+  abstract readParticipationSidecar(artifact: MatchArtifact, rawFilePath: string | null): Promise<ParticipationSidecar>;
+  abstract readScoringReport(relativePath: string): Promise<ScoringReport>;
 }
 
-export interface ReplayReaderPort {
-  readIndex(matchId: string, fileSha256: string): Promise<ReplayIndexArtifact | null>;
-  readRound(index: ReplayIndexArtifact, roundId: string): Promise<ReplayRoundArtifact>;
+export abstract class ReplayReaderPort {
+  abstract readIndex(matchId: string, fileSha256: string): Promise<ReplayIndexArtifact | null>;
+  abstract readRound(index: ReplayIndexArtifact, roundId: string): Promise<ReplayRoundArtifact>;
 }
 
-export interface DemoFilePort {
-  parserVersion(): string;
-  normalizerVersion(): string;
-  ownedUploadPath(filePath: string): string;
-  hasSource2Magic(filePath: string): Promise<boolean>;
-  source2HeaderStatus(filePath: string): 'VALID' | 'INVALID' | 'UNREADABLE';
-  sha256(filePath: string): Promise<string>;
-  storedRelativePath(filePath: string): string;
-  remove(filePath: string): Promise<void>;
+export abstract class DemoFilePort {
+  abstract parserVersion(): string;
+  abstract normalizerVersion(): string;
+  abstract ownedUploadPath(filePath: string): string;
+  abstract hasSource2Magic(filePath: string): Promise<boolean>;
+  abstract source2HeaderStatus(filePath: string): 'VALID' | 'INVALID' | 'UNREADABLE';
+  abstract sha256(filePath: string): Promise<string>;
+  abstract storedRelativePath(filePath: string): string;
+  abstract remove(filePath: string): Promise<void>;
 }
 
-export interface ArtifactDeletionPort {
-  deleteMatchFiles(matchId: string, relativeFiles: ReadonlySet<string>): Promise<void>;
+export abstract class ArtifactDeletionPort {
+  abstract deleteMatchFiles(matchId: string, relativeFiles: ReadonlySet<string>): Promise<void>;
 }
 
-export interface ApiSettingsPort {
-  maxQueuedJobs(): number;
-  participationRatingEnabled(): boolean;
+export abstract class ApiSettingsPort {
+  abstract maxQueuedJobs(): number;
+  abstract participationRatingEnabled(): boolean;
 }
 
-export interface ClockPort {
-  now(): Date;
-  nowMilliseconds(): number;
+export abstract class ClockPort {
+  abstract now(): Date;
+  abstract nowMilliseconds(): number;
 }
 
-export interface IdGeneratorPort {
-  create(): string;
+export abstract class IdGeneratorPort {
+  abstract create(): string;
 }
 
-export interface AuditLogPort {
-  uploadIngested(bytes: number, durationMs: number, duplicate: boolean): void;
+export abstract class AuditLogPort {
+  abstract uploadIngested(bytes: number, durationMs: number, duplicate: boolean): void;
 }
