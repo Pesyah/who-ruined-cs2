@@ -9,16 +9,6 @@ import type {
   ScoringReport,
 } from '@who-ruined/contracts';
 
-/** Jobs that count toward admission limits and block destructive deletion. */
-export const UNFINISHED_JOB_STATUSES = [
-  'QUEUED',
-  'PARSING',
-  'NORMALIZING',
-  'VALIDATING',
-  'FEATURIZING',
-  'SCORING',
-] as const;
-
 export interface StoredMatch {
   id: string;
   fileSha256: string;
@@ -49,11 +39,11 @@ export interface StoredJob {
 
 export interface DuplicateMatch {
   id: string;
+  deletionState: string | null;
   jobs: Array<{ id: string }>;
 }
 
-export interface MatchDeletionCandidate extends StoredMatch {
-  jobs: Array<{ status: string }>;
+export interface MatchDeletionSnapshot extends StoredMatch {
   reports: Array<{ jsonFilePath: string }>;
 }
 
@@ -82,14 +72,36 @@ export interface RescoreRegistration {
   configHash: string;
 }
 
+export type UploadAdmissionResult =
+  | { kind: 'ADMITTED' }
+  | { kind: 'DUPLICATE'; match: DuplicateMatch }
+  | { kind: 'DUPLICATE_DELETING' }
+  | { kind: 'QUEUE_SATURATED' }
+  | { kind: 'CONCURRENT_WRITE' };
+
+export type RescoreAdmissionResult =
+  | { kind: 'ADMITTED'; jobId: string }
+  | { kind: 'DUPLICATE'; jobId: string }
+  | { kind: 'MATCH_NOT_FOUND' }
+  | { kind: 'SOURCE_UNAVAILABLE' }
+  | { kind: 'QUEUE_SATURATED' }
+  | { kind: 'CONCURRENT_WRITE' };
+
+export type MatchDeletionResult =
+  | { kind: 'READY'; match: MatchDeletionSnapshot }
+  | { kind: 'MATCH_NOT_FOUND' }
+  | { kind: 'MATCH_ACTIVE' }
+  | { kind: 'CONCURRENT_WRITE' };
+
+export type MatchDeletionCompletionResult =
+  | { kind: 'COMPLETED' }
+  | { kind: 'CONCURRENT_WRITE' };
+
 export abstract class MatchCommandPort {
-  abstract findDuplicate(fileSha256: string, parserVersion: string, normalizerVersion: string): Promise<DuplicateMatch | null>;
-  abstract countActiveJobs(): Promise<number>;
-  abstract registerUploadedMatch(input: UploadRegistration): Promise<void>;
-  abstract queueRescore(input: RescoreRegistration): Promise<void>;
-  abstract findDeletionCandidate(id: string): Promise<MatchDeletionCandidate | null>;
-  abstract markDeleting(id: string, requestedAt: Date): Promise<void>;
-  abstract deleteMatch(id: string): Promise<void>;
+  abstract admitUploadedMatch(input: UploadRegistration, maximumQueuedJobs: number): Promise<UploadAdmissionResult>;
+  abstract admitRescore(input: RescoreRegistration, maximumQueuedJobs: number): Promise<RescoreAdmissionResult>;
+  abstract beginMatchDeletion(id: string, requestedAt: Date): Promise<MatchDeletionResult>;
+  abstract completeMatchDeletion(id: string): Promise<MatchDeletionCompletionResult>;
 }
 
 export interface StoredMatchArtifact {

@@ -1,6 +1,6 @@
 import { access, readdir, rm, rmdir } from 'node:fs/promises';
 import path from 'node:path';
-import { ACTIVE_JOB_STAGES, prisma } from '@who-ruined/database';
+import { ACTIVE_JOB_STAGES, prisma, UNFINISHED_JOB_STATUSES } from '@who-ruined/database';
 import { assertNoSymlinkComponents, resolveDataPath } from './storage.js';
 import { readCanonicalMatchResult } from './match-result-storage.js';
 
@@ -126,7 +126,9 @@ export async function reconcileDeletingMatches(dataRoot: string): Promise<number
   const matches = await prisma.match.findMany({ where: { deletionState: 'DELETING' }, include: { jobs: true, reports: true } });
   let completed = 0;
   for (const match of matches) {
-    if (match.jobs.some((job) => ACTIVE_JOB_STAGES.includes(job.status as (typeof ACTIVE_JOB_STAGES)[number]))) continue;
+    if (match.jobs.some((job) => UNFINISHED_JOB_STATUSES.includes(
+      job.status as (typeof UNFINISHED_JOB_STATUSES)[number],
+    ))) continue;
     const files = new Set<string>();
     for (const candidate of [match.rawFilePath, match.normalizedFilePath, match.resultFilePath, ...match.reports.map((report) => report.jsonFilePath)]) if (candidate) files.add(candidate);
     for (const relative of files) {

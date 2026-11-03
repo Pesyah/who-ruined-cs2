@@ -7,6 +7,7 @@ import {
   ClockPort,
   DemoFilePort,
   type DuplicateMatch,
+  type UploadAdmissionResult,
   IdGeneratorPort,
   MatchCommandPort,
 } from '../ports.js';
@@ -58,30 +59,37 @@ export class IngestDemo {
       const fileHash = await this.demoFiles.sha256(temporaryPath);
       const parserVersion = this.demoFiles.parserVersion();
       const normalizerVersion = this.demoFiles.normalizerVersion();
-      const findDuplicate = () => this.matches.findDuplicate(fileHash, parserVersion, normalizerVersion);
-      const duplicate = await findDuplicate();
-      if (duplicate) return this.duplicateResult(file, startedAt, duplicate);
-
-      if (await this.matches.countActiveJobs() >= this.settings.maxQueuedJobs()) {
-        throw new ApplicationError('QUEUE_SATURATED', 'Очередь анализа временно заполнена.', 503);
-      }
-
       const matchId = this.ids.create();
       const jobId = this.ids.create();
+      let admission: UploadAdmissionResult;
       try {
-        await this.matches.registerUploadedMatch({
-          matchId,
-          jobId,
-          originalFileName: path.basename(file.originalname).slice(0, 255),
-          fileSha256: fileHash,
-          parserVersion,
-          normalizerVersion,
-          rawFilePath: this.demoFiles.storedRelativePath(temporaryPath),
-        });
+        admission = await this.matches.admitUploadedMatch(
+          {
+            matchId,
+            jobId,
+            originalFileName: path.basename(file.originalname).slice(0, 255),
+            fileSha256: fileHash,
+            parserVersion,
+            normalizerVersion,
+            rawFilePath: this.demoFiles.storedRelativePath(temporaryPath),
+          },
+          this.settings.maxQueuedJobs(),
+        );
       } catch {
-        const concurrentDuplicate = await findDuplicate().catch(() => null);
-        if (concurrentDuplicate) return this.duplicateResult(file, startedAt, concurrentDuplicate);
         throw new ApplicationError('INGESTION_PERSISTENCE_FAILED', 'Не удалось сохранить загрузку и поставить её в очередь.', 503);
+      }
+
+      if (admission.kind === 'DUPLICATE') {
+        return this.duplicateResult(file, startedAt, admission.match);
+      }
+      if (admission.kind === 'DUPLICATE_DELETING') {
+        throw new ApplicationError('MATCH_ACTIVE', 'Совпадающий матч находится в процессе удаления.', 409);
+      }
+      if (admission.kind === 'QUEUE_SATURATED') {
+        throw new ApplicationError('QUEUE_SATURATED', 'Очередь анализа временно заполнена.', 503);
+      }
+      if (admission.kind === 'CONCURRENT_WRITE') {
+        throw new ApplicationError('INGESTION_PERSISTENCE_FAILED', 'База данных временно занята другой операцией.', 503);
       }
 
       retainedByMatch = true;

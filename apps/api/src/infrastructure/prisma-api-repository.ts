@@ -1,28 +1,105 @@
 import { Injectable } from '@nestjs/common';
-import { prisma } from '@who-ruined/database';
-import { UNFINISHED_JOB_STATUSES } from '../application/ports.js';
+import {
+  Prisma,
+  prisma,
+  UNFINISHED_JOB_STATUSES,
+  type PrismaClient,
+} from '@who-ruined/database';
 import type {
   MatchCommandPort,
-  MatchDeletionCandidate,
+  MatchDeletionCompletionResult,
+  MatchDeletionResult,
   MatchQueryPort,
+  RescoreAdmissionResult,
   RescoreRegistration,
   StoredJob,
   StoredMatch,
+  UploadAdmissionResult,
   UploadRegistration,
 } from '../application/ports.js';
 
+const MAX_WRITE_TRANSACTION_ATTEMPTS = 3;
+const WRITE_TRANSACTION_OPTIONS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 5_000,
+  timeout: 5_000,
+} as const;
+
+type AtomicOperation = 'UPLOAD' | 'RESCORE' | 'DELETE';
+type TransactionCheckpoint =
+  | 'BEFORE_WRITE_LOCK'
+  | 'AFTER_WRITE_LOCK'
+  | 'AFTER_UPLOAD_MATCH_CREATED';
+
+class ConcurrentWriteError extends Error {
+  constructor(cause: unknown) {
+    super('DATABASE_CONCURRENT_WRITE', { cause });
+    this.name = 'ConcurrentWriteError';
+  }
+}
+
+function databaseErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null;
+  return typeof error.code === 'string' ? error.code : null;
+}
+
+function isRetryableWriteConflict(error: unknown): boolean {
+  const code = databaseErrorCode(error);
+  if (code === 'P1008' || code === 'P2034') return true;
+  if (!(error instanceof Error)) return false;
+  return /SQLITE_BUSY|database is locked/i.test(error.message);
+}
+
 @Injectable()
 export class PrismaApiRepository implements MatchQueryPort, MatchCommandPort {
+  protected databaseClient(): PrismaClient {
+    return prisma;
+  }
+
+  /** Integration-test seam for deterministic transaction interleavings and rollback faults. */
+  protected transactionCheckpoint(
+    checkpoint: TransactionCheckpoint,
+    operation: AtomicOperation,
+  ): void | Promise<void> {
+    void checkpoint;
+    void operation;
+  }
+
+  private async serializedWrite<T>(
+    operation: AtomicOperation,
+    action: (transaction: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    let lastConflict: unknown;
+    for (let attempt = 0; attempt < MAX_WRITE_TRANSACTION_ATTEMPTS; attempt += 1) {
+      try {
+        await this.transactionCheckpoint('BEFORE_WRITE_LOCK', operation);
+        return await this.databaseClient().$transaction(async (transaction) => {
+          // SQLite starts a DEFERRED transaction by default. A write as the first
+          // statement acquires the database write reservation before any admission read.
+          await transaction.$executeRawUnsafe(
+            'UPDATE "Job" SET "id" = "id" WHERE 0 = 1',
+          );
+          await this.transactionCheckpoint('AFTER_WRITE_LOCK', operation);
+          return action(transaction);
+        }, WRITE_TRANSACTION_OPTIONS);
+      } catch (error) {
+        if (!isRetryableWriteConflict(error)) throw error;
+        lastConflict = error;
+      }
+    }
+    throw new ConcurrentWriteError(lastConflict);
+  }
+
   findMatch(id: string): Promise<StoredMatch | null> {
-    return prisma.match.findUnique({ where: { id } });
+    return this.databaseClient().match.findUnique({ where: { id } });
   }
 
   findJob(id: string): Promise<StoredJob | null> {
-    return prisma.job.findUnique({ where: { id } });
+    return this.databaseClient().job.findUnique({ where: { id } });
   }
 
   listMatches(cursor: string | undefined, take: number): Promise<StoredMatch[]> {
-    return prisma.match.findMany({
+    return this.databaseClient().match.findMany({
       take,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -30,86 +107,185 @@ export class PrismaApiRepository implements MatchQueryPort, MatchCommandPort {
   }
 
   async findScoringReport(matchId: string, scoringVersion: string, configHash: string) {
-    return prisma.report.findUnique({
+    return this.databaseClient().report.findUnique({
       where: { matchId_scoringVersion_configHash: { matchId, scoringVersion, configHash } },
       select: { jsonFilePath: true },
     });
   }
 
-  async findDuplicate(fileSha256: string, parserVersion: string, normalizerVersion: string) {
-    return prisma.match.findUnique({
-      where: {
-        fileSha256_parserVersion_normalizerVersion: {
-          fileSha256,
-          parserVersion,
-          normalizerVersion,
-        },
-      },
-      select: {
-        id: true,
-        jobs: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true } },
-      },
-    });
+  async admitUploadedMatch(
+    input: UploadRegistration,
+    maximumQueuedJobs: number,
+  ): Promise<UploadAdmissionResult> {
+    try {
+      return await this.serializedWrite('UPLOAD', async (transaction) => {
+        const duplicate = await transaction.match.findUnique({
+          where: {
+            fileSha256_parserVersion_normalizerVersion: {
+              fileSha256: input.fileSha256,
+              parserVersion: input.parserVersion,
+              normalizerVersion: input.normalizerVersion,
+            },
+          },
+          select: {
+            id: true,
+            deletionState: true,
+            jobs: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true } },
+          },
+        });
+        if (duplicate?.deletionState) return { kind: 'DUPLICATE_DELETING' };
+        if (duplicate) return { kind: 'DUPLICATE', match: duplicate };
+
+        const unfinishedJobs = await transaction.job.count({
+          where: { status: { in: [...UNFINISHED_JOB_STATUSES] } },
+        });
+        if (unfinishedJobs >= maximumQueuedJobs) return { kind: 'QUEUE_SATURATED' };
+
+        await transaction.match.create({
+          data: {
+            id: input.matchId,
+            originalFileName: input.originalFileName,
+            fileSha256: input.fileSha256,
+            status: 'QUEUED',
+            parserVersion: input.parserVersion,
+            normalizerVersion: input.normalizerVersion,
+            rawFilePath: input.rawFilePath,
+          },
+        });
+        await this.transactionCheckpoint('AFTER_UPLOAD_MATCH_CREATED', 'UPLOAD');
+        await transaction.job.create({
+          data: {
+            id: input.jobId,
+            matchId: input.matchId,
+            type: 'PARSE',
+            status: 'QUEUED',
+            stage: 'QUEUED',
+          },
+        });
+        return { kind: 'ADMITTED' };
+      });
+    } catch (error) {
+      if (error instanceof ConcurrentWriteError) return { kind: 'CONCURRENT_WRITE' };
+      throw error;
+    }
   }
 
-  countActiveJobs(): Promise<number> {
-    return prisma.job.count({ where: { status: { in: [...UNFINISHED_JOB_STATUSES] } } });
+  async admitRescore(
+    input: RescoreRegistration,
+    maximumQueuedJobs: number,
+  ): Promise<RescoreAdmissionResult> {
+    try {
+      return await this.serializedWrite('RESCORE', async (transaction) => {
+        const match = await transaction.match.findUnique({
+          where: { id: input.matchId },
+          select: {
+            deletionState: true,
+            normalizedFilePath: true,
+            resultFilePath: true,
+          },
+        });
+        if (!match || match.deletionState) return { kind: 'MATCH_NOT_FOUND' };
+        if (!match.normalizedFilePath && !match.resultFilePath) {
+          return { kind: 'SOURCE_UNAVAILABLE' };
+        }
+
+        const duplicate = await transaction.job.findFirst({
+          where: {
+            matchId: input.matchId,
+            type: 'RESCORE',
+            requestedScoringVersion: input.scoringVersion,
+            requestedConfigHash: input.configHash,
+            status: { in: [...UNFINISHED_JOB_STATUSES] },
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true },
+        });
+        if (duplicate) return { kind: 'DUPLICATE', jobId: duplicate.id };
+
+        const unfinishedJobs = await transaction.job.count({
+          where: { status: { in: [...UNFINISHED_JOB_STATUSES] } },
+        });
+        if (unfinishedJobs >= maximumQueuedJobs) return { kind: 'QUEUE_SATURATED' };
+
+        await transaction.job.create({
+          data: {
+            id: input.jobId,
+            matchId: input.matchId,
+            type: 'RESCORE',
+            status: 'QUEUED',
+            stage: 'QUEUED',
+            requestedScoringVersion: input.scoringVersion,
+            requestedConfigHash: input.configHash,
+          },
+        });
+        return { kind: 'ADMITTED', jobId: input.jobId };
+      });
+    } catch (error) {
+      if (error instanceof ConcurrentWriteError) return { kind: 'CONCURRENT_WRITE' };
+      throw error;
+    }
   }
 
-  async registerUploadedMatch(input: UploadRegistration): Promise<void> {
-    await prisma.$transaction([
-      prisma.match.create({
-        data: {
-          id: input.matchId,
-          originalFileName: input.originalFileName,
-          fileSha256: input.fileSha256,
-          status: 'QUEUED',
-          parserVersion: input.parserVersion,
-          normalizerVersion: input.normalizerVersion,
-          rawFilePath: input.rawFilePath,
-        },
-      }),
-      prisma.job.create({
-        data: {
-          id: input.jobId,
-          matchId: input.matchId,
-          type: 'PARSE',
-          status: 'QUEUED',
-          stage: 'QUEUED',
-        },
-      }),
-    ]);
+  async beginMatchDeletion(id: string, requestedAt: Date): Promise<MatchDeletionResult> {
+    try {
+      return await this.serializedWrite('DELETE', async (transaction) => {
+        const match = await transaction.match.findUnique({
+          where: { id },
+          include: {
+            jobs: { select: { status: true } },
+            reports: { select: { jsonFilePath: true } },
+          },
+        });
+        if (!match) return { kind: 'MATCH_NOT_FOUND' };
+        if (match.deletionState && match.deletionState !== 'DELETING') {
+          return { kind: 'MATCH_ACTIVE' };
+        }
+        if (match.jobs.some((job) => (
+          UNFINISHED_JOB_STATUSES as readonly string[]
+        ).includes(job.status))) {
+          return { kind: 'MATCH_ACTIVE' };
+        }
+
+        const deletionRequestedAt = match.deletionRequestedAt ?? requestedAt;
+        let deletionSnapshot = match;
+        if (match.deletionState !== 'DELETING' || !match.deletionRequestedAt) {
+          deletionSnapshot = await transaction.match.update({
+            where: { id },
+            data: { deletionState: 'DELETING', deletionRequestedAt },
+            include: {
+              jobs: { select: { status: true } },
+              reports: { select: { jsonFilePath: true } },
+            },
+          });
+        }
+        const { jobs, ...snapshot } = deletionSnapshot;
+        void jobs;
+        return {
+          kind: 'READY',
+          match: {
+            ...snapshot,
+            deletionState: 'DELETING',
+            deletionRequestedAt,
+          },
+        };
+      });
+    } catch (error) {
+      if (error instanceof ConcurrentWriteError) return { kind: 'CONCURRENT_WRITE' };
+      throw error;
+    }
   }
 
-  async queueRescore(input: RescoreRegistration): Promise<void> {
-    await prisma.job.create({
-      data: {
-        id: input.jobId,
-        matchId: input.matchId,
-        type: 'RESCORE',
-        status: 'QUEUED',
-        stage: 'QUEUED',
-        requestedScoringVersion: input.scoringVersion,
-        requestedConfigHash: input.configHash,
-      },
-    });
-  }
-
-  findDeletionCandidate(id: string): Promise<MatchDeletionCandidate | null> {
-    return prisma.match.findUnique({
-      where: { id },
-      include: { jobs: { select: { status: true } }, reports: { select: { jsonFilePath: true } } },
-    });
-  }
-
-  async markDeleting(id: string, requestedAt: Date): Promise<void> {
-    await prisma.match.update({
-      where: { id },
-      data: { deletionState: 'DELETING', deletionRequestedAt: requestedAt },
-    });
-  }
-
-  async deleteMatch(id: string): Promise<void> {
-    await prisma.match.delete({ where: { id } });
+  async completeMatchDeletion(id: string): Promise<MatchDeletionCompletionResult> {
+    try {
+      await this.serializedWrite('DELETE', async (transaction) => {
+        await transaction.match.deleteMany({
+          where: { id, deletionState: 'DELETING' },
+        });
+      });
+      return { kind: 'COMPLETED' };
+    } catch (error) {
+      if (error instanceof ConcurrentWriteError) return { kind: 'CONCURRENT_WRITE' };
+      throw error;
+    }
   }
 }

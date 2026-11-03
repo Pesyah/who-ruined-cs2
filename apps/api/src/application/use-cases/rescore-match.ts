@@ -3,6 +3,7 @@ import { scoringConfigHash } from '@who-ruined/scoring';
 import { ApplicationError } from '../application-error.js';
 import { resolveScoringConfig } from '../scoring-config.js';
 import {
+  ApiSettingsPort,
   IdGeneratorPort,
   MatchCommandPort,
 } from '../ports.js';
@@ -19,6 +20,7 @@ export class RescoreMatch {
     @Inject(MatchCommandPort) private readonly matches: MatchCommandPort,
     @Inject(IdGeneratorPort) private readonly ids: IdGeneratorPort,
     @Inject(StoredMatchAccess) private readonly storedMatches: StoredMatchAccess,
+    @Inject(ApiSettingsPort) private readonly settings: ApiSettingsPort,
   ) {}
 
   async execute(id: string, request: RescoreMatchRequest): Promise<{
@@ -38,12 +40,26 @@ export class RescoreMatch {
     }
     const jobId = this.ids.create();
     const configHash = scoringConfigHash(config);
-    await this.matches.queueRescore({
+    const admission = await this.matches.admitRescore({
       jobId,
       matchId: id,
       scoringVersion: config.version,
       configHash,
-    });
-    return { matchId: id, jobId, scoringVersion: config.version, configHash };
+    }, this.settings.maxQueuedJobs());
+    if (admission.kind === 'MATCH_NOT_FOUND') {
+      throw new ApplicationError('MATCH_NOT_FOUND', 'Матч не найден.', 404);
+    }
+    if (admission.kind === 'SOURCE_UNAVAILABLE') {
+      throw new ApplicationError('SOURCE_DEMO_UNAVAILABLE', 'Для rescore нужен сохранённый M2-артефакт или канонический результат.', 409);
+    }
+    if (admission.kind === 'QUEUE_SATURATED' || admission.kind === 'CONCURRENT_WRITE') {
+      throw new ApplicationError('QUEUE_SATURATED', 'Очередь анализа временно заполнена.', 503);
+    }
+    return {
+      matchId: id,
+      jobId: admission.jobId,
+      scoringVersion: config.version,
+      configHash,
+    };
   }
 }

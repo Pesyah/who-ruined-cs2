@@ -6,13 +6,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const database = vi.hoisted(() => ({
   findUnique: vi.fn(),
-  createMatch: vi.fn(() => ({ kind: 'match-create' })),
-  createJob: vi.fn(() => ({ kind: 'job-create' })),
+  createMatch: vi.fn(),
+  createJob: vi.fn(),
+  executeRaw: vi.fn(),
   transaction: vi.fn(),
   countJobs: vi.fn()
 }));
 
-vi.mock('@who-ruined/database', () => ({
+vi.mock('@who-ruined/database', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@who-ruined/database')>()),
   prisma: {
     match: { findUnique: database.findUnique, create: database.createMatch },
     job: { create: database.createJob, count: database.countJobs },
@@ -42,6 +44,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   database.findUnique.mockResolvedValue(null);
   database.countJobs.mockResolvedValue(0);
+  database.transaction.mockImplementation(async (action) => action({
+    $executeRawUnsafe: database.executeRaw,
+    match: { findUnique: database.findUnique, create: database.createMatch },
+    job: { create: database.createJob, count: database.countJobs },
+  }));
 });
 
 describe('ingest ownership and persistence cleanup', () => {
@@ -53,12 +60,59 @@ describe('ingest ownership and persistence cleanup', () => {
     expect(database.transaction).toHaveBeenCalledOnce();
   });
 
-  it('resolves a concurrent same-digest create as a duplicate without deleting the existing upload', async () => {
+  it('does not misreport a database unique violation as a confirmed duplicate', async () => {
     const upload = await validTemporaryUpload();
-    database.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'existing-match', jobs: [{ id: 'existing-job' }] });
-    database.transaction.mockRejectedValue(new Error('unique race'));
+    database.createMatch.mockRejectedValueOnce(Object.assign(
+      new Error('synthetic unique violation'),
+      { code: 'P2002' },
+    ));
+
+    await expect(createTestApiFacade().ingest(upload.file)).rejects.toMatchObject({
+      code: 'INGESTION_PERSISTENCE_FAILED',
+      status: 503,
+    });
+    await expect(access(upload.path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(database.transaction).toHaveBeenCalledOnce();
+  });
+
+  it('bounds SQLite write-conflict retries and maps exhaustion to a typed 503', async () => {
+    const upload = await validTemporaryUpload();
+    database.transaction.mockRejectedValue(Object.assign(
+      new Error('database is locked'),
+      { code: 'P1008' },
+    ));
+
+    await expect(createTestApiFacade().ingest(upload.file)).rejects.toMatchObject({
+      code: 'INGESTION_PERSISTENCE_FAILED',
+      status: 503,
+    });
+    await expect(access(upload.path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(database.transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns an atomically observed duplicate and removes only the competing upload', async () => {
+    const upload = await validTemporaryUpload();
+    database.findUnique.mockResolvedValue({
+      id: 'existing-match',
+      deletionState: null,
+      jobs: [{ id: 'existing-job' }],
+    });
     await expect(createTestApiFacade().ingest(upload.file)).resolves.toEqual({ matchId: 'existing-match', jobId: 'existing-job', duplicate: true });
     await expect(access(upload.path)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('retains the accepted upload owned by the newly committed match', async () => {
+    const upload = await validTemporaryUpload();
+    try {
+      await expect(createTestApiFacade().ingest(upload.file)).resolves.toMatchObject({
+        duplicate: false,
+      });
+      await expect(access(upload.path)).resolves.toBeUndefined();
+      expect(database.createMatch).toHaveBeenCalledOnce();
+      expect(database.createJob).toHaveBeenCalledOnce();
+    } finally {
+      await rm(upload.path, { force: true });
+    }
   });
 
   it('refuses an out-of-root path and never deletes that external file', async () => {
@@ -78,7 +132,8 @@ describe('ingest ownership and persistence cleanup', () => {
     try {
       await expect(createTestApiFacade().ingest(upload.file)).rejects.toMatchObject({ code: 'QUEUE_SATURATED', status: 503 });
       await expect(access(upload.path)).rejects.toMatchObject({ code: 'ENOENT' });
-      expect(database.transaction).not.toHaveBeenCalled();
+      expect(database.transaction).toHaveBeenCalledOnce();
+      expect(database.createMatch).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) delete process.env.MAX_QUEUED_JOBS; else process.env.MAX_QUEUED_JOBS = previous;
     }

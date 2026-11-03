@@ -28,7 +28,7 @@ export function createTestApiFacade() {
   const matchQueries = new MatchQueries(repository, storedMatches);
   const reportQueries = new ReportQueries(repository, artifacts, settings, storedMatches);
   const replayQueries = new ReplayQueries(storedMatches, new StoredReplayReader());
-  const rescore = new RescoreMatch(repository, ids, storedMatches);
+  const rescore = new RescoreMatch(repository, ids, storedMatches, settings);
   const deleteMatch = new DeleteMatch(repository, new LocalArtifactDeletion(), clock);
 
   return {

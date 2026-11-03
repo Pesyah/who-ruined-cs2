@@ -3,14 +3,15 @@ import {
   ArtifactDeletionPort,
   ClockPort,
   MatchCommandPort,
-  UNFINISHED_JOB_STATUSES,
-  type MatchDeletionCandidate,
+  type MatchDeletionCompletionResult,
+  type MatchDeletionResult,
+  type MatchDeletionSnapshot,
 } from '../src/application/ports.js';
 import { DeleteMatch } from '../src/application/use-cases/delete-match.js';
 
 const requestedAt = new Date('2026-11-03T00:00:00.000Z');
 
-function deletionCandidate(jobStatus: string): MatchDeletionCandidate {
+function deletionSnapshot(): MatchDeletionSnapshot {
   return {
     id: 'match-1',
     fileSha256: 'a'.repeat(64),
@@ -26,33 +27,41 @@ function deletionCandidate(jobStatus: string): MatchDeletionCandidate {
     resultSha256: 'b'.repeat(64),
     resultPolicyId: null,
     resultPolicyDigest: null,
-    jobs: [{ status: jobStatus }],
     reports: [{ jsonFilePath: 'reports/match-1.json.gz' }],
   };
 }
 
 class FakeMatchCommands extends MatchCommandPort {
-  markedAt: Date | null = null;
+  beganAt: Date | null = null;
   deleted = false;
 
-  constructor(private readonly candidate: MatchDeletionCandidate | null) {
+  constructor(
+    private readonly result: MatchDeletionResult,
+    private readonly completion: MatchDeletionCompletionResult = { kind: 'COMPLETED' },
+  ) {
     super();
   }
 
-  findDuplicate(): Promise<null> { return Promise.resolve(null); }
-  countActiveJobs(): Promise<number> { return Promise.resolve(0); }
-  registerUploadedMatch(): Promise<void> { return Promise.resolve(); }
-  queueRescore(): Promise<void> { return Promise.resolve(); }
-  findDeletionCandidate(): Promise<MatchDeletionCandidate | null> { return Promise.resolve(this.candidate); }
-  markDeleting(_id: string, value: Date): Promise<void> { this.markedAt = value; return Promise.resolve(); }
-  deleteMatch(): Promise<void> { this.deleted = true; return Promise.resolve(); }
+  admitUploadedMatch(): Promise<never> { throw new Error('not used'); }
+  admitRescore(): Promise<never> { throw new Error('not used'); }
+  beginMatchDeletion(_id: string, requestedAt: Date): Promise<MatchDeletionResult> {
+    this.beganAt = requestedAt;
+    return Promise.resolve(this.result);
+  }
+  completeMatchDeletion(): Promise<MatchDeletionCompletionResult> {
+    this.deleted = true;
+    return Promise.resolve(this.completion);
+  }
 }
 
 class FakeArtifactDeletion extends ArtifactDeletionPort {
   deletedFiles: ReadonlySet<string> | null = null;
 
+  constructor(private readonly failure?: Error) { super(); }
+
   deleteMatchFiles(_matchId: string, relativeFiles: ReadonlySet<string>): Promise<void> {
     this.deletedFiles = relativeFiles;
+    if (this.failure) return Promise.reject(this.failure);
     return Promise.resolve();
   }
 }
@@ -63,29 +72,54 @@ class FixedClock extends ClockPort {
 }
 
 describe('match deletion job-state policy', () => {
-  it.each(UNFINISHED_JOB_STATUSES)('blocks deletion while a %s job is unfinished', async (status) => {
-    const commands = new FakeMatchCommands(deletionCandidate(status));
+  it('maps an atomic active-job refusal without touching files', async () => {
+    const commands = new FakeMatchCommands({ kind: 'MATCH_ACTIVE' });
     const artifacts = new FakeArtifactDeletion();
 
     await expect(new DeleteMatch(commands, artifacts, new FixedClock()).execute('match-1'))
       .rejects.toMatchObject({ code: 'MATCH_ACTIVE', status: 409 });
-    expect(commands.markedAt).toBeNull();
+    expect(commands.beganAt).toEqual(requestedAt);
     expect(commands.deleted).toBe(false);
     expect(artifacts.deletedFiles).toBeNull();
   });
 
   it('allows deletion after a job reaches a terminal state', async () => {
-    const commands = new FakeMatchCommands(deletionCandidate('COMPLETED'));
+    const commands = new FakeMatchCommands({ kind: 'READY', match: deletionSnapshot() });
     const artifacts = new FakeArtifactDeletion();
 
     await new DeleteMatch(commands, artifacts, new FixedClock()).execute('match-1');
 
-    expect(commands.markedAt).toEqual(requestedAt);
+    expect(commands.beganAt).toEqual(requestedAt);
     expect(commands.deleted).toBe(true);
     expect(artifacts.deletedFiles).toEqual(new Set([
       'uploads/match-1.dem',
       'results/match-1.json.gz',
       'reports/match-1.json.gz',
     ]));
+  });
+
+  it('leaves the database deletion marker intact when file cleanup fails', async () => {
+    const commands = new FakeMatchCommands({ kind: 'READY', match: deletionSnapshot() });
+    const artifacts = new FakeArtifactDeletion(new Error('synthetic cleanup failure'));
+
+    await expect(new DeleteMatch(commands, artifacts, new FixedClock()).execute('match-1'))
+      .rejects.toThrow('synthetic cleanup failure');
+
+    expect(commands.beganAt).toEqual(requestedAt);
+    expect(commands.deleted).toBe(false);
+  });
+
+  it('maps exhausted final database-write contention to a typed 503', async () => {
+    const commands = new FakeMatchCommands(
+      { kind: 'READY', match: deletionSnapshot() },
+      { kind: 'CONCURRENT_WRITE' },
+    );
+    const artifacts = new FakeArtifactDeletion();
+
+    await expect(new DeleteMatch(commands, artifacts, new FixedClock()).execute('match-1'))
+      .rejects.toMatchObject({ code: 'STORAGE_FAILURE', status: 503 });
+
+    expect(artifacts.deletedFiles).not.toBeNull();
+    expect(commands.deleted).toBe(true);
   });
 });
