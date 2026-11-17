@@ -6,6 +6,16 @@ import { pathToFileURL } from 'node:url';
 const FAMILY_NAMES = new Set([
   'COMBAT', 'SUPPORT', 'DEATH_RELATED', 'OBJECTIVES', 'CONTEXT', 'DIRECT_HARM',
 ]);
+const EVP_SPECIALIZATIONS = new Set([
+  'FLASH_SUPPORT',
+  'NON_FLASH_ASSIST_SUPPORT',
+  'TRADE_SPECIALIST',
+  'CLUTCH_SPECIALIST',
+  'MULTIKILL_SPECIALIST',
+  'ENTRY_SPECIALIST',
+  'UTILITY_DAMAGE_SPECIALIST',
+  'OBJECTIVE_SPECIALIST',
+]);
 const TERMINAL_JOB_STATUSES = new Set(['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']);
 const EXPECTED_MATCH_KINDS = new Set(['FULL', 'PARTIAL', 'UNSUPPORTED']);
 const EXPECTED_RATING_STATES = new Set(['AVAILABLE', 'UNAVAILABLE']);
@@ -234,6 +244,67 @@ function assertExplanation(explanation, match, ratingPlayers, expectedRatingStat
   assertMomentBindings(explanation.importantMoments, match, 'explanation.importantMoments');
 }
 
+function assertEvpReport(evp, match, rating) {
+  requireRecord(evp, 'EVP report');
+  assert.equal(evp.schemaVersion, 'evp-report@1', 'Unexpected EVP schema version.');
+  assert.equal(evp.policyId, 'evp-policy@1-experimental', 'Unexpected EVP policy.');
+  assert.equal(evp.experimental, true, 'EVP must remain explicitly experimental.');
+  assert.equal(evp.calibrated, false, 'EVP must remain explicitly uncalibrated.');
+  assert.equal(evp.matchId, match.matchId, 'EVP/match binding mismatch.');
+  assert.equal(evp.mvpExcludedFromAwards, true, 'EVP must explicitly exclude MVP.');
+  const binding = requireRecord(evp.binding, 'EVP binding');
+  for (const field of ['fileSha256', 'sourceBindingDigest', 'inputDigest']) {
+    assert.match(binding[field], /^[a-f0-9]{64}$/u, `EVP binding.${field} must be SHA-256.`);
+  }
+
+  const players = requireArray(evp.players, 'EVP players');
+  assertSameIds(players.map((player) => player.playerId), match.players.map((player) => player.id), 'EVP/player');
+  assert.equal(new Set(players.map((player) => player.playerId)).size, players.length, 'EVP contains duplicate players.');
+  const matchPlayerById = new Map(match.players.map((player) => [player.id, player]));
+  const eventIds = new Set(match.events.map((event) => event.id));
+  const roundIds = new Set(match.rounds.map((round) => round.id));
+  for (const player of players) {
+    assert.equal(player.teamId, matchPlayerById.get(player.playerId)?.teamId, `EVP team mismatch for ${player.playerId}.`);
+    const specializations = requireArray(player.specializations, `EVP player ${player.playerId} specializations`);
+    assertSameIds(
+      specializations.map((specialization) => specialization.specializationId),
+      [...EVP_SPECIALIZATIONS],
+      `EVP player ${player.playerId} specializations`,
+    );
+    for (const specialization of specializations) {
+      const evidence = requireRecord(specialization.evidence, `EVP ${player.playerId}/${specialization.specializationId} evidence`);
+      assert.ok(
+        requireArray(evidence.eventIds, 'EVP evidence eventIds').every((id) => eventIds.has(id)),
+        `EVP ${player.playerId}/${specialization.specializationId} references an unknown event.`,
+      );
+      assert.ok(
+        requireArray(evidence.roundIds, 'EVP evidence roundIds').every((id) => roundIds.has(id)),
+        `EVP ${player.playerId}/${specialization.specializationId} references an unknown round.`,
+      );
+    }
+  }
+
+  const awards = requireArray(evp.awards, 'EVP awards');
+  assert.ok(awards.length <= 2, 'EVP report contains more than two awards.');
+  assert.equal(new Set(awards.map((award) => award.playerId)).size, awards.length, 'EVP contains duplicate award players.');
+  assert.ok(awards.every((award) => award.playerId !== evp.mvpPlayerId), 'MVP was awarded EVP.');
+  const ratingMvp = rating?.awards?.mvp?.playerId ?? null;
+  assert.equal(evp.mvpPlayerId, ratingMvp, 'EVP/H2 MVP binding mismatch.');
+  awards.forEach((award, index) => {
+    assert.equal(award.position, index + 1, 'EVP award positions are not contiguous.');
+    const player = players.find((candidate) => candidate.playerId === award.playerId);
+    assert.equal(player?.status, 'AWARDED', `EVP award ${award.playerId} has no awarded candidate.`);
+    assert.equal(player?.primarySpecializationId, award.specializationId, `EVP award ${award.playerId} specialization mismatch.`);
+    assertFiniteNumber(award.achievementStrength, `EVP award ${award.playerId} achievementStrength`);
+    assertFiniteNumber(award.candidateStrength, `EVP award ${award.playerId} candidateStrength`);
+  });
+  assert.equal(
+    players.filter((player) => player.status === 'AWARDED').length,
+    awards.length,
+    'EVP candidate award statuses do not match awards.',
+  );
+}
+
 function assertExpectedUnavailableResponse(result, label) {
   assert.equal(result.ok, false, `${label} unexpectedly returned a successful payload.`);
   assert.equal(result.status, 422, `${label} must use the typed unsupported-roster response.`);
@@ -292,9 +363,10 @@ function assertReplayRound(roundPayload, replayRound, matchId) {
 async function inspectMatch(api, matchId, expectations) {
   const match = await jsonRequest(api, `/matches/${matchId}`);
   const bindings = assertMatch(match, matchId, expectations.match);
-  const [ratingResult, explanationResult, replay] = await Promise.all([
+  const [ratingResult, explanationResult, evp, replay] = await Promise.all([
     requestJson(api, `/matches/${matchId}/experimental-participation-rating`),
     requestJson(api, `/matches/${matchId}/experimental-participation-explanation`),
+    jsonRequest(api, `/matches/${matchId}/evp`),
     jsonRequest(api, `/matches/${matchId}/replay?version=2`),
   ]);
 
@@ -310,6 +382,7 @@ async function inspectMatch(api, matchId, expectations) {
     const ratingPlayers = assertRatingReport(rating, match, bindings, expectations.match, expectations.ratings);
     assertExplanation(explanation, match, ratingPlayers, expectations.ratings);
   }
+  assertEvpReport(evp, match, rating);
 
   const replayRounds = assertReplayMetadata(replay, match, bindings, expectations.replay);
   let replayRound = null;
@@ -320,7 +393,7 @@ async function inspectMatch(api, matchId, expectations) {
 
   const calculatedRatings = rating?.players.filter((player) => player.rating !== null).length ?? null;
   return {
-    snapshot: { match, rating, explanation, replay, replayRound },
+    snapshot: { match, rating, explanation, evp, replay, replayRound },
     summary: {
       matchId,
       map: match.map,
@@ -332,6 +405,7 @@ async function inspectMatch(api, matchId, expectations) {
       calculatedRatings,
       explanationPlayers: explanation?.players.length ?? null,
       importantMoments: explanation?.importantMoments.length ?? null,
+      evpAwards: evp.awards.length,
       replayAvailability: replay.availability,
       replayRounds: replay.availability === 'AVAILABLE' ? replayRounds.length : null,
       replayFrames: replay.availability === 'AVAILABLE' ? replay.totalFrames : null,
@@ -343,6 +417,7 @@ function assertStableAfterRescore(before, after) {
   assert.deepEqual(after.match, before.match, 'Canonical match changed during RESCORE.');
   assert.deepEqual(after.rating, before.rating, 'H2 result changed during same-version RESCORE.');
   assert.deepEqual(after.explanation, before.explanation, 'H2 explanation changed during same-version RESCORE.');
+  assert.deepEqual(after.evp, before.evp, 'EVP result changed during same-input RESCORE.');
   assert.deepEqual(after.replay, before.replay, 'Replay metadata changed during RESCORE.');
   assert.deepEqual(after.replayRound, before.replayRound, 'Replay round changed during RESCORE.');
 }

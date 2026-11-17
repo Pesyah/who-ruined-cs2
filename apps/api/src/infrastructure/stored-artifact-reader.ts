@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
   type CanonicalMatchResult,
+  evpPolicyId,
+  evpReportSchemaVersion,
   assertMatchRelations,
   matchDataSchema,
   scoringReportSchema,
@@ -8,6 +10,9 @@ import {
 } from '@who-ruined/contracts';
 import {
   assertCanonicalMatchResultBinding,
+  ArtifactError,
+  evpReportBinding,
+  parseEvpReport,
   parseMatchArtifact,
   parseCanonicalMatchResult,
 } from '@who-ruined/artifacts';
@@ -105,6 +110,53 @@ export class StoredArtifactReader implements ArtifactReaderPort {
       throw new ApplicationError('REPORT_POLICY_MISMATCH', 'Сохранённый отчёт создан не для H2; выполните локальный rating:rebuild.', 409);
     }
     return result;
+  }
+
+  async readEvpReport(stored: StoredMatch, canonical: CanonicalMatchResult) {
+    const pointer = [
+      stored.evpFilePath,
+      stored.evpSchemaVersion,
+      stored.evpSha256,
+      stored.evpPolicyId,
+      stored.evpBindingDigest,
+    ];
+    if (pointer.every((value) => value === null)) {
+      throw new ApplicationError('REPORT_NOT_READY', 'EVP ещё не создан для этого матча.', 409, { resource: 'EVP', reason: 'NOT_CREATED' });
+    }
+    if (pointer.some((value) => value === null)) {
+      throw new ApplicationError('REPORT_CORRUPT', 'Указатель EVP сохранён не полностью.', 409, { resource: 'EVP', reason: 'INCOMPLETE_POINTER' });
+    }
+    if (stored.evpPolicyId !== evpPolicyId) {
+      throw new ApplicationError('REPORT_POLICY_MISMATCH', 'Сохранённый EVP создан несовместимой политикой.', 409, { resource: 'EVP', reason: 'POLICY_MISMATCH' });
+    }
+    if (stored.evpSchemaVersion !== evpReportSchemaVersion) {
+      throw new ApplicationError('REPORT_CORRUPT', 'Сохранённый EVP имеет неподдерживаемую версию.', 409, { resource: 'EVP', reason: 'SCHEMA_MISMATCH' });
+    }
+    if (stored.evpBindingDigest !== evpReportBinding(canonical).inputDigest) {
+      throw new ApplicationError('REPORT_CORRUPT', 'Сохранённый EVP устарел относительно canonical result.', 409, { resource: 'EVP', reason: 'BINDING_MISMATCH' });
+    }
+
+    let decoded: unknown;
+    try {
+      decoded = await readBoundedGzipJson(stored.evpFilePath!, stored.evpSha256!);
+    } catch (error) {
+      if (error instanceof BoundedGzipError && error.reason === 'MISSING') {
+        throw new ApplicationError('REPORT_CORRUPT', 'Файл EVP отсутствует.', 409, { resource: 'EVP', reason: 'MISSING' });
+      }
+      throw new ApplicationError('REPORT_CORRUPT', 'Файл EVP повреждён или превышает допустимые лимиты.', 409, { resource: 'EVP', reason: 'CORRUPT' });
+    }
+    try {
+      const report = parseEvpReport(decoded, canonical);
+      if (report.binding.inputDigest !== stored.evpBindingDigest) {
+        throw new ArtifactError('BINDING_MISMATCH');
+      }
+      return report;
+    } catch (error) {
+      if (error instanceof ArtifactError && error.reason === 'POLICY_MISMATCH') {
+        throw new ApplicationError('REPORT_POLICY_MISMATCH', 'Сохранённый EVP создан несовместимой политикой.', 409, { resource: 'EVP', reason: 'POLICY_MISMATCH' });
+      }
+      throw new ApplicationError('REPORT_CORRUPT', 'EVP не прошёл проверку схемы, binding или ссылок evidence.', 409, { resource: 'EVP', reason: 'CORRUPT' });
+    }
   }
 
   readParticipationSidecar(artifact: MatchArtifact, rawFilePath: string | null) {

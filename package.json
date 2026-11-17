@@ -17,6 +17,7 @@
     "score:demos": "pnpm --filter @who-ruined/validation score --",
     "experimental:participation:prepare": "pnpm --filter @who-ruined/worker prepare:participation --",
     "rating:rebuild": "pnpm --filter @who-ruined/worker rating:rebuild --",
+    "evp:backfill": "pnpm --filter @who-ruined/worker evp:backfill --",
     "result:migrate": "pnpm --filter @who-ruined/worker result:migrate --",
     "architecture:check": "node scripts/check-architecture.mjs",
     "quality:guards": "node --test scripts/check-architecture.test.mjs scripts/quality-gate.test.mjs scripts/real-demo-smoke.test.mjs",

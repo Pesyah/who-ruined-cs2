@@ -29,6 +29,14 @@
 - Trade timing requires a known tick rate. The verified rule uses a five-second revenge window; “fast” is at most one second.
 - The list is capped at eight moments, so it is a highlight selection rather than an event log.
 
+## Player radar
+
+- `player-radar@1` is a match-local view of eight factual metrics, not a general skill score and not a replacement formula for H2.
+- Geometry uses fixed versioned caps. A value above a cap is reported through the raw value and `scaleExceeded`; the polygon itself cannot represent distance beyond the outer ring.
+- Match averages include only available values with the same metric definition and verified-round denominator. Partial pools are labeled and missing values remain unavailable.
+- Bomb objectives are unavailable for hostage or unknown scenarios. The current M2 contract has no equivalent hostage-objective axis.
+- MVP axis highlighting requires confirmed positive H2 evidence. H2 baseline, nonlinear, negative and unresolvable factors stay in the complete explanation and may have no highlighted point.
+
 ## Replay
 
 - Replay samples positions at 4 Hz; interpolation is a viewer aid, not additional parser evidence.

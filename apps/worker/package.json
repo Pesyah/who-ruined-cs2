@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "prepare:participation": "tsx src/prepare-participation.ts",
     "rating:rebuild": "tsx src/rebuild-rating-policy.ts",
+    "evp:backfill": "tsx src/backfill-evp.ts",
     "result:migrate": "tsx src/migrate-match-results.ts",
     "lint": "eslint src test --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",

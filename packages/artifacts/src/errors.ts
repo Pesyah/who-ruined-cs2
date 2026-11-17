@@ -9,6 +9,7 @@ export type ArtifactFailure =
   | 'INVALID_JSON'
   | 'MISSING'
   | 'NOT_FILE'
+  | 'POLICY_MISMATCH'
   | 'SCHEMA_MISMATCH'
   | 'SYMLINK'
   | 'UNSAFE_PATH';

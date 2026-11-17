@@ -14,6 +14,7 @@ PostgreSQL 17 stores metadata, state and relative pointers. Large/versioned payl
 | `reports/<matchId>/...` | legacy scoring reports |
 | `replays/<matchId>/<fileSha256>/index.m4.7-replay@1.json.gz` | replay index |
 | `replays/<matchId>/<fileSha256>/rounds/<roundId>.m4.7-replay-round@1.json.gz` | replay rounds |
+| `experimental/evp/<matchId>/<inputDigest>.evp-report@1.json.gz` | immutable experimental EVP report |
 | `tmp/parse/<leaseToken>.*.json.gz` | provisional parser child output |
 
 Paths stored in PostgreSQL are relative to the configured root. Artifact code resolves them under that root, rejects escape paths and refuses symlink components.
@@ -66,9 +67,10 @@ For a new parse job:
 
 1. the worker validates that its lease is still current;
 2. it publishes the canonical result immutably;
-3. replay publication is attempted independently and may remain unavailable;
-4. one PostgreSQL transaction verifies lease ownership, writes the match result path/SHA/policy fields and marks the job `COMPLETED` or `PARTIAL`;
-5. only after that transaction can raw-source cleanup run.
+3. it derives and publishes the bound EVP report without reparsing the demo;
+4. replay publication is attempted independently and may remain unavailable;
+5. one PostgreSQL transaction verifies lease ownership, writes the match result and EVP path/SHA/policy fields and marks the job `COMPLETED` or `PARTIAL`;
+6. only after that transaction can raw-source cleanup run.
 
 A database pointer never intentionally targets a not-yet-published result. A published but unreferenced result can exist after a crash; reconciliation removes versions that are neither referenced nor protected by an active job.
 
@@ -108,6 +110,13 @@ The native parser is synchronous inside the child, but it cannot block the worke
 The HTTP `RESCORE` job recalculates a requested compatible scoring report from the `artifact` embedded in `match-result@1`; it does not read the original demo. A legacy normalized artifact can support the older report-only path. If neither stored form is sufficient, the request fails instead of fabricating evidence.
 
 Transitioning a historical non-H2 result is a separate `rating:rebuild` operation. It reconstructs H2 from the private recompute seed inside the canonical result, publishes a new immutable result, conditionally swaps the database pointer, then removes the old owned version. The demo is not required.
+
+EVP is a sibling immutable artifact bound to canonical M2 data, participation
+coverage, scenario and the active H2 MVP. Compatible report-only RESCORE
+verifies and reuses it. `rating:rebuild` validates or republishes EVP and swaps
+both pointers atomically. Historical rows with all EVP fields null remain
+readable; the owner-only `evp:backfill` command can add EVP from the canonical
+result without reparsing or rewriting that result. See [EVP](evp.md).
 
 ## Raw demo retention
 

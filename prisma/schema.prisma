@@ -26,6 +26,11 @@ model Match {
   resultSha256       String?
   resultPolicyId     String?
   resultPolicyDigest String?
+  evpFilePath        String?
+  evpSchemaVersion   String?
+  evpSha256          String?
+  evpPolicyId        String?
+  evpBindingDigest   String?
   sourceDeletedAt    DateTime?
   deletionState      String?
   deletionRequestedAt DateTime?

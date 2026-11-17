@@ -5,12 +5,16 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NORMALIZER_VERSION } from '@who-ruined/parser-adapter';
-import { canonicalMatchResultSchema, participationExplanationReportSchema } from '@who-ruined/contracts';
+import { canonicalMatchResultSchema, evpReportSchema, participationExplanationReportSchema, playerRadarAxisIds, playerRadarReportSchema } from '@who-ruined/contracts';
+import { evpReportBinding } from '@who-ruined/artifacts';
+import { computeMatchAnalytics } from '@who-ruined/features';
 import {
   buildActiveParticipationRating,
   buildCanonicalMatchResult,
+  buildEvpReport,
   buildImportantMoments,
   buildParticipationExplanation,
+  buildPlayerRadar,
   C2S2_MODEL_VERSION,
   C2S2_POLICY_DIGEST,
   C2S2_REFERENCE_VERSION,
@@ -20,10 +24,12 @@ import {
   rebuildCanonicalMatchResult
 } from '@who-ruined/scoring';
 
-const findUnique = vi.fn();
-const readFile = vi.fn();
-const stat = vi.fn();
-const access = vi.fn();
+const { findUnique, readFile, stat, access } = vi.hoisted(() => ({
+  findUnique: vi.fn(),
+  readFile: vi.fn(),
+  stat: vi.fn(),
+  access: vi.fn(),
+}));
 vi.mock('@who-ruined/database', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@who-ruined/database')>()),
   prisma: {
@@ -102,6 +108,38 @@ function fixture(absentPlayerIndex: number | null = null) {
   return { match, analytics, artifact, sidecar };
 }
 
+function makeRadarRoundScopeConsistent(data: ReturnType<typeof fixture>): void {
+  for (const profile of data.sidecar.profiles) {
+    profile.verifiedRounds = 1;
+    profile.absentRounds = 0;
+    profile.tRounds = 1;
+    profile.ctRounds = 0;
+    profile.countedRoundIds = ['round-1'];
+    profile.excludedRoundIds = [];
+    profile.prepared.rounds = 1;
+    profile.prepared.validRounds = 1;
+    profile.prepared.tRounds = 1;
+    profile.prepared.ctRounds = 0;
+  }
+  for (const player of data.analytics.players) {
+    player.kills = 0;
+    player.deaths = 0;
+    player.assists = 0;
+    player.openingKills = 0;
+    player.openingDeaths = 0;
+    player.tradeKills = 0;
+    player.multiKills = { two: 0, three: 0, four: 0, five: 0 };
+    player.clutches = {};
+    player.bomb.plants = 0;
+    player.bomb.defuses = 0;
+    player.grenades.enemiesFlashed = 0;
+    player.grenades.enemyBlindSeconds = 0;
+    player.grenades.heEnemyDamage = 0;
+    player.grenades.infernoEnemyDamage = 0;
+    player.facts = [];
+  }
+}
+
 function legacyUnknownHostageFixture() {
   const data = fixture();
   data.match.map = 'cs_synthetic';
@@ -128,14 +166,52 @@ function mockCanonical(data: ReturnType<typeof fixture>, absentPlayerIndex: numb
   const source = absentPlayerIndex === null ? data : fixture(absentPlayerIndex);
   const result = buildCanonicalMatchResult({ artifact: source.artifact, sidecar: source.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
   const compressed = gzipSync(Buffer.from(JSON.stringify(result)));
-  findUnique.mockResolvedValue({
+  const stored = {
     id: source.match.matchId, deletionState: null, normalizedFilePath: null, rawFilePath: null,
     resultFilePath: 'results/synthetic/result.json.gz', resultSha256: createHash('sha256').update(compressed).digest('hex'),
     resultPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
-    resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest
-  });
+    resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest,
+    evpFilePath: null, evpSchemaVersion: null, evpSha256: null, evpPolicyId: null, evpBindingDigest: null,
+  };
+  findUnique.mockResolvedValue(stored);
   readFile.mockResolvedValue(compressed);
-  return { source, result };
+  return { source, result, stored };
+}
+
+function mockEvp(data = fixture(), reportOverride?: Record<string, unknown>) {
+  const result = buildCanonicalMatchResult({
+    artifact: data.artifact,
+    sidecar: data.sidecar,
+    productionReports: [],
+    sourceDemoRetained: false,
+    createdAt: '2026-10-26T00:00:00.000Z',
+  });
+  const binding = evpReportBinding(result);
+  const report = { ...buildEvpReport(result, binding), ...reportOverride };
+  const resultBytes = gzipSync(Buffer.from(JSON.stringify(result)));
+  const evpBytes = gzipSync(Buffer.from(JSON.stringify(report)));
+  const stored = {
+    id: data.match.matchId,
+    deletionState: null,
+    normalizedFilePath: null,
+    rawFilePath: null,
+    resultFilePath: 'results/synthetic/result.json.gz',
+    resultSha256: createHash('sha256').update(resultBytes).digest('hex'),
+    resultPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
+    resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest,
+    evpFilePath: 'experimental/evp/synthetic/report.json.gz',
+    evpSchemaVersion: 'evp-report@1',
+    evpSha256: createHash('sha256').update(evpBytes).digest('hex'),
+    evpPolicyId: 'evp-policy@1-experimental',
+    evpBindingDigest: binding.inputDigest,
+  };
+  findUnique.mockResolvedValue(stored);
+  readFile.mockImplementation(async (value) => (
+    String(value).includes('experimental\\evp') || String(value).includes('experimental/evp')
+      ? evpBytes
+      : resultBytes
+  ));
+  return { result, report, resultBytes, evpBytes, stored };
 }
 
 function withHistoricalH1Identity(result: ReturnType<typeof buildCanonicalMatchResult>) {
@@ -476,6 +552,104 @@ describe('P7.2-F participation rating API', () => {
     expect(response.awards.whoRuined).toMatchObject({ scope: 'DRAW_ALL_ELIGIBLE', awardPoolSize: 10 });
   });
 
+  it('reads a valid stored EVP report and preserves a valid zero-award result', async () => {
+    const { report } = mockEvp();
+
+    await expect(createTestApiFacade().evp('synthetic-participation-match'))
+      .resolves.toEqual(JSON.parse(JSON.stringify(report)));
+    expect(report.awards).toEqual([]);
+    expect(report.mvpPlayerId).not.toBeNull();
+  });
+
+  it('distinguishes a historical result without EVP from missing and corrupt EVP artifacts', async () => {
+    const mocked = mockEvp();
+    findUnique.mockResolvedValue({
+      ...mocked.stored,
+      evpFilePath: null,
+      evpSchemaVersion: null,
+      evpSha256: null,
+      evpPolicyId: null,
+      evpBindingDigest: null,
+    });
+    await expect(createTestApiFacade().evp(mocked.result.artifact.match.matchId))
+      .rejects.toMatchObject({
+        code: 'REPORT_NOT_READY', status: 409, details: { resource: 'EVP', reason: 'NOT_CREATED' },
+      });
+
+    mockEvp();
+    readFile.mockImplementation(async (value) => {
+      if (String(value).includes('experimental\\evp') || String(value).includes('experimental/evp')) {
+        throw Object.assign(new Error('synthetic missing file'), { code: 'ENOENT' });
+      }
+      return mocked.resultBytes;
+    });
+    await expect(createTestApiFacade().evp(mocked.result.artifact.match.matchId))
+      .rejects.toMatchObject({
+        code: 'REPORT_CORRUPT', status: 409, details: { resource: 'EVP', reason: 'MISSING' },
+      });
+
+    const invalidBytes = Buffer.from('not gzip');
+    findUnique.mockResolvedValue({
+      ...mocked.stored,
+      evpSha256: createHash('sha256').update(invalidBytes).digest('hex'),
+    });
+    readFile.mockImplementation(async (value) => (
+      String(value).includes('experimental\\evp') || String(value).includes('experimental/evp')
+        ? invalidBytes
+        : mocked.resultBytes
+    ));
+    await expect(createTestApiFacade().evp(mocked.result.artifact.match.matchId))
+      .rejects.toMatchObject({
+        code: 'REPORT_CORRUPT', status: 409, details: { resource: 'EVP', reason: 'CORRUPT' },
+      });
+  });
+
+  it('rejects stale match binding and a wrong EVP policy without leaking paths', async () => {
+    const stale = mockEvp(fixture(), { matchId: 'another-match' });
+    await expect(createTestApiFacade().evp(stale.result.artifact.match.matchId))
+      .rejects.toMatchObject({ code: 'REPORT_CORRUPT', status: 409 });
+
+    const wrongPolicy = mockEvp();
+    findUnique.mockResolvedValue({ ...wrongPolicy.stored, evpPolicyId: 'other-policy' });
+    await expect(createTestApiFacade().evp(wrongPolicy.result.artifact.match.matchId))
+      .rejects.toMatchObject({
+        code: 'REPORT_POLICY_MISMATCH', status: 409,
+        details: { resource: 'EVP', reason: 'POLICY_MISMATCH' },
+      });
+  });
+
+  it('serves EVP through the read-only Nest route and documents its OpenAPI schema', async () => {
+    const mocked = mockEvp();
+    const app = await NestFactory.create(AppModule, { logger: false });
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalFilters(new SafeExceptionFilter());
+    await app.init();
+    try {
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/matches/${mocked.result.artifact.match.matchId}/evp`)
+        .expect(200);
+      expect(response.body.schemaVersion).toBe('evp-report@1');
+      expect(response.body.awards).toEqual([]);
+      const document = SwaggerModule.createDocument(
+        app,
+        new DocumentBuilder().setTitle('test').setVersion('test').build(),
+      );
+      expect(document.paths['/api/v1/matches/{id}/evp']?.get?.responses?.['200']).toBeDefined();
+      findUnique.mockResolvedValue({ ...mocked.stored, evpPolicyId: 'other-policy' });
+      const incompatible = await request(app.getHttpServer())
+        .get(`/api/v1/matches/${mocked.result.artifact.match.matchId}/evp`)
+        .expect(409);
+      expect(incompatible.body.error).toMatchObject({
+        code: 'REPORT_POLICY_MISMATCH',
+        details: { resource: 'EVP', reason: 'POLICY_MISMATCH' },
+      });
+      expect(JSON.stringify(incompatible.body)).not.toContain('experimental/evp');
+      expect(JSON.stringify(incompatible.body)).not.toContain('report.json.gz');
+    } finally {
+      await app.close();
+    }
+  });
+
   it('serves the new contract through the actual Nest HTTP route and safe error envelope', async () => {
     const data = fixture(); mockStored(data);
     const app = await NestFactory.create(AppModule, { logger: false });
@@ -506,6 +680,462 @@ describe('P7.2-F participation rating API', () => {
       delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
       const disabled = await request(app.getHttpServer()).get(`/api/v1/matches/${data.match.matchId}/experimental-participation-explanation`).expect(404);
       expect(disabled.body.error.code).toBe('EXPERIMENTAL_PARTICIPATION_RATING_DISABLED');
+    } finally { await app.close(); }
+  });
+
+  it('projects the stable eight-axis radar with exact M2 values, fixed geometry and partial comparison pools', () => {
+    const data = fixture();
+    makeRadarRoundScopeConsistent(data);
+    const first = data.analytics.players[0]!;
+    const opponents = data.match.players.filter((player) => player.teamId !== first.teamId);
+    const teammate = data.match.players.find((player) => player.teamId === first.teamId && player.id !== first.playerId)!;
+    const death = (id: string, tick: number, actorId: string, targetId: string, assisterId: string | null, rowIndex: number) => ({
+      id, kind: 'PLAYER_DEATH', roundId: 'round-1', tick, actorId, targetId, assisterId, attrs: { assistedFlash: false },
+      context: { phase: 'LIVE' as const, actorTeamId: first.teamId, targetTeamId: opponents[0]!.teamId, actorSide: 'T' as const, targetSide: 'CT' as const, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null },
+      source: { eventName: 'player_death', rowIndex },
+    });
+    const events = [
+      death('radar-kill-1', 20, first.playerId, opponents[0]!.id, null, 0),
+      death('radar-kill-2', 30, first.playerId, opponents[1]!.id, null, 1),
+      death('radar-assist', 40, teammate.id, opponents[2]!.id, first.playerId, 2),
+      { id: 'radar-blind', kind: 'PLAYER_BLIND', roundId: 'round-1', tick: 10, actorId: first.playerId, targetId: opponents[0]!.id, assisterId: null, attrs: { blindDuration: 2 }, context: { phase: 'LIVE' as const, actorTeamId: first.teamId, targetTeamId: opponents[0]!.teamId, actorSide: 'T' as const, targetSide: 'CT' as const, aliveByTeamId: null, secondsFromFreezeEnd: 0, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'player_blind', rowIndex: 3 } },
+      { id: 'radar-hurt', kind: 'PLAYER_HURT', roundId: 'round-1', tick: 15, actorId: first.playerId, targetId: opponents[0]!.id, assisterId: null, attrs: { rawHealthDamage: 25, healthAfter: 75, weapon: 'hegrenade' }, context: { phase: 'LIVE' as const, actorTeamId: first.teamId, targetTeamId: opponents[0]!.teamId, actorSide: 'T' as const, targetSide: 'CT' as const, aliveByTeamId: null, secondsFromFreezeEnd: 0, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'player_hurt', rowIndex: 4 } },
+      { id: 'radar-plant', kind: 'BOMB_PLANTED', roundId: 'round-1', tick: 50, actorId: first.playerId, targetId: null, assisterId: null, attrs: {}, context: { phase: 'LIVE' as const, actorTeamId: first.teamId, targetTeamId: null, actorSide: 'T' as const, targetSide: null, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'PLANTED' as const, actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'bomb_planted', rowIndex: 5 } },
+      { id: 'radar-defuse', kind: 'BOMB_DEFUSED', roundId: 'round-1', tick: 60, actorId: first.playerId, targetId: null, assisterId: null, attrs: {}, context: { phase: 'LIVE' as const, actorTeamId: first.teamId, targetTeamId: null, actorSide: 'T' as const, targetSide: null, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'DEFUSED' as const, actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'bomb_defused', rowIndex: 6 } },
+    ];
+    data.match.events.push(...events);
+    first.kills = 2;
+    first.multiKills = { two: 1, three: 0, four: 0, five: 0 };
+    first.assists = 1;
+    first.grenades.enemiesFlashed = 1;
+    first.grenades.enemyBlindSeconds = 2;
+    first.tradeKills = 1;
+    first.openingKills = 1;
+    first.grenades.heEnemyDamage = 25;
+    first.bomb.plants = 1;
+    first.bomb.defuses = 1;
+    first.facts.push(
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'KILL', roundId: 'round-1', eventId: 'radar-kill-1', value: null },
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'KILL', roundId: 'round-1', eventId: 'radar-kill-2', value: null },
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'TRADE_KILL', roundId: 'round-1', eventId: 'radar-kill-2', value: null },
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'ASSIST', roundId: 'round-1', eventId: 'radar-assist', value: null },
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'BOMB_PLANT', roundId: 'round-1', eventId: 'radar-plant', value: null },
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'BOMB_DEFUSE', roundId: 'round-1', eventId: 'radar-defuse', value: null },
+    );
+    data.analytics.players[1]!.assists = null;
+    data.analytics.availability.damage = 'PARTIAL';
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+
+    const radar = buildPlayerRadar(canonicalResult, null);
+    expect(playerRadarReportSchema.parse(radar)).toEqual(radar);
+    expect(radar.axisDefinitions.map((row) => row.axisId)).toEqual(playerRadarAxisIds);
+    expect(radar.players[0]!.axes.map((row) => row.axisId)).toEqual(playerRadarAxisIds);
+    const axes = new Map(radar.players.find((row) => row.playerId === first.playerId)!.axes.map((row) => [row.axisId, row]));
+    expect(axes.get('MULTIKILL')!.rawValue).toBe(10);
+    expect(axes.get('ASSISTS')!.rawValue).toBe(10);
+    expect(axes.get('FLASH')!.rawValue).toBe(2);
+    expect(axes.get('UTILITY')!.rawValue).toBe(25);
+    expect(axes.get('UTILITY')!.scaleExceeded).toBe(true);
+    expect(axes.get('UTILITY')!.geometryValue).toBe(1);
+    expect(axes.get('OBJECTIVES')!.rawValue).toBe(20);
+    expect(axes.get('FLASH')!.geometryValue).toBe(0.5);
+    expect(radar.matchComparisons.find((row) => row.axisId === 'ASSISTS')).toMatchObject({ comparisonPoolSize: 9, incompleteCoverage: true });
+    expect(radar.matchComparisons.find((row) => row.axisId === 'MULTIKILL')!.average).toBe(1);
+    expect(radar.matchComparisons.find((row) => row.axisId === 'UTILITY')!.incompleteCoverage).toBe(true);
+    expect(radar.players[0]!.h2Explanation.families).toHaveLength(6);
+    expect(radar.players[0]!.h2Explanation.families.some((family) => family.finalAttribution < 0)).toBe(true);
+    expect(radar.players[0]!.h2Explanation.families.some((family) => family.sources.some((source) => source.kind === 'BASELINE'))).toBe(true);
+    expect(radar.players.find((player) => player.awardState === 'MVP')!.axes.every((axis) => axis.mvpAttribution === null)).toBe(true);
+    expect(JSON.stringify(radar)).not.toMatch(/NaN|Infinity/);
+
+    const reordered = structuredClone(canonicalResult);
+    reordered.artifact.match.players.reverse();
+    reordered.artifact.analytics.players.reverse();
+    expect(buildPlayerRadar(reordered, null)).toEqual(radar);
+  });
+
+  it('uses the same verified round set for every radar numerator and denominator', () => {
+    const data = fixture();
+    const teamA = data.match.teams[0]!;
+    const teamB = data.match.teams[1]!;
+    const actor = data.match.players.find((player) => player.id === teamA.playerIds[0])!;
+    const assister = actor;
+    const roundTemplate = data.match.rounds[0]!;
+    data.match.rounds = [
+      { ...roundTemplate, id: 'round-1', ordinal: 1, startTick: 0, freezeEndTick: 10, endTick: 1000 },
+      { ...roundTemplate, id: 'round-2', ordinal: 2, startTick: 1001, freezeEndTick: 1010, endTick: 2000 },
+    ];
+    const roundEvents = (roundId: string, offset: number) => {
+      const rows: typeof data.match.events = [];
+      const death = (id: string, tick: number, killer: string, victim: string, assist: string | null) => rows.push({
+        id: `${roundId}-${id}`, kind: 'PLAYER_DEATH', roundId, tick: offset + tick, actorId: killer, targetId: victim, assisterId: assist,
+        attrs: { assistedFlash: false }, context: { phase: 'LIVE', actorTeamId: data.match.players.find((player) => player.id === killer)!.teamId, targetTeamId: data.match.players.find((player) => player.id === victim)!.teamId, actorSide: 'T', targetSide: 'CT', aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED', actorEquipmentValue: null, actorMoney: null },
+        source: { eventName: 'player_death', rowIndex: rows.length },
+      });
+      death('opening', 20, actor.id, teamB.playerIds[0]!, null);
+      death('ally-death', 30, teamB.playerIds[1]!, teamA.playerIds[1]!, null);
+      death('trade', 31, actor.id, teamB.playerIds[1]!, null);
+      death('assisted', 40, teamA.playerIds[2]!, teamB.playerIds[2]!, assister.id);
+      death('ally-3-death', 50, teamB.playerIds[3]!, teamA.playerIds[2]!, null);
+      death('ally-4-death', 60, teamB.playerIds[4]!, teamA.playerIds[3]!, null);
+      death('ally-5-death', 70, teamB.playerIds[3]!, teamA.playerIds[4]!, null);
+      death('clutch-1', 80, actor.id, teamB.playerIds[3]!, null);
+      death('clutch-2', 90, actor.id, teamB.playerIds[4]!, null);
+      rows.push(
+        { id: `${roundId}-blind`, kind: 'PLAYER_BLIND', roundId, tick: offset + 15, actorId: actor.id, targetId: teamB.playerIds[0]!, assisterId: null, attrs: { blindDuration: 2 }, context: { phase: 'LIVE', actorTeamId: teamA.id, targetTeamId: teamB.id, actorSide: 'T', targetSide: 'CT', aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED', actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'player_blind', rowIndex: rows.length } },
+        { id: `${roundId}-hurt`, kind: 'PLAYER_HURT', roundId, tick: offset + 16, actorId: actor.id, targetId: teamB.playerIds[0]!, assisterId: null, attrs: { rawHealthDamage: 25, healthAfter: 75, weapon: 'hegrenade' }, context: { phase: 'LIVE', actorTeamId: teamA.id, targetTeamId: teamB.id, actorSide: 'T', targetSide: 'CT', aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED', actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'player_hurt', rowIndex: rows.length } },
+        { id: `${roundId}-plant`, kind: 'BOMB_PLANTED', roundId, tick: offset + 100, actorId: actor.id, targetId: null, assisterId: null, attrs: {}, context: { phase: 'LIVE', actorTeamId: teamA.id, targetTeamId: null, actorSide: 'T', targetSide: null, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'PLANTED', actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'bomb_planted', rowIndex: rows.length } },
+        { id: `${roundId}-defuse`, kind: 'BOMB_DEFUSED', roundId, tick: offset + 110, actorId: actor.id, targetId: null, assisterId: null, attrs: {}, context: { phase: 'LIVE', actorTeamId: teamA.id, targetTeamId: null, actorSide: 'T', targetSide: null, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'DEFUSED', actorEquipmentValue: null, actorMoney: null }, source: { eventName: 'bomb_defused', rowIndex: rows.length } },
+      );
+      return rows;
+    };
+    data.match.events = [...roundEvents('round-1', 0), ...roundEvents('round-2', 1000)];
+    data.analytics = computeMatchAnalytics(data.match, '2026-10-24T00:00:00.000Z');
+    data.artifact.analytics = data.analytics;
+    data.sidecar.profiles.forEach((profile, index) => {
+      profile.verifiedRounds = index === 1 ? 2 : 1;
+      profile.absentRounds = index === 1 ? 0 : 1;
+      profile.countedRoundIds = index === 1 ? ['round-1', 'round-2'] : ['round-1'];
+      profile.excludedRoundIds = index === 1 ? [] : ['round-2'];
+      profile.prepared.rounds = profile.verifiedRounds;
+      profile.prepared.validRounds = 2;
+    });
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const radar = buildPlayerRadar(canonicalResult, null);
+    const axes = new Map(radar.players.find((player) => player.playerId === actor.id)!.axes.map((axis) => [axis.axisId, axis]));
+    expect(Object.fromEntries(playerRadarAxisIds.map((axisId) => [axisId, axes.get(axisId)!.rawValue]))).toEqual({
+      MULTIKILL: 10,
+      ASSISTS: 10,
+      FLASH: 2,
+      TRADES: 30,
+      CLUTCH: 10,
+      ENTRY: 10,
+      UTILITY: 25,
+      OBJECTIVES: 20,
+    });
+    expect(axes.get('MULTIKILL')!.evidenceRoundIds).toEqual(['round-1']);
+    expect(radar.players.find((player) => player.playerId === teamA.playerIds[1])!.axes[0]!.verifiedRounds).toBe(2);
+
+    const incomplete = structuredClone(canonicalResult);
+    incomplete.internal.recomputeSeed.profiles.find((profile) => profile.playerId === teamB.playerIds[4])!.countedRoundIds = [];
+    const withoutUncertainPlayer = buildPlayerRadar(incomplete, null);
+    expect(withoutUncertainPlayer.players.find((player) => player.playerId === teamB.playerIds[4])!.axes.every((axis) => axis.reasonIfUnavailable === 'VERIFIED_ROUND_IDS_UNAVAILABLE')).toBe(true);
+    const comparison = withoutUncertainPlayer.matchComparisons.find((row) => row.axisId === 'MULTIKILL')!;
+    const comparable = withoutUncertainPlayer.players.flatMap((player) => {
+      const axis = player.axes.find((row) => row.axisId === 'MULTIKILL')!;
+      return axis.rawValue === null ? [] : [axis.rawValue];
+    });
+    expect(comparison.comparisonPoolSize).toBe(comparable.length);
+    expect(comparison.average).toBe(comparable.reduce((sum, value) => sum + value, 0) / comparable.length);
+  });
+
+  it('keeps FLASH unavailable for an incomplete enemy duration without hiding confirmed zero or other players', () => {
+    const data = fixture();
+    makeRadarRoundScopeConsistent(data);
+    const teamA = data.match.teams[0]!;
+    const teamB = data.match.teams[1]!;
+    const blind = (id: string, rowIndex: number, actorId: string, targetId: string, blindDuration: number | null) => {
+      const actor = data.match.players.find((player) => player.id === actorId)!;
+      const target = data.match.players.find((player) => player.id === targetId)!;
+      return {
+        id, kind: 'PLAYER_BLIND' as const, roundId: 'round-1', tick: 20 + rowIndex,
+        actorId, targetId, assisterId: null, attrs: { blindDuration },
+        context: { phase: 'LIVE' as const, actorTeamId: actor.teamId, targetTeamId: target.teamId, actorSide: 'T' as const, targetSide: 'CT' as const, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null },
+        source: { eventName: 'player_blind', rowIndex },
+      };
+    };
+    const completeId = 'flash-complete';
+    const friendlyId = 'flash-friendly';
+    const incompleteId = 'flash-duration-missing';
+    const otherCompleteId = 'flash-other-complete';
+    data.match.events = [
+      blind(completeId, 0, teamA.playerIds[0]!, teamB.playerIds[0]!, 2),
+      blind(friendlyId, 1, teamA.playerIds[1]!, teamA.playerIds[4]!, 3),
+      blind(incompleteId, 2, teamA.playerIds[2]!, teamB.playerIds[1]!, null),
+      blind(otherCompleteId, 3, teamA.playerIds[3]!, teamB.playerIds[2]!, 4),
+    ];
+    data.analytics = computeMatchAnalytics(data.match, '2026-10-24T00:00:00.000Z');
+    data.artifact.analytics = data.analytics;
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const radar = buildPlayerRadar(canonicalResult, null);
+    const flash = (playerId: string) => radar.players.find((player) => player.playerId === playerId)!.axes.find((axis) => axis.axisId === 'FLASH')!;
+
+    expect(flash(teamA.playerIds[0]!)).toMatchObject({ availability: 'AVAILABLE', rawValue: 2, evidenceEventIds: [completeId] });
+    expect(flash(teamA.playerIds[1]!)).toMatchObject({ availability: 'AVAILABLE', rawValue: 0, evidenceEventIds: [] });
+    expect(flash(teamA.playerIds[2]!)).toMatchObject({ availability: 'UNAVAILABLE', reasonIfUnavailable: 'FLASH_DATA_UNAVAILABLE', rawValue: null, geometryValue: null });
+    expect(flash(teamA.playerIds[3]!)).toMatchObject({ availability: 'AVAILABLE', rawValue: 4, evidenceEventIds: [otherCompleteId] });
+    expect(flash(teamA.playerIds[1]!).evidenceEventIds).not.toContain(friendlyId);
+    const comparison = radar.matchComparisons.find((row) => row.axisId === 'FLASH')!;
+    expect(comparison).toMatchObject({ availability: 'AVAILABLE', comparisonPoolSize: 9, average: 6 / 9, incompleteCoverage: true });
+  });
+
+  it('fails UTILITY closed per affected player while preserving independent damage, zero and the comparison pool', () => {
+    const data = fixture();
+    makeRadarRoundScopeConsistent(data);
+    const teamA = data.match.teams[0]!;
+    const teamB = data.match.teams[1]!;
+    const hurt = (
+      id: string,
+      rowIndex: number,
+      actorId: string,
+      targetId: string,
+      weapon: string,
+      rawHealthDamage: number | null,
+      healthAfter: number | null,
+    ) => {
+      const actor = data.match.players.find((player) => player.id === actorId)!;
+      const target = data.match.players.find((player) => player.id === targetId);
+      return {
+        id, kind: 'PLAYER_HURT' as const, roundId: 'round-1', tick: 30 + rowIndex,
+        actorId, targetId, assisterId: null, attrs: { weapon, rawHealthDamage, healthAfter },
+        context: { phase: 'LIVE' as const, actorTeamId: actor.teamId, targetTeamId: target?.teamId ?? null, actorSide: 'T' as const, targetSide: target ? 'CT' as const : null, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null },
+        source: { eventName: 'player_hurt', rowIndex },
+      };
+    };
+    const heId = 'utility-he-complete';
+    const infernoId = 'utility-inferno-derived-health';
+    const friendlyId = 'utility-friendly';
+    data.match.events = [
+      hurt(heId, 0, teamA.playerIds[0]!, teamB.playerIds[0]!, 'hegrenade', 25, 75),
+      hurt(infernoId, 1, teamA.playerIds[0]!, teamB.playerIds[1]!, 'inferno', 5, null),
+      hurt(friendlyId, 2, teamA.playerIds[0]!, teamA.playerIds[4]!, 'hegrenade', 10, 90),
+      hurt('utility-he-missing-damage', 3, teamA.playerIds[1]!, teamB.playerIds[2]!, 'hegrenade', null, null),
+      hurt('utility-inferno-missing-damage', 4, teamA.playerIds[2]!, teamB.playerIds[3]!, 'inferno', null, null),
+      hurt('utility-invalid-health-after', 5, teamA.playerIds[3]!, teamB.playerIds[4]!, 'hegrenade', 10, 150),
+      hurt('utility-corrupt-ledger-followup', 6, teamA.playerIds[4]!, teamB.playerIds[4]!, 'hegrenade', 10, 90),
+      hurt('utility-unknown-relation', 7, teamB.playerIds[0]!, 'unknown-player', 'hegrenade', 10, 90),
+    ];
+    data.analytics = computeMatchAnalytics(data.match, '2026-10-24T00:00:00.000Z');
+    data.artifact.analytics = data.analytics;
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const activeRatingBefore = structuredClone(canonicalResult.activeRating);
+    const radar = buildPlayerRadar(canonicalResult, null);
+    const utility = (playerId: string) => radar.players.find((player) => player.playerId === playerId)!.axes.find((axis) => axis.axisId === 'UTILITY')!;
+
+    expect(utility(teamA.playerIds[0]!)).toMatchObject({
+      availability: 'AVAILABLE', rawValue: 30,
+      evidenceEventIds: [heId, infernoId],
+      secondaryMetrics: [
+        { metricId: 'HE_ENEMY_DAMAGE', value: 25, unit: 'DAMAGE' },
+        { metricId: 'INFERNO_ENEMY_DAMAGE', value: 5, unit: 'DAMAGE' },
+      ],
+    });
+    expect(utility(teamA.playerIds[0]!).evidenceEventIds).not.toContain(friendlyId);
+    for (const playerId of [...teamA.playerIds.slice(1), teamB.playerIds[0]!]) {
+      expect(utility(playerId)).toMatchObject({ availability: 'UNAVAILABLE', reasonIfUnavailable: 'DAMAGE_DATA_UNAVAILABLE', rawValue: null });
+    }
+    expect(utility(teamB.playerIds[1]!)).toMatchObject({ availability: 'AVAILABLE', rawValue: 0 });
+    const comparison = radar.matchComparisons.find((row) => row.axisId === 'UTILITY')!;
+    expect(comparison).toMatchObject({ availability: 'AVAILABLE', comparisonPoolSize: 5, average: 6, incompleteCoverage: true });
+    expect(radar.axisDefinitions.map((row) => row.axisId)).toEqual(playerRadarAxisIds);
+    expect(canonicalResult.activeRating).toEqual(activeRatingBefore);
+  });
+
+  it('keeps bomb objectives unavailable for an unknown scenario instead of fabricating zero', () => {
+    const data = legacyUnknownHostageFixture();
+    makeRadarRoundScopeConsistent(data);
+    data.match.map = null;
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const radar = buildPlayerRadar(canonicalResult, null);
+    const comparison = radar.matchComparisons.find((row) => row.axisId === 'OBJECTIVES')!;
+    expect(comparison).toMatchObject({ availability: 'UNAVAILABLE', reasonIfUnavailable: 'COMPARISON_POOL_EMPTY', average: null, comparisonPoolSize: 0 });
+    expect(radar.players.every((player) => {
+      const objective = player.axes.find((axis) => axis.axisId === 'OBJECTIVES')!;
+      return objective.availability === 'UNAVAILABLE' && objective.reasonIfUnavailable === 'SCENARIO_UNKNOWN' && objective.rawValue === null;
+    })).toBe(true);
+  });
+
+  it('highlights only confirmed positive H2 evidence for the MVP and does not assign a decisive-cause claim', () => {
+    const data = fixture();
+    const initial = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const mvpPlayerId = initial.activeRating.awards.mvp.playerId!;
+    const mvp = data.match.players.find((player) => player.id === mvpPlayerId)!;
+    const target = data.match.players.find((player) => player.teamId !== mvp.teamId)!;
+    const event = {
+      id: 'confirmed-opening-event', kind: 'PLAYER_DEATH', roundId: 'round-1', tick: 20,
+      actorId: mvp.id, targetId: target.id, assisterId: null, attrs: {},
+      context: { phase: 'LIVE' as const, actorTeamId: mvp.teamId, targetTeamId: target.teamId, actorSide: 'T' as const, targetSide: 'CT' as const, aliveByTeamId: null, secondsFromFreezeEnd: 0.15625, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null },
+      source: { eventName: 'player_death', rowIndex: 0 },
+    };
+    data.match.events.push(event);
+    const analytics = data.analytics.players.find((player) => player.playerId === mvp.id)!;
+    analytics.facts.push({ category: 'POSITIVE_CONTRIBUTION', kind: 'KILL', roundId: 'round-1', eventId: event.id, value: 1 });
+    analytics.openingKills = 1;
+    const profile = data.sidecar.profiles.find((row) => row.playerId === mvp.id)!;
+    const contribution = { anchorId: event.id, chosenAxis: 'enemyHp', family: 'COMBAT' as const, base: 0.001, tags: ['OPENING'] };
+    profile.prepared.p4BPlus.episodeContributions = [...(profile.prepared.p4BPlus.episodeContributions ?? []), contribution];
+    profile.prepared.p4CPlus.episodeContributions = [...(profile.prepared.p4CPlus.episodeContributions ?? []), contribution];
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+
+    const radar = buildPlayerRadar(canonicalResult, null);
+    const entry = radar.players.find((player) => player.playerId === mvp.id)!.axes.find((axis) => axis.axisId === 'ENTRY')!;
+    expect(entry.mvpAttribution).toMatchObject({
+      reasonCode: 'CONFIRMED_POSITIVE_H2_EVIDENCE',
+      terminologyCode: 'POSITIVE_H2_FACTOR_NOT_DECISIVE_CAUSE',
+      evidenceEventIds: [event.id],
+    });
+    expect(entry.mvpAttribution!.families.some((family) => family.family === 'COMBAT' && family.familyFinalAttribution > 0)).toBe(true);
+  });
+
+  it('does not turn same-round assists, another player multikill, or aggregate H2 evidence into MVP multikill attribution', () => {
+    const data = fixture();
+    makeRadarRoundScopeConsistent(data);
+    const initial = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const mvpId = initial.activeRating.awards.mvp.playerId!;
+    const mvp = data.match.players.find((player) => player.id === mvpId)!;
+    const teammate = data.match.players.find((player) => player.teamId === mvp.teamId && player.id !== mvp.id)!;
+    const opponents = data.match.players.filter((player) => player.teamId !== mvp.teamId);
+    const death = (id: string, tick: number, actorId: string, targetId: string, assisterId: string | null, rowIndex: number) => ({
+      id, kind: 'PLAYER_DEATH', roundId: 'round-1', tick, actorId, targetId, assisterId, attrs: { assistedFlash: false },
+      context: { phase: 'LIVE' as const, actorTeamId: data.match.players.find((player) => player.id === actorId)!.teamId, targetTeamId: data.match.players.find((player) => player.id === targetId)!.teamId, actorSide: 'T' as const, targetSide: 'CT' as const, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null },
+      source: { eventName: 'player_death', rowIndex },
+    });
+    const mvpKill = death('mvp-single-kill', 10, mvp.id, opponents[0]!.id, null, 0);
+    const assisted = death('mvp-assist', 20, teammate.id, opponents[1]!.id, mvp.id, 1);
+    const otherMultikill = [
+      death('other-kill-1', 30, teammate.id, opponents[2]!.id, null, 2),
+      death('other-kill-2', 40, teammate.id, opponents[3]!.id, null, 3),
+    ];
+    data.match.events.push(mvpKill, assisted, ...otherMultikill);
+    const mvpAnalytics = data.analytics.players.find((player) => player.playerId === mvp.id)!;
+    mvpAnalytics.kills = 1;
+    mvpAnalytics.assists = 1;
+    mvpAnalytics.openingKills = 1;
+    mvpAnalytics.facts.push(
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'KILL', roundId: 'round-1', eventId: mvpKill.id, value: null },
+      { category: 'POSITIVE_CONTRIBUTION', kind: 'ASSIST', roundId: 'round-1', eventId: assisted.id, value: null },
+    );
+    const teammateAnalytics = data.analytics.players.find((player) => player.playerId === teammate.id)!;
+    teammateAnalytics.kills = 3;
+    teammateAnalytics.multiKills.two = 0;
+    teammateAnalytics.multiKills.three = 1;
+    teammateAnalytics.facts.push(...[assisted, ...otherMultikill].map((event) => ({ category: 'POSITIVE_CONTRIBUTION' as const, kind: 'KILL', roundId: 'round-1', eventId: event.id, value: null })));
+    const profile = data.sidecar.profiles.find((row) => row.playerId === mvp.id)!;
+    const contributions = [
+      { anchorId: mvpKill.id, chosenAxis: 'enemyHp', family: 'COMBAT' as const, base: 0.001, tags: [] },
+      { anchorId: assisted.id, chosenAxis: 'assist', family: 'SUPPORT' as const, base: 0.001, tags: [] },
+      { anchorId: 'round-1:aggregate-only', chosenAxis: 'aggregate', family: 'COMBAT' as const, base: 0.001, tags: [] },
+    ];
+    profile.prepared.p4BPlus.episodeContributions = [...(profile.prepared.p4BPlus.episodeContributions ?? []), ...contributions];
+    profile.prepared.p4CPlus.episodeContributions = [...(profile.prepared.p4CPlus.episodeContributions ?? []), ...contributions];
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const mvpRadar = buildPlayerRadar(canonicalResult, null).players.find((player) => player.playerId === mvp.id)!;
+    expect(mvpRadar.axes.find((axis) => axis.axisId === 'ASSISTS')!.mvpAttribution?.evidenceEventIds).toEqual([assisted.id]);
+    expect(mvpRadar.axes.find((axis) => axis.axisId === 'ENTRY')!.mvpAttribution?.evidenceEventIds).toEqual([mvpKill.id]);
+    expect(mvpRadar.axes.find((axis) => axis.axisId === 'MULTIKILL')!.mvpAttribution).toBeNull();
+  });
+
+  it('requires a positive stored context factor and an exact player event before highlighting MVP context', () => {
+    const data = fixture();
+    makeRadarRoundScopeConsistent(data);
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const mvpId = canonicalResult.activeRating.awards.mvp.playerId!;
+    const mvp = canonicalResult.artifact.match.players.find((player) => player.id === mvpId)!;
+    const opponents = canonicalResult.artifact.match.players.filter((player) => player.teamId !== mvp.teamId);
+    const kills = opponents.slice(0, 2).map((target, index) => ({
+      id: `context-multikill-${index + 1}`, kind: 'PLAYER_DEATH', roundId: 'round-1', tick: 20 + index, actorId: mvp.id, targetId: target.id, assisterId: null, attrs: {},
+      context: { phase: 'LIVE' as const, actorTeamId: mvp.teamId, targetTeamId: target.teamId, actorSide: 'T' as const, targetSide: 'CT' as const, aliveByTeamId: null, secondsFromFreezeEnd: 1, bombState: 'NOT_PLANTED' as const, actorEquipmentValue: null, actorMoney: null },
+      source: { eventName: 'player_death', rowIndex: index },
+    }));
+    canonicalResult.artifact.match.events.push(...kills);
+    const analytics = canonicalResult.artifact.analytics.players.find((player) => player.playerId === mvp.id)!;
+    analytics.kills = 2;
+    analytics.multiKills = { two: 1, three: 0, four: 0, five: 0 };
+    analytics.openingKills = 1;
+    analytics.facts.push(...kills.map((event) => ({ category: 'POSITIVE_CONTRIBUTION' as const, kind: 'KILL', roundId: 'round-1', eventId: event.id, value: null })));
+    const rating = canonicalResult.activeRating.players.find((player) => player.playerId === mvp.id)!.rating!;
+    const originalContext = rating.finalAttribution.CONTEXT;
+    rating.rawFamilyInputs.CONTEXT = 0.001;
+    rating.finalAttribution.CONTEXT = 0.01;
+    rating.value += 0.01 - originalContext;
+    rating.kernelDetails.context.winningTagByAnchor = { [kills[0]!.id]: 'MULTI_KILL' };
+    rating.kernelDetails.factorContributions.CONTEXT = { MULTI_KILL: -0.001, OPENING: 0.002 };
+
+    const negativeFactor = buildPlayerRadar(canonicalResult, null);
+    const negativeMvp = negativeFactor.players.find((player) => player.playerId === mvp.id)!;
+    expect(negativeMvp.h2Explanation.families).toHaveLength(6);
+    expect(negativeMvp.axes.find((axis) => axis.axisId === 'MULTIKILL')!.mvpAttribution).toBeNull();
+
+    const positive = structuredClone(canonicalResult);
+    const positiveRating = positive.activeRating.players.find((player) => player.playerId === mvp.id)!.rating!;
+    positiveRating.kernelDetails.factorContributions.CONTEXT.MULTI_KILL = 0.001;
+    const positiveMvp = buildPlayerRadar(positive, null).players.find((player) => player.playerId === mvp.id)!;
+    expect(positiveMvp.axes.find((axis) => axis.axisId === 'MULTIKILL')!.mvpAttribution?.evidenceEventIds).toEqual([kills[0]!.id]);
+
+    const unknownAnchor = structuredClone(positive);
+    unknownAnchor.activeRating.players.find((player) => player.playerId === mvp.id)!.rating!.kernelDetails.context.winningTagByAnchor = { 'unknown-anchor': 'MULTI_KILL' };
+    const unknownMvp = buildPlayerRadar(unknownAnchor, null).players.find((player) => player.playerId === mvp.id)!;
+    expect(unknownMvp.axes.find((axis) => axis.axisId === 'MULTIKILL')!.mvpAttribution).toBeNull();
+    expect(unknownMvp.axes.every((axis) => axis.evpAttribution === null)).toBe(true);
+    expect(unknownMvp.axes.every((axis) => axis.mvpAttribution === null)).toBe(true);
+    expect(buildPlayerRadar(unknownAnchor, null).players.filter((player) => player.playerId !== mvp.id).every((player) => player.axes.every((axis) => axis.mvpAttribution === null))).toBe(true);
+  });
+
+  it('uses only awarded EVP specializations and preserves independent secondary attribution', () => {
+    const data = fixture();
+    const canonicalResult = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const base = buildEvpReport(canonicalResult, evpReportBinding(canonicalResult));
+    const player = base.players.find((row) => row.playerId !== base.mvpPlayerId)!;
+    player.status = 'AWARDED';
+    player.primarySpecializationId = 'MULTIKILL_SPECIALIST';
+    player.secondarySpecializationId = 'TRADE_SPECIALIST';
+    player.candidateStrength = 0.8;
+    player.secondaryBonus = 0.04;
+    const primary = player.specializations.find((row) => row.specializationId === 'MULTIKILL_SPECIALIST')!;
+    primary.achievementStrength = 0.8;
+    primary.qualified = true;
+    const secondary = player.specializations.find((row) => row.specializationId === 'TRADE_SPECIALIST')!;
+    secondary.achievementStrength = 0.7;
+    secondary.qualified = true;
+    base.awards = [{ position: 1, playerId: player.playerId, specializationId: 'MULTIKILL_SPECIALIST', achievementStrength: 0.8, candidateStrength: 0.8 }];
+    const report = evpReportSchema.parse(base);
+    const activeRatingBefore = structuredClone(canonicalResult.activeRating);
+    const evpBefore = structuredClone(report);
+
+    const radar = buildPlayerRadar(canonicalResult, report);
+    const awarded = radar.players.find((row) => row.playerId === player.playerId)!;
+    expect(awarded.awardState).toBe('EVP');
+    expect(awarded.axes.find((row) => row.axisId === 'MULTIKILL')!.evpAttribution?.role).toBe('PRIMARY');
+    expect(awarded.axes.find((row) => row.axisId === 'TRADES')!.evpAttribution?.role).toBe('SECONDARY');
+    expect(awarded.axes.find((row) => row.axisId === 'FLASH')!.evpAttribution).toBeNull();
+    const mvp = radar.players.find((row) => row.awardState === 'MVP')!;
+    expect(mvp.axes.every((row) => row.evpAttribution === null)).toBe(true);
+    expect(canonicalResult.activeRating).toEqual(activeRatingBefore);
+    expect(report).toEqual(evpBefore);
+  });
+
+  it('serves historical matches without EVP and rejects corrupt EVP pointers through the radar endpoint', async () => {
+    const data = fixture();
+    const mocked = mockCanonical(data);
+    const radar = await createTestApiFacade().radar(data.match.matchId);
+    expect(radar.schemaVersion).toBe('player-radar@1');
+    expect(radar.sourceBinding.evpReportSchemaVersion).toBeNull();
+    expect(readFile).toHaveBeenCalledTimes(1);
+
+    findUnique.mockResolvedValue({ ...mocked.stored, evpFilePath: 'experimental/evp/broken.json.gz' });
+    await expect(createTestApiFacade().radar(data.match.matchId)).rejects.toMatchObject({ code: 'REPORT_CORRUPT' });
+  });
+
+  it('does not invent H2 MVP attribution for a historical H1 canonical result', () => {
+    const data = fixture();
+    const h2 = buildCanonicalMatchResult({ artifact: data.artifact, sidecar: data.sidecar, productionReports: [], sourceDemoRetained: false, createdAt: '2026-10-26T00:00:00.000Z' });
+    const radar = buildPlayerRadar(withHistoricalH1Identity(h2), null);
+    expect(radar.sourceBinding.h2ReportSchemaVersion).toBeNull();
+    expect(radar.players.every((player) => player.awardState !== 'MVP')).toBe(true);
+    expect(radar.players.every((player) => player.h2Explanation.reasonIfUnavailable === 'H2_UNAVAILABLE')).toBe(true);
+  });
+
+  it('publishes player-radar@1 through the exact read-only Nest route and OpenAPI', async () => {
+    const data = fixture(); mockCanonical(data);
+    const app = await NestFactory.create(AppModule, { logger: false });
+    app.setGlobalPrefix('api/v1'); app.useGlobalFilters(new SafeExceptionFilter()); await app.init();
+    try {
+      const response = await request(app.getHttpServer()).get(`/api/v1/matches/${data.match.matchId}/radar`).expect(200);
+      expect(response.body.schemaVersion).toBe('player-radar@1');
+      expect(response.body.players).toHaveLength(10);
+      await request(app.getHttpServer()).get(`/api/v1/matches/${data.match.matchId}/radar?policy=H2`).expect(422);
+      const document = SwaggerModule.createDocument(app, new DocumentBuilder().setTitle('test').setVersion('test').build());
+      expect(document.paths['/api/v1/matches/{id}/radar']?.get?.responses?.['200']).toBeDefined();
     } finally { await app.close(); }
   });
 

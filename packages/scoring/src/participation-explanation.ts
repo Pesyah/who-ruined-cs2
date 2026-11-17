@@ -17,7 +17,20 @@ import { toParticipationRatingPreparedProfiles } from './participation-profile-i
 const EPSILON = 1e-12;
 const FAMILY_ORDER = ['COMBAT','SUPPORT','DEATH_RELATED','OBJECTIVES','CONTEXT','DIRECT_HARM'] as const;
 
-type Calculated = CalculatedParticipationRating;
+interface ExplanationProjection {
+  profileKey?: string;
+  playerId: string;
+  rawFamilyInputs: Record<ParticipationFamily, number>;
+  finalAttribution: Record<ParticipationFamily, number>;
+  kernel: {
+    factorContributions: { CONTEXT: Record<string, number>; OBJECTIVES: Record<string, number> };
+    directHarm: { raw: number; soft: number; adjustment: number; transformed: boolean; k: number; a: number };
+    context: { uncenteredSignal: number; saturated: boolean; winningTagByAnchor: Record<string, string> };
+    objectives: { positiveCapped: boolean; negativeCapped: boolean };
+    directHarmRoundAllocation?: Record<string, number>;
+  };
+}
+type Calculated = CalculatedParticipationRating | ExplanationProjection;
 type Source = ParticipationExplanationFamilyRow['sources'][number];
 type Transform = ParticipationExplanationFamilyRow['transformations'][number];
 
@@ -150,20 +163,35 @@ function directHarmSources(
   eventById: ReadonlyMap<string, MatchEvent>,
   roundIds: readonly string[]
 ): Source[] {
-  const sources = Object.entries(projection.kernel.directHarmRoundAllocation).map(([anchorRoundId, rawContribution]): Source => {
-    const allocationEvidence = eventEvidence(anchorRoundId, eventById, roundIds);
-    const actualRoundId = allocationEvidence.roundIds[0] ?? (roundIds.includes(anchorRoundId) ? anchorRoundId : null);
-    const related = episodes.filter((episode) => episode.family === 'DIRECT_HARM').flatMap((episode) => {
-      const evidence = eventEvidence(episode.anchorId, eventById, roundIds);
-      return evidence.roundIds.includes(actualRoundId ?? '') ? evidence.evidenceEventIds : [];
+  if (projection.kernel.directHarmRoundAllocation) {
+    const sources = Object.entries(projection.kernel.directHarmRoundAllocation).map(([anchorRoundId, rawContribution]): Source => {
+      const allocationEvidence = eventEvidence(anchorRoundId, eventById, roundIds);
+      const actualRoundId = allocationEvidence.roundIds[0] ?? (roundIds.includes(anchorRoundId) ? anchorRoundId : null);
+      const related = episodes.filter((episode) => episode.family === 'DIRECT_HARM').flatMap((episode) => {
+        const evidence = eventEvidence(episode.anchorId, eventById, roundIds);
+        return evidence.roundIds.includes(actualRoundId ?? '') ? evidence.evidenceEventIds : [];
+      });
+      return {
+        kind: related.length > 0 ? 'EVENT' : 'AGGREGATE', reason: 'CONFIRMED_FRIENDLY_HARM', rawContribution,
+        finalContribution: H2_PARTICIPATION_RATING_POLICY.harmMultiplier * rawContribution,
+        roundIds: actualRoundId ? [actualRoundId] : [],
+        evidenceEventIds: [...new Set([...allocationEvidence.evidenceEventIds, ...related])]
+      };
     });
-    return {
-      kind: related.length > 0 ? 'EVENT' : 'AGGREGATE', reason: 'CONFIRMED_FRIENDLY_HARM', rawContribution,
-      finalContribution: H2_PARTICIPATION_RATING_POLICY.harmMultiplier * rawContribution,
-      roundIds: actualRoundId ? [actualRoundId] : [],
-      evidenceEventIds: [...new Set([...allocationEvidence.evidenceEventIds, ...related])]
-    };
-  });
+    close(sources.reduce((sum, source) => sum + source.rawContribution, 0), projection.rawFamilyInputs.DIRECT_HARM, 'DIRECT_HARM_SOURCE_RECONSTRUCTION');
+    return sources;
+  }
+  const evidence = episodes.filter((episode) => episode.family === 'DIRECT_HARM')
+    .map((episode) => eventEvidence(episode.anchorId, eventById, roundIds));
+  const rawContribution = projection.rawFamilyInputs.DIRECT_HARM;
+  const sources: Source[] = rawContribution === 0 && evidence.length === 0 ? [] : [{
+    kind: evidence.some((row) => row.evidenceEventIds.length > 0) ? 'EVENT' : 'AGGREGATE',
+    reason: 'CONFIRMED_FRIENDLY_HARM',
+    rawContribution,
+    finalContribution: H2_PARTICIPATION_RATING_POLICY.harmMultiplier * rawContribution,
+    roundIds: [...new Set(evidence.flatMap((row) => row.roundIds))],
+    evidenceEventIds: [...new Set(evidence.flatMap((row) => row.evidenceEventIds))]
+  }];
   close(sources.reduce((sum, source) => sum + source.rawContribution, 0), projection.rawFamilyInputs.DIRECT_HARM, 'DIRECT_HARM_SOURCE_RECONSTRUCTION');
   return sources;
 }
@@ -199,7 +227,11 @@ function transforms(family: ParticipationFamily, projection: Calculated): Transf
 }
 
 function familyRows(result: CanonicalMatchResult, projection: Calculated): ParticipationExplanationFamilyRow[] {
-  const profile = result.internal.recomputeSeed.profiles.find((item) => item.profileKey === projection.profileKey);
+  const profile = result.internal.recomputeSeed.profiles.find((item) =>
+    'profileKey' in projection && projection.profileKey !== undefined
+      ? item.profileKey === projection.profileKey
+      : item.playerId === projection.playerId
+  );
   if (!profile) throw new Error('EXPLANATION_PROFILE_NOT_FOUND');
   const eventById = new Map(result.artifact.match.events.map((event) => [event.id, event]));
   const roundIds = result.artifact.match.rounds.map((round) => round.id);
@@ -223,13 +255,62 @@ function familyRows(result: CanonicalMatchResult, projection: Calculated): Parti
   });
 }
 
+function explanationFromStoredRatings(result: CanonicalMatchResult): ParticipationExplanationReport {
+  assertH2CanonicalResult(result);
+  const moments = buildImportantMoments(result.artifact);
+  const players = result.activeRating.players.map((activePlayer) => {
+    if (activePlayer.rating === null) {
+      return {
+        playerId: activePlayer.playerId,
+        teamId: activePlayer.teamId,
+        availability: activePlayer.availability,
+        rating: null,
+        importantMoments: moments.byPlayer.get(activePlayer.playerId) ?? []
+      };
+    }
+    const projection: ExplanationProjection = {
+      playerId: activePlayer.playerId,
+      rawFamilyInputs: activePlayer.rating.rawFamilyInputs,
+      finalAttribution: activePlayer.rating.finalAttribution,
+      kernel: activePlayer.rating.kernelDetails,
+    };
+    const reconstructed = 1 + FAMILY_ORDER.reduce((sum, family) => sum + activePlayer.rating!.finalAttribution[family], 0);
+    close(reconstructed, activePlayer.rating.value, 'EXPLANATION_ARITHMETIC');
+    return {
+      playerId: activePlayer.playerId,
+      teamId: activePlayer.teamId,
+      availability: activePlayer.availability,
+      rating: {
+        value: activePlayer.rating.value,
+        arithmetic: { origin: 1 as const, reconstructed, tolerance: 1e-12 as const, exactWithinTolerance: true as const },
+        aggregates: activePlayer.rating.aggregates,
+        families: familyRows(result, projection)
+      },
+      importantMoments: moments.byPlayer.get(activePlayer.playerId) ?? []
+    };
+  });
+  return participationExplanationReportSchema.parse({
+    schemaVersion: 'm4.6-participation-explanation@1',
+    reportVersion: 'match-result@1',
+    matchId: result.artifact.match.matchId,
+    experimental: true,
+    calibrated: false,
+    causalBlame: false,
+    players,
+    importantMoments: moments.match,
+    provenance: { source: 'match-result@1', originalDemoParsedAtRequest: false }
+  });
+}
+
+/** Builds the explanation projection from values already persisted in match-result@1. */
+export function buildStoredParticipationExplanation(result: CanonicalMatchResult): ParticipationExplanationReport {
+  return explanationFromStoredRatings(result);
+}
+
 export function buildParticipationExplanation(result: CanonicalMatchResult): ParticipationExplanationReport {
   assertH2CanonicalResult(result);
-  const profiles = toParticipationRatingPreparedProfiles(
-    result.internal.recomputeSeed.profiles,
-  );
-  const projections = new Map(projectParticipationRatings(profiles)
-    .map((projection) => [projection.playerId, projection]));
+  const profiles = toParticipationRatingPreparedProfiles(result.internal.recomputeSeed.profiles);
+  const projections = new Map(projectParticipationRatings(profiles).map((projection) => [projection.playerId, projection]));
   const moments = buildImportantMoments(result.artifact);
   const players = result.activeRating.players.map((activePlayer) => {
     const projection = projections.get(activePlayer.playerId);

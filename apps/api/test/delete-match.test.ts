@@ -27,6 +27,11 @@ function deletionSnapshot(): MatchDeletionSnapshot {
     resultSha256: 'b'.repeat(64),
     resultPolicyId: null,
     resultPolicyDigest: null,
+    evpFilePath: 'experimental/evp/match-1/report.json.gz',
+    evpSchemaVersion: 'evp-report@1',
+    evpSha256: 'c'.repeat(64),
+    evpPolicyId: 'evp-policy@1-experimental',
+    evpBindingDigest: 'd'.repeat(64),
     reports: [{ jsonFilePath: 'reports/match-1.json.gz' }],
   };
 }
@@ -94,6 +99,7 @@ describe('match deletion job-state policy', () => {
     expect(artifacts.deletedFiles).toEqual(new Set([
       'uploads/match-1.dem',
       'results/match-1.json.gz',
+      'experimental/evp/match-1/report.json.gz',
       'reports/match-1.json.gz',
     ]));
   });

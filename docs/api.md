@@ -39,6 +39,8 @@ Clients branch on `error.code`, not on the localized/backend diagnostic message.
 | POST | `/matches/:id/rescore` | 202; compatible scoring-report RESCORE job |
 | GET | `/matches/:id/experimental-participation-rating` | `m4.3-participation-rating@1` |
 | GET | `/matches/:id/experimental-participation-explanation` | `m4.6-participation-explanation@1` |
+| GET | `/matches/:id/radar` | `player-radar@1` |
+| GET | `/matches/:id/evp` | `evp-report@1` |
 | GET | `/matches/:id/replay` | `m4.7-replay-metadata@1`; `?version=2` opts into map images and altitude layers |
 | GET | `/matches/:id/replay/rounds/:roundId` | `m4.7-replay-round@1` |
 
@@ -56,6 +58,8 @@ The rating and explanation routes require `ENABLE_EXPERIMENTAL_PARTICIPATION_RAT
 | `match-result@1` | canonical persisted result | private artifact; selected fields projected |
 | `m4.3-participation-rating@1` | active rating DTO | public experimental read API |
 | `m4.6-participation-explanation@1` | rating explanation + important moments | public experimental read API |
+| `evp-report@1` | experimental EVP awards, candidates and evidence | separate immutable artifact and public read API |
+| `player-radar@1` | eight-axis player projection, match averages and award attribution | read-only projection from stored M2/H2 and optional EVP |
 | `m4.7-replay-index@1` | persisted replay index | private artifact |
 | `m4.7-replay-round@1` | persisted round reconstruction | public round read DTO |
 | `m4.7-replay-metadata@1` | replay availability/round metadata | public replay read DTO |
@@ -86,6 +90,7 @@ The authoritative list is `publicApiErrorCodes` in `packages/contracts/src/api-e
 - upload/storage: `UPLOAD_BUSY`, `QUEUE_SATURATED`, `UPLOAD_STORAGE_INVALID`, `STORAGE_UNAVAILABLE`, `STORAGE_FAILURE`, `INGESTION_PERSISTENCE_FAILED`;
 - demo/support: `INVALID_DEMO`, `INCOMPLETE_MATCH`, `UNSUPPORTED_MODE`, `UNSUPPORTED_ROSTER_SIZE`, `SOURCE_DEMO_UNAVAILABLE`;
 - result integrity: `REPORT_CORRUPT`, `REPORT_POLICY_MISMATCH`;
+- EVP reuses `REPORT_NOT_READY`, `REPORT_CORRUPT` and `REPORT_POLICY_MISMATCH`; safe `details.resource/reason` distinguishes not-created, missing, corrupt, binding and policy states without widening frontend error handling;
 - replay: `REPLAY_UNAVAILABLE`, `REPLAY_CORRUPT`, `REPLAY_ROUND_NOT_FOUND`;
 - participation sidecar compatibility/fingerprint/policy/roster/staleness failures;
 - feature gate: `EXPERIMENTAL_PARTICIPATION_RATING_DISABLED`;
@@ -103,6 +108,8 @@ Consumers must preserve those distinctions. A fallback to a legacy score is not 
 
 - [M2 analytics semantics](api-m2.md)
 - [Participation rating arithmetic and error behavior](api-participation-rating.md)
+- [Experimental EVP persistence and API](evp.md)
+- [Player radar projection and frontend handoff](player-radar.md)
 - [Storage and publication](storage-lifecycle.md)
 - [Frontend DTO adapters](frontend.md)
 - [Scoring semantics](scoring.md)

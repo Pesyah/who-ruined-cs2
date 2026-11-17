@@ -41,6 +41,8 @@ export function createTestApiFacade() {
     playerAnalytics: reportQueries.playerAnalytics.bind(reportQueries),
     participationRating: reportQueries.participationRating.bind(reportQueries),
     participationExplanation: reportQueries.participationExplanation.bind(reportQueries),
+    evp: reportQueries.evp.bind(reportQueries),
+    radar: reportQueries.radar.bind(reportQueries),
     report: reportQueries.report.bind(reportQueries),
     playerReport: reportQueries.playerReport.bind(reportQueries),
     replay: replayQueries.metadata.bind(replayQueries),
