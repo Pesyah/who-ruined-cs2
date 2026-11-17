@@ -4,9 +4,10 @@ import {
   type MatchAnalytics,
   type MatchArtifact,
   type ParticipationExplanationReport,
+  type PlayerRadarReport,
   type ScoringReport,
 } from '@who-ruined/contracts';
-import { buildActiveParticipationRating, buildParticipationExplanation, scoringConfigHash } from '@who-ruined/scoring';
+import { buildActiveParticipationRating, buildParticipationExplanation, buildPlayerRadar, scoringConfigHash } from '@who-ruined/scoring';
 import { ApplicationError } from '../application-error.js';
 import { resolveScoringConfig } from '../scoring-config.js';
 import {
@@ -74,6 +75,49 @@ export class ReportQueries {
       return buildParticipationExplanation(result);
     } catch {
       throw new ApplicationError('REPORT_CORRUPT', 'Канонический результат не позволяет достоверно построить объяснение рейтинга.', 409);
+    }
+  }
+
+  async evp(id: string) {
+    const databaseMatch = await this.storedMatches.requireRecord(id);
+    if (
+      databaseMatch.evpFilePath === null
+      && databaseMatch.evpSchemaVersion === null
+      && databaseMatch.evpSha256 === null
+      && databaseMatch.evpPolicyId === null
+      && databaseMatch.evpBindingDigest === null
+    ) {
+      throw new ApplicationError(
+        'REPORT_NOT_READY',
+        'EVP ещё не создан для этого матча; используйте owner backfill.',
+        409,
+        { resource: 'EVP', reason: 'NOT_CREATED' },
+      );
+    }
+    const canonical = await this.artifacts.readCanonicalResult(databaseMatch, true);
+    return this.artifacts.readEvpReport(databaseMatch, canonical);
+  }
+
+  async radar(id: string): Promise<PlayerRadarReport> {
+    const databaseMatch = await this.storedMatches.requireRecord(id);
+    if (!databaseMatch.resultFilePath) {
+      throw new ApplicationError('REPORT_NOT_READY', 'Канонический результат матча ещё не готов.', 409);
+    }
+    const canonical = await this.artifacts.readCanonicalResult(databaseMatch);
+    const evpPointer = [
+      databaseMatch.evpFilePath,
+      databaseMatch.evpSchemaVersion,
+      databaseMatch.evpSha256,
+      databaseMatch.evpPolicyId,
+      databaseMatch.evpBindingDigest,
+    ];
+    const evp = evpPointer.every((value) => value === null)
+      ? null
+      : await this.artifacts.readEvpReport(databaseMatch, canonical);
+    try {
+      return buildPlayerRadar(canonical, evp);
+    } catch {
+      throw new ApplicationError('REPORT_CORRUPT', 'Сохранённые данные не позволяют достоверно построить радар игрока.', 409, { resource: 'RADAR', reason: 'PROJECTION_FAILED' });
     }
   }
 

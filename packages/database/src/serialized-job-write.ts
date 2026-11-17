@@ -6,6 +6,7 @@ import {
 const MAX_WRITE_TRANSACTION_ATTEMPTS = 3;
 const JOB_WRITE_LOCK_NAMESPACE = 0x57524332;
 const JOB_WRITE_LOCK_KEY = 1;
+const MATCH_ARTIFACT_LOCK_NAMESPACE = 0x57524341;
 const WRITE_TRANSACTION_OPTIONS = {
   isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   maxWait: 5_000,
@@ -15,6 +16,42 @@ const WRITE_TRANSACTION_OPTIONS = {
 export interface SerializedJobWriteHooks {
   beforeWriteLock?: () => void | Promise<void>;
   afterWriteLock?: () => void | Promise<void>;
+}
+
+export async function lockMatchArtifacts(
+  transaction: Prisma.TransactionClient,
+  matchId: string,
+): Promise<void> {
+  await transaction.$queryRaw<Array<{ locked: number }>>`
+    WITH advisory_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(
+        ${MATCH_ARTIFACT_LOCK_NAMESPACE}::int4,
+        hashtext(${matchId}::text)
+      )
+    )
+    SELECT 1::int4 AS locked FROM advisory_lock
+  `;
+}
+
+export async function runSerializedMatchArtifactWrite<T>(
+  client: PrismaClient,
+  matchId: string,
+  action: (transaction: Prisma.TransactionClient) => Promise<T>,
+  isolationLevel: Prisma.TransactionIsolationLevel = Prisma.TransactionIsolationLevel.Serializable,
+): Promise<T> {
+  let lastConflict: unknown;
+  for (let attempt = 0; attempt < MAX_WRITE_TRANSACTION_ATTEMPTS; attempt += 1) {
+    try {
+      return await client.$transaction(async (transaction) => {
+        await lockMatchArtifacts(transaction, matchId);
+        return action(transaction);
+      }, { ...WRITE_TRANSACTION_OPTIONS, isolationLevel });
+    } catch (error) {
+      if (!isRetryableWriteConflict(error)) throw error;
+      lastConflict = error;
+    }
+  }
+  throw new DatabaseConcurrentWriteError(lastConflict);
 }
 
 export class DatabaseConcurrentWriteError extends Error {

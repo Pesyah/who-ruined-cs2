@@ -40,6 +40,11 @@ export interface TerminalMatchUpdate {
   resultSha256?: string | null;
   resultPolicyId?: string | null;
   resultPolicyDigest?: string | null;
+  evpFilePath?: string | null;
+  evpSchemaVersion?: string | null;
+  evpSha256?: string | null;
+  evpPolicyId?: string | null;
+  evpBindingDigest?: string | null;
   winningTeamId?: string | null;
   losingTeamId?: string | null;
   parserVersion?: string;

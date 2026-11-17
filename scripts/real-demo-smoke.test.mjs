@@ -9,6 +9,10 @@ import { runRealDemoSmoke } from './real-demo-smoke.mjs';
 
 const MATCH_ID = 'synthetic-smoke-match';
 const FAMILIES = ['COMBAT', 'SUPPORT', 'DEATH_RELATED', 'OBJECTIVES', 'CONTEXT', 'DIRECT_HARM'];
+const EVP_SPECIALIZATIONS = [
+  'FLASH_SUPPORT', 'NON_FLASH_ASSIST_SUPPORT', 'TRADE_SPECIALIST', 'CLUTCH_SPECIALIST',
+  'MULTIKILL_SPECIALIST', 'ENTRY_SPECIALIST', 'UTILITY_DAMAGE_SPECIALIST', 'OBJECTIVE_SPECIALIST',
+];
 
 function runSmokeCli(argumentsList) {
   return new Promise((resolveRun, rejectRun) => {
@@ -70,7 +74,7 @@ function fullFixture() {
     players: ratingPlayers,
     ordering: players.map((player) => player.id),
     losingTeamOrdering: teams[1].playerIds,
-    awards: { eligiblePoolSize: 10 },
+    awards: { eligiblePoolSize: 10, mvp: { playerId: 'player-1' } },
   };
   const explanation = {
     matchId: MATCH_ID,
@@ -107,7 +111,61 @@ function fullFixture() {
     frames: [{ tick: 100, states: [] }, { tick: 200, states: [] }],
     events: [{ id: 'event-1' }],
   };
-  return { explanation, match, rating, replay, replayRound };
+  const evp = {
+    schemaVersion: 'evp-report@1',
+    matchId: MATCH_ID,
+    policyId: 'evp-policy@1-experimental',
+    experimental: true,
+    calibrated: false,
+    binding: {
+      matchResultSchemaVersion: 'match-result@1',
+      fileSha256: 'a'.repeat(64),
+      sourceBindingDigest: 'b'.repeat(64),
+      inputDigest: 'c'.repeat(64),
+    },
+    applicability: { applicable: true, reasonCodes: [] },
+    mvpPlayerId: 'player-1',
+    mvpExcludedFromAwards: true,
+    awards: [],
+    players: players.map((player) => ({
+      playerId: player.id,
+      teamId: player.teamId,
+      status: player.id === 'player-1' ? 'MVP_EXCLUDED' : 'NOT_QUALIFIED',
+      reasonCodes: [player.id === 'player-1' ? 'MVP_EXCLUDED' : 'NO_QUALIFYING_SPECIALIZATION'],
+      candidateStrength: null,
+      primarySpecializationId: null,
+      secondarySpecializationId: null,
+      secondaryBonus: 0,
+      teamHarm: {
+        available: true,
+        teamKillsAvailable: true,
+        teamDamageAvailable: true,
+        teamDamagePerVerifiedRoundAvailable: true,
+        teamKills: 0,
+        teamDamage: 0,
+        teamDamagePerVerifiedRound: 0,
+        disqualified: false,
+      },
+      specializations: EVP_SPECIALIZATIONS.map((specializationId) => ({
+        specializationId,
+        evidenceGroup: 'KILL_EVENTS',
+        availability: 'AVAILABLE',
+        reasonCodes: ['BELOW_ABSOLUTE_GATE'],
+        sourceMetrics: {},
+        thresholds: [],
+        verifiedRounds: 1,
+        comparisonScalar: 0,
+        absoluteGatePassed: false,
+        absoluteStrength: 0,
+        evidencePenalty: 0,
+        relative: null,
+        achievementStrength: null,
+        qualified: false,
+        evidence: { eventIds: [], roundIds: [], quality: 'AGGREGATE_ONLY' },
+      })),
+    })),
+  };
+  return { evp, explanation, match, rating, replay, replayRound };
 }
 
 async function withMockApi(fixture, callback) {
@@ -132,6 +190,9 @@ async function withMockApi(fixture, callback) {
     } else if (url.pathname === `/api/v1/matches/${MATCH_ID}/experimental-participation-explanation`) {
       status = fixture.explanationStatus ?? 200;
       body = fixture.explanation;
+    } else if (url.pathname === `/api/v1/matches/${MATCH_ID}/evp`) {
+      status = fixture.evpStatus ?? 200;
+      body = fixture.evp;
     } else if (url.pathname === `/api/v1/matches/${MATCH_ID}/replay`) {
       body = fixture.replay;
     } else if (url.pathname === `/api/v1/matches/${MATCH_ID}/replay/rounds/round-1`) {
@@ -216,6 +277,24 @@ test('explicit UNSUPPORTED semantics accept typed H2 unavailability without inve
     rating: { error: { code: 'UNSUPPORTED_ROSTER_SIZE' } },
     explanationStatus: 422,
     explanation: { error: { code: 'UNSUPPORTED_ROSTER_SIZE' } },
+    evp: {
+      schemaVersion: 'evp-report@1',
+      matchId: MATCH_ID,
+      policyId: 'evp-policy@1-experimental',
+      experimental: true,
+      calibrated: false,
+      binding: {
+        matchResultSchemaVersion: 'match-result@1',
+        fileSha256: 'a'.repeat(64),
+        sourceBindingDigest: 'b'.repeat(64),
+        inputDigest: 'c'.repeat(64),
+      },
+      applicability: { applicable: false, reasonCodes: ['NO_PLAYERS'] },
+      mvpPlayerId: null,
+      mvpExcludedFromAwards: true,
+      awards: [],
+      players: [],
+    },
     replay: {
       matchId: MATCH_ID,
       availability: 'UNSUPPORTED_MAP',

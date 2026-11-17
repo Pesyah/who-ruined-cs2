@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Post, Req } from '@nest
 import type { Request } from 'express';
 import { ApiAcceptedResponse, ApiBody, ApiConflictResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnprocessableEntityResponse } from '@nestjs/swagger';
 import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface.js';
-import { activeParticipationRatingOpenApiSchema, participationExplanationOpenApiSchema, rescoreRequestSchema } from '@who-ruined/contracts';
+import { activeParticipationRatingOpenApiSchema, evpReportOpenApiSchema, participationExplanationOpenApiSchema, playerRadarOpenApiSchema, rescoreRequestSchema } from '@who-ruined/contracts';
 import { ReportQueries } from '../../application/use-cases/report-queries.js';
 import { RescoreMatch, type RescoreMatchRequest } from '../../application/use-cases/rescore-match.js';
 import { assertExactQuery, assertNoPolicySelector, assertOpaqueId, assertPlainObjectWithKeys } from '../../http-validation.js';
@@ -59,6 +59,32 @@ export class ReportsController {
   participationExplanation(@Param('id') id: string, @Req() request: Request) {
     assertExactQuery(request, []);
     return this.queries.participationExplanation(assertOpaqueId(id, 'MATCH_NOT_FOUND'));
+  }
+
+  @Get('matches/:id/evp')
+  @ApiOperation({ operationId: 'MatchesController_evp', summary: 'Stored experimental EVP awards and candidate explanations' })
+  @ApiOkResponse({
+    description: 'evp-report@1 read from an immutable stored artifact',
+    schema: evpReportOpenApiSchema as unknown as SchemaObject,
+  })
+  @ApiNotFoundResponse({ description: 'MATCH_NOT_FOUND' })
+  @ApiConflictResponse({ description: 'REPORT_NOT_READY, REPORT_CORRUPT or REPORT_POLICY_MISMATCH with EVP reason details' })
+  evp(@Param('id') id: string, @Req() request: Request) {
+    assertExactQuery(request, []);
+    return this.queries.evp(assertOpaqueId(id, 'MATCH_NOT_FOUND'));
+  }
+
+  @Get('matches/:id/radar')
+  @ApiOperation({ operationId: 'MatchesController_radar', summary: 'Read-only eight-axis player radar projection for every match participant' })
+  @ApiOkResponse({
+    description: 'player-radar@1 projected from stored M2, H2 and optional EVP data',
+    schema: playerRadarOpenApiSchema as unknown as SchemaObject,
+  })
+  @ApiNotFoundResponse({ description: 'MATCH_NOT_FOUND' })
+  @ApiConflictResponse({ description: 'REPORT_NOT_READY, REPORT_CORRUPT or REPORT_POLICY_MISMATCH' })
+  radar(@Param('id') id: string, @Req() request: Request) {
+    assertExactQuery(request, []);
+    return this.queries.radar(assertOpaqueId(id, 'MATCH_NOT_FOUND'));
   }
 
   @Get('matches/:id/report')

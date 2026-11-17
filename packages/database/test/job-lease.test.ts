@@ -263,7 +263,14 @@ describe.skipIf(!postgresIntegrationAvailable)('durable job ownership on Postgre
       matchId: 'match',
       leaseToken: old!.leaseToken,
       terminal: 'COMPLETED',
-      matchData: { status: 'COMPLETED' },
+      matchData: {
+        status: 'COMPLETED',
+        evpFilePath: 'experimental/evp/match/stale.json.gz',
+        evpSchemaVersion: 'evp-report@1',
+        evpSha256: 'b'.repeat(64),
+        evpPolicyId: 'evp-policy@1-experimental',
+        evpBindingDigest: 'c'.repeat(64),
+      },
     }, currentTime)).rejects.toThrow('STALE_JOB_OWNER');
     await expect(oldRepository.failOwnedJob(
       'job', old!.leaseToken, 'OLD_FAILURE', 'late old worker', currentTime,
@@ -280,6 +287,11 @@ describe.skipIf(!postgresIntegrationAvailable)('durable job ownership on Postgre
         status: 'COMPLETED',
         quality: 'VALID',
         resultFilePath: 'results/match/current.json.gz',
+        evpFilePath: 'experimental/evp/match/current.json.gz',
+        evpSchemaVersion: 'evp-report@1',
+        evpSha256: 'd'.repeat(64),
+        evpPolicyId: 'evp-policy@1-experimental',
+        evpBindingDigest: 'e'.repeat(64),
       },
     }, currentTime)).resolves.toBeUndefined();
     await expect(newRepository.failOwnedJob(
@@ -305,6 +317,9 @@ describe.skipIf(!postgresIntegrationAvailable)('durable job ownership on Postgre
       status: 'COMPLETED',
       quality: 'VALID',
       resultFilePath: 'results/match/current.json.gz',
+      evpFilePath: 'experimental/evp/match/current.json.gz',
+      evpSha256: 'd'.repeat(64),
+      evpBindingDigest: 'e'.repeat(64),
     });
   });
 

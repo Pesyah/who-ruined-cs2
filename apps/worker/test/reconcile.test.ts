@@ -142,14 +142,21 @@ describe('worker provisional artifact reconciliation', () => {
     await writeFile(path.join(root, 'results', 'ready', 'orphan.json.gz'), 'orphan');
     await writeFile(path.join(root, 'results', 'active', 'candidate.json.gz'), 'candidate');
     await writeFile(path.join(root, 'results', 'missing', 'orphan.json.gz'), 'orphan');
+    for (const name of ['ready', 'active']) await mkdir(path.join(root, 'experimental', 'evp', name), { recursive: true });
+    await writeFile(path.join(root, 'experimental', 'evp', 'ready', 'current.json.gz'), 'current evp');
+    await writeFile(path.join(root, 'experimental', 'evp', 'ready', 'orphan.json.gz'), 'orphan evp');
+    await writeFile(path.join(root, 'experimental', 'evp', 'active', 'candidate.json.gz'), 'candidate evp');
     const state = new Map([
-      ['ready', { referencedPath: 'results/ready/current.json.gz', active: false }],
-      ['active', { referencedPath: null, active: true }]
+      ['ready', { referencedPath: 'results/ready/current.json.gz', evpReferencedPath: 'experimental/evp/ready/current.json.gz', active: false }],
+      ['active', { referencedPath: null, evpReferencedPath: null, active: true }]
     ]);
-    await expect(reconcileOrphanedMatchResults(root, async () => state)).resolves.toEqual({ removed: 2, retained: 2 });
+    await expect(reconcileOrphanedMatchResults(root, { readState: async () => state })).resolves.toEqual({ removed: 3, retained: 4 });
     await expect(access(path.join(root, 'results', 'ready', 'current.json.gz'))).resolves.toBeUndefined();
     await expect(access(path.join(root, 'results', 'active', 'candidate.json.gz'))).resolves.toBeUndefined();
     await expect(access(path.join(root, 'results', 'ready', 'orphan.json.gz'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(access(path.join(root, 'results', 'missing'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(access(path.join(root, 'experimental', 'evp', 'ready', 'current.json.gz'))).resolves.toBeUndefined();
+    await expect(access(path.join(root, 'experimental', 'evp', 'active', 'candidate.json.gz'))).resolves.toBeUndefined();
+    await expect(access(path.join(root, 'experimental', 'evp', 'ready', 'orphan.json.gz'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

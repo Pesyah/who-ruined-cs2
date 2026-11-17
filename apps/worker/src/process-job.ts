@@ -25,6 +25,7 @@ import {
 } from './report-storage.js';
 import { runRescorePipeline } from './rescore-pipeline.js';
 import { runParsePipeline } from './parse-pipeline.js';
+import { publishEvpReport } from './evp-report-storage.js';
 
 export type { JobFaultHooks } from './job-lifecycle.js';
 
@@ -121,6 +122,7 @@ export async function processJob(
       sourceDemoRetained: config.retainSourceDemo
     });
     const published = await publishCanonicalMatchResult(dataRoot, canonical, assertOwned);
+    const publishedEvp = await publishEvpReport(dataRoot, canonical, assertOwned);
     await options.hooks?.afterStage?.('RESULT_PUBLISHED');
     if (replaySnapshot) {
       try {
@@ -138,6 +140,11 @@ export async function processJob(
         resultFilePath: published.relativePath, resultSchemaVersion: canonical.schemaVersion,
         resultSha256: published.sha256, resultPolicyId: selectedPolicy.selectedPolicyId,
         resultPolicyDigest: selectedPolicy.selectedPolicyDigest,
+        evpFilePath: publishedEvp.relativePath,
+        evpSchemaVersion: publishedEvp.report.schemaVersion,
+        evpSha256: publishedEvp.sha256,
+        evpPolicyId: publishedEvp.report.policyId,
+        evpBindingDigest: publishedEvp.report.binding.inputDigest,
         winningTeamId: defaultReport.winningTeamId, losingTeamId: defaultReport.losingTeamId,
         parserVersion: PARSER_LIBRARY_VERSION, normalizerVersion: NORMALIZER_VERSION
       }

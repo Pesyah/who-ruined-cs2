@@ -29,6 +29,7 @@ export class DeleteMatch {
       match.rawFilePath,
       match.normalizedFilePath,
       match.resultFilePath,
+      match.evpFilePath,
       ...match.reports.map((report) => report.jsonFilePath),
     ]) {
       if (candidate) files.add(candidate);

@@ -1,4 +1,9 @@
-import { canonicalMatchResultSchema } from '@who-ruined/contracts';
+import {
+  canonicalMatchResultSchema,
+  evpPolicyId,
+  evpReportSchemaVersion,
+} from '@who-ruined/contracts';
+import { evpReportBinding } from '@who-ruined/artifacts';
 import { completeOwnedJob } from '@who-ruined/database';
 import { scoreMatch } from '@who-ruined/scoring';
 import type { WorkerRuntimeConfig } from './runtime-config.js';
@@ -17,6 +22,7 @@ import {
   requestedScoringConfig,
   scoreStoredArtifact,
 } from './report-storage.js';
+import { readStoredEvpReport } from './evp-report-storage.js';
 
 export interface RescoreJobInput {
   requestedScoringVersion: string | null;
@@ -27,6 +33,38 @@ export interface RescoreMatchInput {
   resultFilePath: string | null;
   resultSha256: string | null;
   normalizedFilePath: string | null;
+  evpFilePath: string | null;
+  evpSchemaVersion: string | null;
+  evpSha256: string | null;
+  evpPolicyId: string | null;
+  evpBindingDigest: string | null;
+}
+
+async function assertEvpPointerCurrent(
+  dataRoot: string,
+  match: RescoreMatchInput,
+  current: Parameters<typeof evpReportBinding>[0],
+): Promise<void> {
+  const pointer = [
+    match.evpFilePath,
+    match.evpSchemaVersion,
+    match.evpSha256,
+    match.evpPolicyId,
+    match.evpBindingDigest,
+  ];
+  if (pointer.every((value) => value === null)) return;
+  if (pointer.some((value) => value === null)) throw new Error('REPORT_CORRUPT');
+  if (match.evpSchemaVersion !== evpReportSchemaVersion || match.evpPolicyId !== evpPolicyId) {
+    throw new Error('REPORT_CORRUPT');
+  }
+  const binding = evpReportBinding(current);
+  if (binding.inputDigest !== match.evpBindingDigest) throw new Error('REPORT_CORRUPT');
+  await readStoredEvpReport(
+    dataRoot,
+    match.evpFilePath!,
+    match.evpSha256!,
+    current,
+  );
 }
 
 export async function runRescorePipeline(options: {
@@ -59,6 +97,7 @@ export async function runRescorePipeline(options: {
       previousResultFilePath,
       options.match.resultSha256,
     );
+    await assertEvpPointerCurrent(options.dataRoot, options.match, current);
     const report = scoreMatch(current.artifact, selected);
     const productionReports = [
       ...current.productionReports.filter(
@@ -74,6 +113,9 @@ export async function runRescorePipeline(options: {
       createdAt: new Date().toISOString(),
       productionReports,
     });
+    if (evpReportBinding(next).inputDigest !== options.match.evpBindingDigest && options.match.evpBindingDigest !== null) {
+      throw new Error('REPORT_CORRUPT');
+    }
     const published = await publishCanonicalMatchResult(
       options.dataRoot,
       next,

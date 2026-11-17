@@ -11,6 +11,8 @@ export {
 } from './job-status.js';
 export {
   DatabaseConcurrentWriteError,
+  lockMatchArtifacts,
+  runSerializedMatchArtifactWrite,
   runSerializedJobWrite,
   type SerializedJobWriteHooks,
 } from './serialized-job-write.js';

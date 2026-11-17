@@ -1,6 +1,13 @@
 import { access, readdir, rm, rmdir } from 'node:fs/promises';
 import path from 'node:path';
-import { ACTIVE_JOB_STAGES, prisma, UNFINISHED_JOB_STATUSES } from '@who-ruined/database';
+import {
+  ACTIVE_JOB_STAGES,
+  Prisma,
+  prisma,
+  runSerializedMatchArtifactWrite,
+  UNFINISHED_JOB_STATUSES,
+  type PrismaClient,
+} from '@who-ruined/database';
 import { assertNoSymlinkComponents, resolveDataPath } from './storage.js';
 import { readCanonicalMatchResult } from './match-result-storage.js';
 
@@ -102,49 +109,109 @@ export async function reconcileWorkerTemp(
   return { removed, retained };
 }
 
-type ResultState = Map<string, { referencedPath: string | null; active: boolean }>;
+interface ResultPointerState {
+  referencedPath: string | null;
+  evpReferencedPath?: string | null;
+  active: boolean;
+}
 
-async function currentResultState(): Promise<ResultState> {
-  const [matches, activeJobs] = await Promise.all([
-    prisma.match.findMany({ select: { id: true, resultFilePath: true } }),
-    prisma.job.findMany({ where: { status: { in: [...ACTIVE_JOB_STAGES] } }, select: { matchId: true } })
-  ]);
-  const active = new Set(activeJobs.map((job) => job.matchId));
-  return new Map(matches.map((match) => [match.id, { referencedPath: match.resultFilePath, active: active.has(match.id) }]));
+type ResultState = Map<string, ResultPointerState>;
+
+async function currentResultState(
+  client: Prisma.TransactionClient,
+  matchId: string,
+): Promise<ResultPointerState> {
+  const [state] = await client.$queryRaw<Array<ResultPointerState>>`
+    SELECT
+      match."resultFilePath" AS "referencedPath",
+      match."evpFilePath" AS "evpReferencedPath",
+      EXISTS (
+        SELECT 1
+        FROM "Job" AS job
+        WHERE job."matchId" = ${matchId}
+          AND job.status IN (${Prisma.join([...ACTIVE_JOB_STAGES])})
+      ) AS active
+    FROM "Match" AS match
+    WHERE match.id = ${matchId}
+  `;
+  return state ?? {
+    referencedPath: null,
+    evpReferencedPath: null,
+    active: false,
+  };
+}
+
+export interface OrphanReconciliationOptions {
+  client?: PrismaClient;
+  readState?: () => Promise<ResultState>;
+  afterMatchLock?: (matchId: string) => void | Promise<void>;
 }
 
 /** Remove result versions that are neither referenced nor protected by a live job. */
 export async function reconcileOrphanedMatchResults(
   dataRoot: string,
-  readState: () => Promise<ResultState> = currentResultState
+  options: OrphanReconciliationOptions = {},
 ): Promise<{ removed: number; retained: number }> {
-  const root = resolveDataPath(dataRoot, 'results');
-  const states = await readState();
-  let entries;
-  try { entries = await readdir(root, { withFileTypes: true }); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { removed: 0, retained: 0 };
-    throw error;
-  }
+  const overrideStates = options.readState ? await options.readState() : null;
+  const client = options.client ?? prisma;
   let removed = 0; let retained = 0;
-  for (const entry of entries) {
-    const directory = path.join(root, entry.name);
-    await assertNoSymlinkComponents(dataRoot, directory);
-    if (!entry.isDirectory()) { await rm(directory, { force: true }); removed += 1; continue; }
-    const state = states.get(entry.name);
-    const children = await readdir(directory, { withFileTypes: true });
-    for (const child of children) {
-      const target = path.join(directory, child.name);
-      const relative = path.relative(dataRoot, target).replaceAll('\\', '/');
-      if (state?.active || (!child.isDirectory() && !child.isSymbolicLink() && relative === state?.referencedPath)) {
-        retained += 1;
-        continue;
-      }
-      await assertNoSymlinkComponents(dataRoot, target);
-      await rm(target, { recursive: child.isDirectory(), force: true });
-      removed += 1;
+  const directoriesByMatch = new Map<string, Array<{
+    directory: string;
+    referencedPath: (state: ResultPointerState) => string | null | undefined;
+  }>>();
+  async function collectRoot(
+    rootRelative: string,
+    referencedPath: (state: ResultPointerState) => string | null | undefined,
+  ): Promise<void> {
+    const root = resolveDataPath(dataRoot, rootRelative);
+    let entries;
+    try { entries = await readdir(root, { withFileTypes: true }); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
     }
-    await rmdir(directory).catch((error) => { if ((error as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw error; });
+    for (const entry of entries) {
+      const directory = path.join(root, entry.name);
+      await assertNoSymlinkComponents(dataRoot, directory);
+      if (!entry.isDirectory()) { await rm(directory, { force: true }); removed += 1; continue; }
+      const directories = directoriesByMatch.get(entry.name) ?? [];
+      directories.push({ directory, referencedPath });
+      directoriesByMatch.set(entry.name, directories);
+    }
+  }
+  await collectRoot('results', (state) => state.referencedPath);
+  await collectRoot('experimental/evp', (state) => state.evpReferencedPath);
+
+  for (const [matchId, directories] of directoriesByMatch) {
+    const reconcileMatch = async (state: ResultPointerState): Promise<void> => {
+      for (const { directory, referencedPath } of directories) {
+        const children = await readdir(directory, { withFileTypes: true });
+        for (const child of children) {
+          const target = path.join(directory, child.name);
+          const relative = path.relative(dataRoot, target).replaceAll('\\', '/');
+          if (state.active || (!child.isDirectory() && !child.isSymbolicLink() && relative === referencedPath(state))) {
+            retained += 1;
+            continue;
+          }
+          await assertNoSymlinkComponents(dataRoot, target);
+          await rm(target, { recursive: child.isDirectory(), force: true });
+          removed += 1;
+        }
+        await rmdir(directory).catch((error) => { if ((error as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw error; });
+      }
+    };
+    if (overrideStates) {
+      await reconcileMatch(overrideStates.get(matchId) ?? {
+        referencedPath: null,
+        evpReferencedPath: null,
+        active: false,
+      });
+    } else {
+      await runSerializedMatchArtifactWrite(client, matchId, async (transaction) => {
+        await options.afterMatchLock?.(matchId);
+        await reconcileMatch(await currentResultState(transaction, matchId));
+      }, Prisma.TransactionIsolationLevel.ReadCommitted);
+    }
   }
   return { removed, retained };
 }
@@ -182,13 +249,13 @@ export async function reconcileDeletingMatches(dataRoot: string): Promise<number
       job.status as (typeof UNFINISHED_JOB_STATUSES)[number],
     ))) continue;
     const files = new Set<string>();
-    for (const candidate of [match.rawFilePath, match.normalizedFilePath, match.resultFilePath, ...match.reports.map((report) => report.jsonFilePath)]) if (candidate) files.add(candidate);
+    for (const candidate of [match.rawFilePath, match.normalizedFilePath, match.resultFilePath, match.evpFilePath, ...match.reports.map((report) => report.jsonFilePath)]) if (candidate) files.add(candidate);
     for (const relative of files) {
       const target = resolveDataPath(dataRoot, relative);
       await assertNoSymlinkComponents(dataRoot, target);
       await rm(target, { force: true });
     }
-    for (const directory of [`results/${match.id}`,`reports/${match.id}`,`experimental/c2s2/${match.id}`,`experimental/c2s2-participation/${match.id}`]) {
+    for (const directory of [`results/${match.id}`,`reports/${match.id}`,`experimental/c2s2/${match.id}`,`experimental/c2s2-participation/${match.id}`,`experimental/evp/${match.id}`]) {
       const resolved = resolveDataPath(dataRoot, directory);
       try { await access(resolved); await assertNoSymlinkComponents(dataRoot, resolved); await rm(resolved, { recursive: true, force: true }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     }

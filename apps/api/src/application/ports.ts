@@ -1,5 +1,6 @@
 import type {
   CanonicalMatchResult,
+  EvpReport,
   JobStatus,
   MatchAnalytics,
   MatchArtifact,
@@ -25,6 +26,11 @@ export interface StoredMatch {
   resultSha256: string | null;
   resultPolicyId: string | null;
   resultPolicyDigest: string | null;
+  evpFilePath: string | null;
+  evpSchemaVersion: string | null;
+  evpSha256: string | null;
+  evpPolicyId: string | null;
+  evpBindingDigest: string | null;
 }
 
 export interface StoredJob {
@@ -113,6 +119,7 @@ export interface StoredMatchArtifact {
 export abstract class ArtifactReaderPort {
   abstract readMatchArtifact(stored: StoredMatch): Promise<StoredMatchArtifact>;
   abstract readCanonicalResult(stored: StoredMatch, requireActivePolicy?: boolean): Promise<CanonicalMatchResult>;
+  abstract readEvpReport(stored: StoredMatch, canonical: CanonicalMatchResult): Promise<EvpReport>;
   abstract readParticipationSidecar(artifact: MatchArtifact, rawFilePath: string | null): Promise<ParticipationSidecar>;
   abstract readScoringReport(relativePath: string): Promise<ScoringReport>;
 }

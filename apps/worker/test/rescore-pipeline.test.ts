@@ -7,6 +7,7 @@ const dependencies = vi.hoisted(() => ({
   persistScoringReport: vi.fn(),
   publishCanonicalMatchResult: vi.fn(),
   readCanonicalMatchResult: vi.fn(),
+  readStoredEvpReport: vi.fn(),
   removeOwnedResult: vi.fn(),
   requestedScoringConfig: vi.fn(),
   scoreMatch: vi.fn(),
@@ -16,6 +17,10 @@ const dependencies = vi.hoisted(() => ({
 vi.mock('@who-ruined/contracts', async (importOriginal) => ({
   ...await importOriginal<typeof import('@who-ruined/contracts')>(),
   canonicalMatchResultSchema: { parse: (value: unknown) => value },
+}));
+vi.mock('@who-ruined/artifacts', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@who-ruined/artifacts')>(),
+  evpReportBinding: () => ({ inputDigest: 'd'.repeat(64) }),
 }));
 vi.mock('@who-ruined/database', async (importOriginal) => ({
   ...await importOriginal<typeof import('@who-ruined/database')>(),
@@ -35,6 +40,9 @@ vi.mock('../src/report-storage.js', () => ({
   persistScoringReport: dependencies.persistScoringReport,
   requestedScoringConfig: dependencies.requestedScoringConfig,
   scoreStoredArtifact: dependencies.scoreStoredArtifact,
+}));
+vi.mock('../src/evp-report-storage.js', () => ({
+  readStoredEvpReport: dependencies.readStoredEvpReport,
 }));
 
 const { runRescorePipeline } = await import('../src/rescore-pipeline.js');
@@ -64,6 +72,7 @@ beforeEach(() => {
   dependencies.scoreStoredArtifact.mockResolvedValue(report);
   dependencies.persistScoringReport.mockResolvedValue('CREATED');
   dependencies.completeOwnedJob.mockResolvedValue(undefined);
+  dependencies.readStoredEvpReport.mockResolvedValue({});
 });
 
 describe('rescore pipeline routing', () => {
@@ -74,6 +83,11 @@ describe('rescore pipeline routing', () => {
         resultFilePath: null,
         resultSha256: null,
         normalizedFilePath: 'cache/match.json.gz',
+        evpFilePath: null,
+        evpSchemaVersion: null,
+        evpSha256: null,
+        evpPolicyId: null,
+        evpBindingDigest: null,
       },
     });
 
@@ -110,10 +124,16 @@ describe('rescore pipeline routing', () => {
         resultFilePath: 'results/match/previous.json.gz',
         resultSha256: 'b'.repeat(64),
         normalizedFilePath: null,
+        evpFilePath: 'experimental/evp/match/report.json.gz',
+        evpSchemaVersion: 'evp-report@1',
+        evpSha256: 'e'.repeat(64),
+        evpPolicyId: 'evp-policy@1-experimental',
+        evpBindingDigest: 'd'.repeat(64),
       },
     });
 
     expect(dependencies.persistScoringReport).not.toHaveBeenCalled();
+    expect(dependencies.readStoredEvpReport).toHaveBeenCalledOnce();
     expect(dependencies.completeOwnedJob).toHaveBeenCalledWith(expect.objectContaining({
       matchData: expect.objectContaining({
         resultFilePath: 'results/match/current.json.gz',
@@ -131,6 +151,11 @@ describe('rescore pipeline routing', () => {
         resultFilePath: 'results/match/previous.json.gz',
         resultSha256: 'b'.repeat(64),
         normalizedFilePath: null,
+        evpFilePath: null,
+        evpSchemaVersion: null,
+        evpSha256: null,
+        evpPolicyId: null,
+        evpBindingDigest: null,
       },
     })).rejects.toThrow('REPORT_CORRUPT');
 
@@ -138,5 +163,31 @@ describe('rescore pipeline routing', () => {
     expect(dependencies.publishCanonicalMatchResult).not.toHaveBeenCalled();
     expect(dependencies.completeOwnedJob).not.toHaveBeenCalled();
     expect(dependencies.removeOwnedResult).not.toHaveBeenCalled();
+  });
+
+  it('rejects an EVP pointer bound to stale MVP or participation inputs', async () => {
+    dependencies.readCanonicalMatchResult.mockResolvedValue({
+      artifact: { match: { matchId: 'match' } },
+      productionReports: [],
+      schemaVersion: 'match-result@1',
+      internal: {},
+    });
+
+    await expect(runRescorePipeline({
+      ...baseOptions,
+      match: {
+        resultFilePath: 'results/match/previous.json.gz',
+        resultSha256: 'b'.repeat(64),
+        normalizedFilePath: null,
+        evpFilePath: 'experimental/evp/match/report.json.gz',
+        evpSchemaVersion: 'evp-report@1',
+        evpSha256: 'e'.repeat(64),
+        evpPolicyId: 'evp-policy@1-experimental',
+        evpBindingDigest: 'f'.repeat(64),
+      },
+    })).rejects.toThrow('REPORT_CORRUPT');
+
+    expect(dependencies.scoreMatch).not.toHaveBeenCalled();
+    expect(dependencies.readStoredEvpReport).not.toHaveBeenCalled();
   });
 });

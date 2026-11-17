@@ -20,6 +20,7 @@ export class LocalArtifactDeletion implements ArtifactDeletionPort {
       `replays/${matchId}`,
       `experimental/c2s2/${matchId}`,
       `experimental/c2s2-participation/${matchId}`,
+      `experimental/evp/${matchId}`,
     ]) {
       await rm(await safeExistingDataPath(directory), { recursive: true, force: true }).catch((error) => {
         throw new ApplicationError('STORAGE_FAILURE', 'Не удалось завершить очистку каталога матча.', 503, {

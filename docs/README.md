@@ -15,6 +15,8 @@ This index separates the current system contract from milestone evidence. A docu
 | Frontend | [frontend architecture](frontend.md) | Feature modules, routes, data ownership, i18n and browser checks |
 | Replay maps | [radar assets](replay-maps.md) | Catalogue updates, rollback, map layers and future Workshop acquisition |
 | Rating and reports | [scoring](scoring.md) | H2 semantics, explanation, important moments and historical compatibility |
+| Experimental EVP | [EVP report](evp.md) | Immutable report, API, bindings, RESCORE and historical backfill |
+| Player radar | [radar projection](player-radar.md) | Eight-axis registry, fixed normalization, match averages and award attribution |
 | Constraints | [limitations](limitations.md) | Known data, model, runtime and deployment limits |
 | Parser evidence | [compatibility](compatibility.md) | Verified parser capability mapping and external-demo evidence |
 | Decisions | [decision log](decisions.md) | Current architectural decisions and superseded context |

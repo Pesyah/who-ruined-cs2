@@ -12,6 +12,10 @@ export * from './participation-rating.js';
 export * from './active-match-result.js';
 export * from './important-moments.js';
 export * from './participation-explanation.js';
+export * from './evp.js';
+export * from './evp-input.js';
+export * from './evp-report.js';
+export * from './player-radar.js';
 export * from './presets.js';
 
 type FindingCode = ScoringFinding['code'];
