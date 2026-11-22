@@ -146,22 +146,28 @@ function assertMatch(match, matchId, expectedMatchKind) {
   return { playerIds, roundIds, teamIds };
 }
 
-function assertRatingArithmetic(rating, label) {
+function assertRatingArithmetic(rating, label, families) {
   requireRecord(rating, label);
   assertFiniteNumber(rating.value, `${label}.value`);
   const finalAttribution = requireRecord(rating.finalAttribution, `${label}.finalAttribution`);
-  assertSameIds(Object.keys(finalAttribution), [...FAMILY_NAMES], `${label}.finalAttribution families`);
-  const reconstructed = 1 + Object.values(finalAttribution).reduce((sum, value, index) => {
-    assertFiniteNumber(value, `${label}.finalAttribution[${index}]`);
+  assertSameIds(Object.keys(finalAttribution), [...families], `${label}.finalAttribution families`);
+  assertSameIds(Object.keys(rating.rawFamilyInputs ?? {}), [...families], `${label}.rawFamilyInputs families`);
+  const reconstructed = 1 + Object.entries(finalAttribution).reduce((sum, [family, value]) => {
+    if (family === 'ROUND_IMPACT' && value === null) {
+      assert.equal(rating.rawFamilyInputs[family], null, 'Unavailable round impact must be null in both fields.');
+      return sum;
+    }
+    assertFiniteNumber(value, `${label}.finalAttribution[${family}]`);
     return sum + value;
   }, 0);
   const arithmetic = requireRecord(rating.arithmetic, `${label}.arithmetic`);
+  assert.equal(arithmetic.tolerance, 1e-12);
   assert.equal(arithmetic.exactWithinTolerance, true, `${label} is not exact within its declared tolerance.`);
   assertClose(arithmetic.reconstructed, reconstructed, arithmetic.tolerance, `${label}.arithmetic.reconstructed`);
   assertClose(rating.value, reconstructed, arithmetic.tolerance, `${label}.value reconstruction`);
 }
 
-function assertRatingReport(rating, match, bindings, expectedMatchKind, expectedRatingState) {
+function assertRatingReport(rating, match, bindings, expectedMatchKind, expectedRatingState, families) {
   requireRecord(rating, 'rating report');
   assert.equal(rating.matchId, match.matchId, 'Rating/match binding mismatch.');
   const players = requireArray(rating.players, 'rating.players');
@@ -181,7 +187,7 @@ function assertRatingReport(rating, match, bindings, expectedMatchKind, expected
       assert.notEqual(player.availability?.status, 'CALCULATED_RESEARCH_ONLY', `Null rating for ${player.playerId} is marked calculated.`);
     } else {
       assert.equal(player.availability?.status, 'CALCULATED_RESEARCH_ONLY', `Calculated rating for ${player.playerId} lacks calculated availability.`);
-      assertRatingArithmetic(player.rating, `rating.players[${player.playerId}].rating`);
+      assertRatingArithmetic(player.rating, `rating.players[${player.playerId}].rating`, families);
       calculated.push(player.playerId);
     }
   }
@@ -211,7 +217,7 @@ function assertMomentBindings(moments, match, label) {
   }
 }
 
-function assertExplanation(explanation, match, ratingPlayers, expectedRatingState) {
+function assertExplanation(explanation, match, ratingPlayers, expectedRatingState, expectedFamilies) {
   requireRecord(explanation, 'explanation report');
   assert.equal(explanation.matchId, match.matchId, 'Explanation/match binding mismatch.');
   const players = requireArray(explanation.players, 'explanation.players');
@@ -224,14 +230,20 @@ function assertExplanation(explanation, match, ratingPlayers, expectedRatingStat
     assert.equal(player.rating === null, ratingPlayer.rating === null, `Explanation availability mismatch for ${player.playerId}.`);
     if (player.rating !== null) {
       const families = requireArray(player.rating.families, `explanation.players[${player.playerId}].rating.families`);
-      assert.equal(families.length, FAMILY_NAMES.size, `Explanation for ${player.playerId} must contain six families.`);
-      assertSameIds(families.map((family) => family.family), [...FAMILY_NAMES], `Explanation families for ${player.playerId}`);
+      assert.equal(families.length, expectedFamilies.size, `Explanation for ${player.playerId} family count.`);
+      assertSameIds(families.map((family) => family.family), [...expectedFamilies], `Explanation families for ${player.playerId}`);
       const reconstructed = 1 + families.reduce((sum, family) => {
-        assertFiniteNumber(family.rawInput, `Explanation ${player.playerId}/${family.family} raw input`);
-        assertFiniteNumber(family.finalAttribution, `Explanation ${player.playerId}/${family.family} attribution`);
+        if (expectedFamilies.has('ROUND_IMPACT')) {
+          assert.equal(family.rawInput, ratingPlayer.rating.rawFamilyInputs[family.family], 'Explanation raw input differs from rating.');
+          assert.equal(family.finalAttribution, ratingPlayer.rating.finalAttribution[family.family], 'Explanation attribution differs from rating.');
+        }
+        if (family.family !== 'ROUND_IMPACT' || family.finalAttribution !== null) {
+          assertFiniteNumber(family.rawInput, `Explanation ${player.playerId}/${family.family} raw input`);
+          assertFiniteNumber(family.finalAttribution, `Explanation ${player.playerId}/${family.family} attribution`);
+        }
         requireArray(family.sources, `Explanation ${player.playerId}/${family.family} sources`);
         requireArray(family.transformations, `Explanation ${player.playerId}/${family.family} transformations`);
-        return sum + family.finalAttribution;
+        return sum + (family.finalAttribution ?? 0);
       }, 0);
       assertClose(player.rating.value, ratingPlayer.rating.value, 1e-12, `Explanation/rating value for ${player.playerId}`);
       assertClose(player.rating.value, reconstructed, player.rating.arithmetic.tolerance, `Explanation reconstruction for ${player.playerId}`);
@@ -372,6 +384,7 @@ async function inspectMatch(api, matchId, expectations) {
 
   let rating = null;
   let explanation = null;
+  let radar = null;
   if (!ratingResult.ok || !explanationResult.ok) {
     assert.equal(expectations.ratings, 'UNAVAILABLE', 'H2 endpoints failed although calculated ratings were expected.');
     assertExpectedUnavailableResponse(ratingResult, 'Rating endpoint');
@@ -379,9 +392,35 @@ async function inspectMatch(api, matchId, expectations) {
   } else {
     rating = ratingResult.body;
     explanation = explanationResult.body;
-    const ratingPlayers = assertRatingReport(rating, match, bindings, expectations.match, expectations.ratings);
-    assertExplanation(explanation, match, ratingPlayers, expectations.ratings);
+    const h3 = rating.schemaVersion === 'm4.3-participation-rating@2';
+    if (expectations.h3) assert.equal(h3, true, 'Expected production H3 on the match.');
+    const families = h3 ? new Set([...FAMILY_NAMES, 'ROUND_IMPACT']) : FAMILY_NAMES;
+    const ratingPlayers = assertRatingReport(rating, match, bindings, expectations.match, expectations.ratings, families);
+    assertExplanation(explanation, match, ratingPlayers, expectations.ratings, families);
+    if (h3) {
+      assert.equal(rating.policy.id, 'h3-seven-family@1');
+      assert.match(rating.policy.digest, /^[a-f0-9]{64}$/u);
+      assert.equal(explanation.schemaVersion, 'm4.6-participation-explanation@2');
+      assert.deepEqual(explanation.policy, rating.policy);
+      radar = await jsonRequest(api, `/matches/${matchId}/radar`);
+      assert.equal(radar.schemaVersion, 'player-radar@2');
+      assert.equal(radar.matchId, matchId);
+      assert.equal(radar.sourceBinding.matchResultSchemaVersion, 'match-result@2');
+      assert.deepEqual(radar.sourceBinding.ratingPolicy, rating.policy);
+      assert.equal(radar.sourceBinding.evpInputDigest, evp.binding.inputDigest);
+      const radarPlayers = requireArray(radar.players, 'radar.players');
+      assertSameIds(radarPlayers.map((player) => player.playerId), bindings.playerIds, 'Radar players');
+      const axisOrder = ['MULTIKILL', 'ASSISTS', 'FLASH', 'TRADES', 'CLUTCH', 'ENTRY', 'UTILITY', 'OBJECTIVES'];
+      for (const player of radarPlayers) {
+        assert.deepEqual(player.axes.map((axis) => axis.axisId), axisOrder);
+        const award = player.playerId === rating.awards.mvp.playerId ? 'MVP'
+          : evp.awards.some((row) => row.playerId === player.playerId) ? 'EVP' : 'NONE';
+        assert.equal(player.awardState, award, 'Radar award mismatch.');
+        assert.deepEqual(player.ratingExplanation.families, explanation.players.find((row) => row.playerId === player.playerId).rating?.families ?? []);
+      }
+    }
   }
+  if (expectations.h3) assert.ok(radar, 'H3 requires an H3 Radar response.');
   assertEvpReport(evp, match, rating);
 
   const replayRounds = assertReplayMetadata(replay, match, bindings, expectations.replay);
@@ -393,7 +432,7 @@ async function inspectMatch(api, matchId, expectations) {
 
   const calculatedRatings = rating?.players.filter((player) => player.rating !== null).length ?? null;
   return {
-    snapshot: { match, rating, explanation, evp, replay, replayRound },
+    snapshot: { match, rating, explanation, evp, replay, replayRound, radar },
     summary: {
       matchId,
       map: match.map,
@@ -406,6 +445,7 @@ async function inspectMatch(api, matchId, expectations) {
       explanationPlayers: explanation?.players.length ?? null,
       importantMoments: explanation?.importantMoments.length ?? null,
       evpAwards: evp.awards.length,
+      ...(radar ? { policy: rating.policy, radarPlayers: radar.players.length } : {}),
       replayAvailability: replay.availability,
       replayRounds: replay.availability === 'AVAILABLE' ? replayRounds.length : null,
       replayFrames: replay.availability === 'AVAILABLE' ? replay.totalFrames : null,
@@ -418,6 +458,7 @@ function assertStableAfterRescore(before, after) {
   assert.deepEqual(after.rating, before.rating, 'H2 result changed during same-version RESCORE.');
   assert.deepEqual(after.explanation, before.explanation, 'H2 explanation changed during same-version RESCORE.');
   assert.deepEqual(after.evp, before.evp, 'EVP result changed during same-input RESCORE.');
+  assert.deepEqual(after.radar, before.radar, 'Radar changed during same-input RESCORE.');
   assert.deepEqual(after.replay, before.replay, 'Replay metadata changed during RESCORE.');
   assert.deepEqual(after.replayRound, before.replayRound, 'Replay round changed during RESCORE.');
 }
@@ -431,7 +472,7 @@ function resolveExpectations(options) {
   if (match === 'FULL' && ratings !== 'AVAILABLE') {
     throw new Error('FULL smoke cannot expect unavailable H2 ratings.');
   }
-  return { match, ratings, replay };
+  return { match, ratings, replay, ...(options['expect-h3'] === '1' ? { h3: true } : {}) };
 }
 
 export async function runRealDemoSmoke(rawArguments = process.argv.slice(2)) {

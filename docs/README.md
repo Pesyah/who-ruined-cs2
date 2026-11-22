@@ -15,6 +15,9 @@ This index separates the current system contract from milestone evidence. A docu
 | Frontend | [frontend architecture](frontend.md) | Feature modules, routes, data ownership, i18n and browser checks |
 | Replay maps | [radar assets](replay-maps.md) | Catalogue updates, rollback, map layers and future Workshop acquisition |
 | Rating and reports | [scoring](scoring.md) | H2 semantics, explanation, important moments and historical compatibility |
+| H2 evolution research | [H2-E1 baseline](research/h2-evolution/README.md) | Evidence inventory, semantic differences, coverage and experiment protocol |
+| Offline H2/H3 comparison | [H3 comparison](h3-comparison.md) | Seven-family model, repeatable corpus parity and evidence limitations |
+| H3 frontend handoff | [H3 DTOs and fixtures](h3-frontend-handoff.md) | Rating, explanation, EVP, Radar and historical H2 |
 | Experimental EVP | [EVP report](evp.md) | Immutable report, API, bindings, RESCORE and historical backfill |
 | Player radar | [radar projection](player-radar.md) | Eight-axis registry, fixed normalization, match averages and award attribution |
 | Constraints | [limitations](limitations.md) | Known data, model, runtime and deployment limits |

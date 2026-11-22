@@ -1,8 +1,12 @@
 import {
   playerRadarAxisIds,
   playerRadarReportSchema,
+  h3RadarReportSchema,
   radarNormalizationVersion,
   type CanonicalMatchResult,
+  type HistoricalMatchResult,
+  type H3ExplanationFamily,
+  type StoredPlayerRadarReport,
   type EvpReport,
   type EvpSpecializationId,
   type MatchEvent,
@@ -542,8 +546,8 @@ function contextAxis(tag: string): PlayerRadarAxisId | null {
 function mvpAttributions(
   canonical: CanonicalMatchResult,
   playerId: string,
-  families: readonly ParticipationExplanationFamilyRow[],
-): Map<PlayerRadarAxisId, NonNullable<PlayerRadarAxis['mvpAttribution']>> {
+  families: readonly (ParticipationExplanationFamilyRow | H3ExplanationFamily)[],
+) {
   const byAxis = new Map<PlayerRadarAxisId, { families: Map<string, number>; eventIds: string[]; roundIds: string[] }>();
   const analytics = canonical.artifact.analytics.players.find((row) => row.playerId === playerId);
   if (!analytics) return new Map();
@@ -576,20 +580,41 @@ function mvpAttributions(
     if (event?.actorId === playerId && (event.kind === 'BOMB_PLANTED' || event.kind === 'BOMB_DEFUSED')) axes.push('OBJECTIVES');
     return axes;
   };
-  const add = (axisId: PlayerRadarAxisId, family: ParticipationExplanationFamilyRow, eventIds: readonly string[], roundIds: readonly string[]) => {
+  const add = (axisId: PlayerRadarAxisId, family: { family: H3ExplanationFamily['family']; finalAttribution: number }, eventIds: readonly string[], roundIds: readonly string[]) => {
     const current = byAxis.get(axisId) ?? { families: new Map<string, number>(), eventIds: [], roundIds: [] };
     current.families.set(family.family, family.finalAttribution);
     current.eventIds.push(...eventIds);
     current.roundIds.push(...roundIds);
     byAxis.set(axisId, current);
   };
-  for (const family of families.filter((row) => row.finalAttribution > 0)) {
+  for (const family of families) {
+    if (family.finalAttribution === null || family.finalAttribution <= 0) continue;
+    const positive = { family: family.family, finalAttribution: family.finalAttribution };
+    if (family.family === 'ROUND_IMPACT') {
+      for (const source of family.sources.filter((row) => row.rawContribution > 0)) {
+        for (const eventId of source.evidenceEventIds) {
+          const event = eventById.get(eventId);
+          if (event?.actorId !== playerId) continue;
+          if (source.reason === 'ROUND_IMPACT_CLUTCH' && event.kind === 'PLAYER_DEATH' && enemyRelation(teamByPlayer, event)) {
+            add('CLUTCH', positive, [eventId], [event.roundId]);
+          }
+          if (source.reason === 'ROUND_IMPACT_POSTPLANT' && axesForEvidenceEvent(eventId).includes('OBJECTIVES')) {
+            add('OBJECTIVES', positive, [eventId], [event.roundId]);
+          }
+        }
+      }
+      continue;
+    }
     if (family.family !== 'CONTEXT') {
       for (const source of family.sources.filter((row) => (row.finalContribution ?? 0) > 0 && row.kind !== 'BASELINE')) {
         for (const eventId of source.evidenceEventIds) {
           const event = eventById.get(eventId);
           if (!event) continue;
-          for (const axisId of axesForEvidenceEvent(eventId)) add(axisId, family, [eventId], [event.roundId]);
+          for (const axisId of axesForEvidenceEvent(eventId)) add(axisId, positive, [eventId], [event.roundId]);
+          if (canonical.schemaVersion === 'match-result@2' && event.actorId === playerId && event.kind === 'PLAYER_BLIND'
+            && enemyRelation(teamByPlayer, event) && typeof event.attrs.blindDuration === 'number' && event.attrs.blindDuration > 0) {
+            add('FLASH', positive, [eventId], [event.roundId]);
+          }
         }
       }
     }
@@ -601,14 +626,12 @@ function mvpAttributions(
         if (!axisId) continue;
         const event = eventById.get(anchorId);
         if (!event || !axesForEvidenceEvent(anchorId).includes(axisId)) continue;
-        add(axisId, family, [event.id], [event.roundId]);
+        add(axisId, positive, [event.id], [event.roundId]);
       }
     }
   }
   return new Map([...byAxis].map(([axisId, value]) => [axisId, {
-    reasonCode: 'CONFIRMED_POSITIVE_H2_EVIDENCE' as const,
-    terminologyCode: 'POSITIVE_H2_FACTOR_NOT_DECISIVE_CAUSE' as const,
-    families: [...value.families].sort(([left], [right]) => left.localeCompare(right)).map(([family, familyFinalAttribution]) => ({ family: family as ParticipationExplanationFamilyRow['family'], familyFinalAttribution })),
+    families: [...value.families].sort(([left], [right]) => left.localeCompare(right)).map(([family, familyFinalAttribution]) => ({ family, familyFinalAttribution })),
     evidenceEventIds: sortedUnique(value.eventIds),
     evidenceRoundIds: sortedUnique(value.roundIds),
   }]));
@@ -621,13 +644,15 @@ function hasActiveH2(canonical: CanonicalMatchResult): boolean {
 }
 
 /** Read-only projection of stored M2/H2/EVP data. It never evaluates either award policy. */
-export function buildPlayerRadar(canonical: CanonicalMatchResult, evpReport: EvpReport | null): PlayerRadarReport {
-  const h2Available = hasActiveH2(canonical);
-  const explanation = h2Available ? buildStoredParticipationExplanation(canonical) : null;
+export function buildPlayerRadar(canonical: HistoricalMatchResult, evpReport: EvpReport | null): PlayerRadarReport;
+export function buildPlayerRadar(canonical: CanonicalMatchResult, evpReport: EvpReport | null): StoredPlayerRadarReport;
+export function buildPlayerRadar(canonical: CanonicalMatchResult, evpReport: EvpReport | null): StoredPlayerRadarReport {
+  const ratingAvailable = canonical.schemaVersion === 'match-result@2' || hasActiveH2(canonical);
+  const explanation = ratingAvailable ? buildStoredParticipationExplanation(canonical) : null;
   const explanationByPlayer = new Map(explanation?.players.map((player) => [player.playerId, player]) ?? []);
   const analyticsByPlayer = new Map(canonical.artifact.analytics.players.map((player) => [player.playerId, player]));
   const ratingByPlayer = new Map(canonical.activeRating.players.map((player) => [player.playerId, player]));
-  const mvpPlayerId = h2Available ? canonical.activeRating.awards.mvp.playerId : null;
+  const mvpPlayerId = ratingAvailable ? canonical.activeRating.awards.mvp.playerId : null;
   const drafts = canonical.artifact.match.players.map((identity) => {
     const rating = ratingByPlayer.get(identity.id);
     const axes = axisDrafts(canonical, analyticsByPlayer.get(identity.id), identity.id, rating?.coverage.verifiedRounds ?? 0);
@@ -685,7 +710,7 @@ export function buildPlayerRadar(canonical: CanonicalMatchResult, evpReport: Evp
         comparisonPoolSize: matchComparisons[index]!.comparisonPoolSize,
         comparisonIncompleteCoverage: matchComparisons[index]!.incompleteCoverage,
       })),
-      h2Explanation: !h2Available
+      ratingExplanation: !ratingAvailable
         ? { availability: 'UNAVAILABLE' as const, reasonIfUnavailable: 'H2_UNAVAILABLE' as const, ratingValue: null, families: [] }
         : !h2?.rating
           ? { availability: 'UNAVAILABLE' as const, reasonIfUnavailable: 'H2_PLAYER_RATING_UNAVAILABLE' as const, ratingValue: null, families: [] }
@@ -693,21 +718,50 @@ export function buildPlayerRadar(canonical: CanonicalMatchResult, evpReport: Evp
     };
   });
 
-  return playerRadarReportSchema.parse({
-    schemaVersion: 'player-radar@1',
+  const reportFields = {
     matchId: canonical.artifact.match.matchId,
     normalizationVersion: radarNormalizationVersion,
     experimental: true,
-    sourceBinding: {
-      matchResultSchemaVersion: canonical.schemaVersion,
-      matchFileSha256: canonical.artifact.match.fileSha256,
-      h2ReportSchemaVersion: h2Available ? canonical.activeRating.schemaVersion : null,
-      evpReportSchemaVersion: evpReport?.schemaVersion ?? null,
-      evpInputDigest: evpReport?.binding.inputDigest ?? null,
-    },
     axisDefinitions: AXIS_DEFINITIONS,
     matchComparisons,
-    players,
+  };
+  const evpBinding = {
+    evpReportSchemaVersion: evpReport?.schemaVersion ?? null, evpInputDigest: evpReport?.binding.inputDigest ?? null,
+  };
+  if (canonical.schemaVersion === 'match-result@2') {
+    return h3RadarReportSchema.parse({
+      ...reportFields, schemaVersion: 'player-radar@2',
+      sourceBinding: {
+        ...evpBinding, matchResultSchemaVersion: canonical.schemaVersion,
+        matchFileSha256: canonical.artifact.match.fileSha256,
+        ratingReportSchemaVersion: canonical.activeRating.schemaVersion, ratingPolicy: canonical.activeRating.policy,
+      },
+      players: players.map(({ axes, ratingExplanation, ...player }) => ({ ...player,
+        ratingExplanation: { ...ratingExplanation, reasonIfUnavailable: ratingExplanation.ratingValue === null ? 'PLAYER_RATING_UNAVAILABLE' : null },
+        axes: axes.map(({ relatedH2Families, mvpAttribution, ...axis }) => ({
+          ...axis, relatedRatingFamilies: axis.axisId === 'CLUTCH' || axis.axisId === 'OBJECTIVES'
+            ? [...relatedH2Families, 'ROUND_IMPACT'] : relatedH2Families,
+          mvpAttribution: mvpAttribution && {
+            ...mvpAttribution, reasonCode: 'CONFIRMED_POSITIVE_H3_EVIDENCE',
+            terminologyCode: 'POSITIVE_H3_FACTOR_NOT_DECISIVE_CAUSE',
+          },
+        })),
+      })),
+    });
+  }
+  return playerRadarReportSchema.parse({
+    ...reportFields, schemaVersion: 'player-radar@1',
+    sourceBinding: {
+      ...evpBinding,
+      matchResultSchemaVersion: canonical.schemaVersion,
+      matchFileSha256: canonical.artifact.match.fileSha256,
+      h2ReportSchemaVersion: ratingAvailable ? canonical.activeRating.schemaVersion : null,
+    },
+    players: players.map(({ axes, ratingExplanation, ...player }) => ({ ...player, h2Explanation: ratingExplanation,
+      axes: axes.map(({ mvpAttribution, ...axis }) => ({ ...axis, mvpAttribution: mvpAttribution && {
+        ...mvpAttribution, reasonCode: 'CONFIRMED_POSITIVE_H2_EVIDENCE', terminologyCode: 'POSITIVE_H2_FACTOR_NOT_DECISIVE_CAUSE',
+      } })),
+    })),
   });
 }
 

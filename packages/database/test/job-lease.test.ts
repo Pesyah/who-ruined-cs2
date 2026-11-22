@@ -12,7 +12,8 @@ async function fixture() {
   const database = await createPostgresTestDatabase(2);
   databases.push(database);
   const [first, second] = database.clients;
-  await first!.match.create({
+  if (!first || !second) throw new Error('Expected two PostgreSQL test connections');
+  await first.match.create({
     data: {
       id: 'match',
       originalFileName: 'fixture.dem',
@@ -22,7 +23,7 @@ async function fixture() {
       normalizerVersion: 'normalizer',
     },
   });
-  await first!.job.create({
+  await first.job.create({
     data: {
       id: 'job',
       matchId: 'match',

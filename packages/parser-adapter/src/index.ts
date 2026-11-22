@@ -8,6 +8,7 @@ export {
   type UnknownRow,
 } from './native-adapter.js';
 export { asInteger, asText } from './decoding.js';
+export { parseDemoEquipmentTicks } from './equipment-sampling.js';
 export {
   NORMALIZER_VERSION,
   parseDemoSnapshot,

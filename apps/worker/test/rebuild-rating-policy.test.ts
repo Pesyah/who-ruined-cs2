@@ -2,9 +2,11 @@ import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { matchArtifactSchema } from '@who-ruined/contracts';
+import { matchArtifactSchema, type CanonicalMatchResult } from '@who-ruined/contracts';
+import { parseCanonicalMatchResult } from '@who-ruined/artifacts';
 import { computeMatchAnalytics } from '@who-ruined/features';
 import { buildCanonicalMatchResult } from '@who-ruined/scoring';
+import { buildH3MatchResult } from '@who-ruined/scoring/h3';
 import { syntheticValidMatch } from '@who-ruined/testkit';
 import {
   createPostgresTestDatabase,
@@ -26,9 +28,9 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function canonical() {
+function canonicalOptions() {
   const match = syntheticValidMatch();
-  return buildCanonicalMatchResult({
+  return {
     artifact: matchArtifactSchema.parse({
       schemaVersion: 'm2-artifact-1',
       match,
@@ -38,8 +40,23 @@ function canonical() {
     productionReports: [],
     sourceDemoRetained: false,
     createdAt: '2026-11-09T00:00:00.000Z',
-  });
+  };
 }
+
+function canonical() {
+  return buildH3MatchResult({ ...canonicalOptions(), roundStarts: [], equipment: [] });
+}
+
+it('validates an H3 canonical result and rejects a disagreeing explanation', () => {
+  const result = canonical();
+  expect(parseCanonicalMatchResult(result)).toEqual(result);
+  const rated = result.activeRating.players.find((player) => player.rating !== null)!;
+  const explanation = result.explanation.players.find((player) => player.playerId === rated.playerId)!.rating!;
+  expect(explanation.families).toHaveLength(7);
+  expect(explanation.arithmetic.reconstructed).toBeCloseTo(rated.rating!.value, 12);
+  explanation.families[0]!.finalAttribution = 0.123;
+  expect(() => parseCanonicalMatchResult(result)).toThrow();
+});
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -47,12 +64,11 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-async function fixture() {
+async function fixture(result: CanonicalMatchResult = canonical()) {
   const database = await createPostgresTestDatabase(3);
   databases.push(database);
   const dataRoot = await mkdtemp(path.join(os.tmpdir(), 'wrc-rating-rebuild-race-'));
   roots.push(dataRoot);
-  const result = canonical();
   const published = await publishCanonicalMatchResult(dataRoot, result);
   await database.clients[0]!.match.create({
     data: {
@@ -76,7 +92,7 @@ async function fixture() {
 async function expectValidEvpPointer(
   client: PostgresTestDatabase['clients'][number],
   dataRoot: string,
-  result: ReturnType<typeof canonical>,
+  result: CanonicalMatchResult,
 ): Promise<void> {
   const persisted = await client.match.findUniqueOrThrow({
     where: { id: result.artifact.match.matchId },
@@ -102,6 +118,21 @@ async function expectValidEvpPointer(
 }
 
 describe.skipIf(!postgresIntegrationAvailable)('rating rebuild and reconciliation ordering', () => {
+  it('preserves the historical H2 pointer when the source evidence required for H3 is absent', async () => {
+    const result = buildCanonicalMatchResult(canonicalOptions());
+    const { clients, dataRoot } = await fixture(result);
+    const client = clients[0]!;
+    const where = { id: result.artifact.match.matchId };
+    const previous = await client.match.findUniqueOrThrow({ where });
+    const errors: string[] = [];
+    await expect(runRatingRebuild({
+      client, dataRoot, mode: 'apply', matchId: where.id,
+      writeError: (line) => { errors.push(line); },
+    })).resolves.toMatchObject({ target: 'H3', changed: 0, blocked: 1 });
+    expect(errors[0]).toContain('H3_SOURCE_EVIDENCE_UNAVAILABLE');
+    expect(await client.match.findUniqueOrThrow({ where })).toEqual(previous);
+  });
+
   it('protects rebuild publication when rebuild acquires the match lock first', async () => {
     const { clients, dataRoot, result } = await fixture();
     const published = deferred();

@@ -393,6 +393,14 @@ export function buildParticipationSidecar(
   match: MatchData,
   supplement: ParsedParticipationSupplement,
 ): ParticipationSidecar {
+  return prepareParticipationSidecar(snapshot, match, supplement).sidecar;
+}
+
+export function prepareParticipationSidecar(
+  snapshot: ParsedDemoSnapshot,
+  match: MatchData,
+  supplement: ParsedParticipationSupplement,
+) {
   const evidenceFacts = readParticipationEvidenceFacts(snapshot, supplement);
   const base = buildPreparedParticipationInput(snapshot, match, supplement, {
     allowIncompleteRoster: true,
@@ -428,10 +436,11 @@ export function buildParticipationSidecar(
       s2AppliedBy: '@who-ruined/scoring scoreC2S2PreparedProfiles',
     },
   };
-  return validateParticipationSidecar({
+  const sidecar = validateParticipationSidecar({
     schemaVersion: PARTICIPATION_SIDECAR_SCHEMA_VERSION,
     createdAt: new Date().toISOString(),
     fingerprint: digest(stable),
     ...stable,
   });
+  return { sidecar, base };
 }

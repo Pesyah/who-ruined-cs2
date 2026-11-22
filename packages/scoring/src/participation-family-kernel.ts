@@ -201,17 +201,36 @@ function calculatedFamilies(row: PreparedModelRow): Record<ParticipationFamily, 
   };
 }
 
-function contextContribution(episodes: ParticipationEpisodeContribution[]): ParticipationCalculatedRow['context'] & { contribution: number; factors: Record<string, number> } {
+type ContextTag = keyof typeof contextModifiers;
+
+// Effective multipliers, after the frozen policy's deltaScale. Research inputs
+// can only replace known context factors and are bounded by the same kernel cap.
+export type ResearchContextOverrides = ReadonlyMap<string, Readonly<Partial<Record<ContextTag, number>>>>;
+
+export function resolveParticipationContext(
+  episode: ParticipationEpisodeContribution,
+  replacements?: Readonly<Partial<Record<ContextTag, number>>>,
+): { tag: ContextTag; multiplier: number } | null {
+  const tags = replacements ? [...new Set([...episode.tags, ...Object.keys(replacements)])] : episode.tags;
+  const winner = tags.filter((tag): tag is ContextTag => Object.hasOwn(contextModifiers, tag))
+    .map((tag) => {
+      const replacement = replacements?.[tag];
+      if (replacement !== undefined) finite(replacement, 'CONTEXT_MULTIPLIER');
+      const multiplier = replacement ?? 1 + PARTICIPATION_FAMILY_POLICY.context.deltaScale * (contextModifiers[tag] - 1);
+      return { tag, multiplier: Math.min(PARTICIPATION_FAMILY_POLICY.context.maxMultiplier, multiplier) };
+    })
+    .sort((left, right) => right.multiplier - left.multiplier || left.tag.localeCompare(right.tag))[0];
+  return winner && winner.multiplier > 1 ? winner : null;
+}
+
+function contextContribution(episodes: ParticipationEpisodeContribution[], overrides?: ResearchContextOverrides): ParticipationCalculatedRow['context'] & { contribution: number; factors: Record<string, number> } {
   const factors: Record<string, number> = {};
   const winningTagByAnchor: Record<string, string> = {};
   let total = 0;
   for (const episode of episodes) {
     if (!['COMBAT', 'SUPPORT'].includes(episode.family) || !(episode.base > 0)) continue;
-    const winner = episode.tags
-      .filter((tag) => Object.hasOwn(contextModifiers, tag))
-      .map((tag) => ({ tag, multiplier: Math.min(PARTICIPATION_FAMILY_POLICY.context.maxMultiplier, 1 + PARTICIPATION_FAMILY_POLICY.context.deltaScale * (contextModifiers[tag as keyof typeof contextModifiers] - 1)) }))
-      .sort((left, right) => right.multiplier - left.multiplier || left.tag.localeCompare(right.tag))[0];
-    if (!winner || winner.multiplier <= 1) continue;
+    const winner = resolveParticipationContext(episode, overrides?.get(episode.anchorId));
+    if (!winner) continue;
     const value = episode.base * (winner.multiplier - 1);
     factors[winner.tag] = (factors[winner.tag] ?? 0) + value;
     winningTagByAnchor[episode.anchorId] = winner.tag;
@@ -264,6 +283,14 @@ function objectiveSignals(profile: ParticipationPreparedProfile): Record<string,
 }
 
 export function scoreParticipationPreparedProfile(profile: ParticipationPreparedProfile): ParticipationKernelRow {
+  return scorePreparedProfile(profile);
+}
+
+export function scoreParticipationResearchProfile(profile: ParticipationPreparedProfile, overrides: ResearchContextOverrides): ParticipationKernelRow {
+  return scorePreparedProfile(profile, overrides);
+}
+
+function scorePreparedProfile(profile: ParticipationPreparedProfile, overrides?: ResearchContextOverrides): ParticipationKernelRow {
   if (participationFamilyPolicyDigest() !== PARTICIPATION_FAMILY_POLICY_DIGEST) throw new Error('C2S2_POLICY_DIGEST_MISMATCH');
   const source = profile.p4CPlus;
   if (source.status !== 'CALCULATED_RESEARCH_ONLY') {
@@ -277,7 +304,7 @@ export function scoreParticipationPreparedProfile(profile: ParticipationPrepared
   if (profile.p4BPlus.status !== 'CALCULATED_RESEARCH_ONLY') throw new Error('C2S2_CONTEXT_SOURCE_UNAVAILABLE');
   const episodes = profile.p4BPlus.episodeContributions ?? [];
   const families = calculatedFamilies(source);
-  const context = contextContribution(episodes);
+  const context = contextContribution(episodes, overrides);
   const objectives = objectiveContribution(objectiveSignals(profile));
   const raw = families.DIRECT_HARM;
   const soft = softDirectHarmS2(raw);

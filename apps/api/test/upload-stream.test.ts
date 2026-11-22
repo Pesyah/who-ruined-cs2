@@ -12,11 +12,20 @@ let directory: string;
 let server: Server;
 
 function startServer(): Server {
-  const middleware = multer(createDemoUploadOptions(directory, {
+  const options = createDemoUploadOptions(directory, {
     maxUploadBytes: limit,
     minUploadFreeBytes: 1,
     multipartOverheadAllowanceBytes: 1024
-  })).single('demo');
+  });
+  const middleware = multer({
+    ...options,
+    fileFilter(incoming, file, callback) {
+      options.fileFilter(incoming, file, (error, accept) => {
+        if (error) callback(error);
+        else callback(null, accept);
+      });
+    },
+  }).single('demo');
   return createServer((incoming, response) => {
     middleware(incoming as never, response as never, (error?: unknown) => {
       if (error) {

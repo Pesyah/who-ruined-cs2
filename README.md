@@ -9,8 +9,8 @@ The repository is an active prototype, not a public service. The parser, rating 
 - Streams a CS2 `.dem` to local storage and processes it in a separate worker.
 - Normalizes players, roster-based teams, rounds and events without treating T/CT as stable team identity.
 - Computes availability-aware analytics: K/D/A, ADR, KAST, trades, openings, clutches, utility, economy and objective facts.
-- Publishes one immutable `match-result@1` artifact with a content checksum and a PostgreSQL pointer.
-- Exposes the H2 participation rating, MVP/Who Ruined pools and per-player coverage.
+- Publishes one immutable `match-result@2` artifact with a content checksum and a PostgreSQL pointer. Historical H2 results remain readable.
+- Exposes the seven-family H3 participation rating, MVP/Who Ruined pools and per-player coverage for new matches.
 - Explains each rating through six families, typed evidence and transformations. The six final attributions plus the base value of 1 reconstruct the displayed score within `1e-12`.
 - Selects up to eight deterministic important moments per player: multikills and confirmed trades, including reliable fast-trade timing.
 - Builds a factual 2D replay from sampled positions, round events and map metadata. Missing map assets or replay data remain explicit unavailable/partial states.
@@ -18,7 +18,7 @@ The repository is an active prototype, not a public service. The parser, rating 
 
 ## Read the rating correctly
 
-H2 is a deterministic, experimental projection. It is not a calibrated skill rating, win probability or evidence that a player caused a loss. H2 applies the frozen direct-harm multiplier of two; the remaining computation uses the six-family kernel.
+H3 is a deterministic, experimental participation rating. It describes recorded match evidence and uses the frozen direct-harm multiplier of two. Historical H2 retains its six-family explanation. [Scoring](docs/scoring.md).
 
 A value can be `null` when participation or required evidence is insufficient. Missing parser output is never converted to zero. A negative contribution, especially CONTEXT, can come from model centering or an aggregate transformation rather than a discrete mistake. Ordinary deaths are match facts, not tactical blame.
 

@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Post, Req } from '@nest
 import type { Request } from 'express';
 import { ApiAcceptedResponse, ApiBody, ApiConflictResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnprocessableEntityResponse } from '@nestjs/swagger';
 import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface.js';
-import { activeParticipationRatingOpenApiSchema, evpReportOpenApiSchema, participationExplanationOpenApiSchema, playerRadarOpenApiSchema, rescoreRequestSchema } from '@who-ruined/contracts';
+import { storedParticipationRatingOpenApiSchema, evpReportOpenApiSchema, storedParticipationExplanationOpenApiSchema, storedPlayerRadarOpenApiSchema, rescoreRequestSchema } from '@who-ruined/contracts';
 import { ReportQueries } from '../../application/use-cases/report-queries.js';
 import { RescoreMatch, type RescoreMatchRequest } from '../../application/use-cases/rescore-match.js';
 import { assertExactQuery, assertNoPolicySelector, assertOpaqueId, assertPlainObjectWithKeys } from '../../http-validation.js';
@@ -37,8 +37,8 @@ export class ReportsController {
   @Get('matches/:id/experimental-participation-rating')
   @ApiOperation({ operationId: 'MatchesController_participationRating', summary: 'Owner-selected participation rating; policy is server-only and cannot be selected over HTTP' })
   @ApiOkResponse({
-    description: 'm4.3-participation-rating@1; policy-neutral read from the canonical match result',
-    schema: activeParticipationRatingOpenApiSchema as unknown as SchemaObject
+    description: 'H3 m4.3-participation-rating@2 or historical H2 m4.3-participation-rating@1',
+    schema: storedParticipationRatingOpenApiSchema as unknown as SchemaObject
   })
   @ApiNotFoundResponse({ description: 'Match not found or ENABLE_EXPERIMENTAL_PARTICIPATION_RATING is not enabled' })
   @ApiConflictResponse({ description: 'Canonical result missing, corrupt or bound to a different owner policy' })
@@ -51,8 +51,8 @@ export class ReportsController {
   @Get('matches/:id/experimental-participation-explanation')
   @ApiOperation({ operationId: 'MatchesController_participationExplanation', summary: 'Read-only explanation of the active participation rating and verified important moments' })
   @ApiOkResponse({
-    description: 'm4.6-participation-explanation@1 built from the stored canonical match-result@1',
-    schema: participationExplanationOpenApiSchema as unknown as SchemaObject
+    description: 'Persisted seven-family H3 explanation or historical six-family H2 explanation',
+    schema: storedParticipationExplanationOpenApiSchema as unknown as SchemaObject
   })
   @ApiNotFoundResponse({ description: 'Match not found or ENABLE_EXPERIMENTAL_PARTICIPATION_RATING is not enabled' })
   @ApiConflictResponse({ description: 'REPORT_NOT_READY, REPORT_CORRUPT or REPORT_POLICY_MISMATCH' })
@@ -77,8 +77,8 @@ export class ReportsController {
   @Get('matches/:id/radar')
   @ApiOperation({ operationId: 'MatchesController_radar', summary: 'Read-only eight-axis player radar projection for every match participant' })
   @ApiOkResponse({
-    description: 'player-radar@1 projected from stored M2, H2 and optional EVP data',
-    schema: playerRadarOpenApiSchema as unknown as SchemaObject,
+    description: 'player-radar@2 for H3 or player-radar@1 for historical results',
+    schema: storedPlayerRadarOpenApiSchema as unknown as SchemaObject,
   })
   @ApiNotFoundResponse({ description: 'MATCH_NOT_FOUND' })
   @ApiConflictResponse({ description: 'REPORT_NOT_READY, REPORT_CORRUPT or REPORT_POLICY_MISMATCH' })

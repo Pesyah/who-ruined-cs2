@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
   ACTIVE_JOB_STAGES,
@@ -7,11 +9,17 @@ import {
   runSerializedJobWrite,
   type PrismaClient,
 } from '@who-ruined/database';
-import { evpPolicyId, evpReportSchemaVersion } from '@who-ruined/contracts';
-import { evpReportBinding } from '@who-ruined/artifacts';
-import { H2_PARTICIPATION_RATING_POLICY, rebuildCanonicalMatchResult } from '@who-ruined/scoring';
+import { evpPolicyId, evpReportSchemaVersion, type HistoricalMatchResult } from '@who-ruined/contracts';
+import { assertCanonicalMatchResultBinding, evpReportBinding } from '@who-ruined/artifacts';
+import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION } from '@who-ruined/parser-adapter';
+import { buildH3MatchResult, H3_PARTICIPATION_RATING_POLICY, rebuildH3MatchResult, roundStartEvidenceFromSidecars } from '@who-ruined/scoring/h3';
 import { publishCanonicalMatchResult, readCanonicalMatchResult, removeOwnedResult } from './match-result-storage.js';
 import { publishEvpReport, readStoredEvpReport } from './evp-report-storage.js';
+import { parseInKillableProcess } from './parser-boundary.js';
+import { prepareParticipationSidecar } from './participation-sidecar.js';
+import { readRatingEquipment } from './rating-equipment.js';
+import { resolveWorkerRuntimeConfig } from './runtime-config.js';
+import { assertNoSymlinkComponents, resolveDataPath } from './storage.js';
 
 export interface RatingRebuildOptions {
   client: PrismaClient;
@@ -50,10 +58,33 @@ export function parseRatingRebuildArguments(
   };
 }
 
+async function upgradeHistoricalResult(root: string, result: HistoricalMatchResult, rawRelative: string | null) {
+  if (!rawRelative) throw new Error('H3_SOURCE_EVIDENCE_UNAVAILABLE');
+  const { artifact } = result;
+  const binding = result.internal.recomputeSeed.binding;
+  if (binding.parserVersion !== PARSER_LIBRARY_VERSION || binding.normalizerVersion !== NORMALIZER_VERSION) {
+    throw new Error('H3_SOURCE_VERSION_MISMATCH');
+  }
+  const file = resolveDataPath(root, rawRelative);
+  await assertNoSymlinkComponents(root, file);
+  const hash = createHash('sha256');
+  for await (const bytes of createReadStream(file)) hash.update(bytes as Buffer);
+  if (hash.digest('hex') !== artifact.match.fileSha256) throw new Error('H3_SOURCE_SHA_MISMATCH');
+  const config = resolveWorkerRuntimeConfig();
+  const temp = 'worker-tmp/rating-rebuild-' + randomUUID();
+  const { snapshot, participation } = await parseInKillableProcess({ dataRoot: root, rawRelative, config, outputRelative: temp + '.snapshot.json.gz' });
+  const { sidecar, base } = prepareParticipationSidecar(snapshot, artifact.match, participation);
+  const roundStarts = roundStartEvidenceFromSidecars(sidecar, base);
+  const equipment = await readRatingEquipment(artifact.match, { dataRoot: root, rawRelative, config, outputRelative: temp + '.equipment-snapshot.json.gz' });
+  return buildH3MatchResult({
+    artifact, sidecar, roundStarts, equipment, productionReports: result.productionReports, sourceDemoRetained: true,
+  });
+}
+
 export async function runRatingRebuild(options: RatingRebuildOptions): Promise<RatingRebuildSummary> {
   const writeOutput = options.writeOutput ?? ((line) => process.stdout.write(line));
   const writeError = options.writeError ?? ((line) => process.stderr.write(line));
-  const target = H2_PARTICIPATION_RATING_POLICY;
+  const target = H3_PARTICIPATION_RATING_POLICY;
   const matches = await options.client.match.findMany({
     where: {
       resultFilePath: { not: null },
@@ -77,7 +108,11 @@ export async function runRatingRebuild(options: RatingRebuildOptions): Promise<R
         match.resultFilePath!,
         match.resultSha256 ?? undefined,
       );
-      const next = rebuildCanonicalMatchResult(current);
+      assertCanonicalMatchResultBinding(current, { matchId: match.id, policyId: match.resultPolicyId, policyDigest: match.resultPolicyDigest });
+      if (current.schemaVersion === 'match-result@1' && !options.matchId) throw new Error('H3_HISTORICAL_REBUILD_REQUIRES_MATCH_ID');
+      const next = current.schemaVersion === 'match-result@2'
+        ? rebuildH3MatchResult(current)
+        : await upgradeHistoricalResult(options.dataRoot, current, match.rawFilePath);
       const nextEvpBinding = evpReportBinding(next);
       const evpPointerComplete = Boolean(
         match.evpFilePath

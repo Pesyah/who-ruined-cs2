@@ -3,8 +3,10 @@ import { claimNextJob, prisma, renewJobLease } from '@who-ruined/database';
 // Fault injection must exercise the exact compiled entrypoints used by the
 // production container. Loading source through tsx would make import.meta.url
 // point at src/ and would therefore look for a non-existent JS supervisor.
-const { processJob } = await import('../../dist/process-job.js') as typeof import('../../src/process-job.js');
-const { resolveWorkerRuntimeConfig } = await import('../../dist/runtime-config.js') as typeof import('../../src/runtime-config.js');
+const jobEntrypoint = new URL('../../dist/process-job.js', import.meta.url).href;
+const configEntrypoint = new URL('../../dist/runtime-config.js', import.meta.url).href;
+const { processJob }: typeof import('../../src/process-job.js') = await import(jobEntrypoint);
+const { resolveWorkerRuntimeConfig }: typeof import('../../src/runtime-config.js') = await import(configEntrypoint);
 
 const target = process.argv[2];
 const allowed = new Set(['PARSING', 'NORMALIZING', 'VALIDATING', 'FEATURIZING', 'SCORING']);

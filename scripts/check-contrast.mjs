@@ -40,7 +40,7 @@ for (const [name, alpha] of tints) if (!(alpha >= 0.08 && alpha <= 0.16)) throw 
 
 const surfaces = [
   ...backdrops.map(([name, value]) => [`${name}`, value]),
-  ...backdrops.flatMap(([name, value]) => tints.map(([tint, alpha]) => [`${name} + glass ${Math.round(alpha * 100)}%`, over({ r: gr, g: gg, b: gb, a: alpha }, value)])),
+  ...backdrops.flatMap(([name, value]) => tints.map(([, alpha]) => [`${name} + glass ${Math.round(alpha * 100)}%`, over({ r: gr, g: gg, b: gb, a: alpha }, value)])),
   ['solid surface', token('surface-solid')],
 ];
 // Report cards use opaque 6% semantic tints over --bg, not over page glows.

@@ -26,7 +26,7 @@ import {
   PARTICIPATION_SIDECAR_POLICY_IDENTITIES,
   projectParticipationRatings,
   selectParticipationAwards,
-  type ParticipationRatingPreparedProfile,
+  toParticipationRatingPreparedProfiles,
 } from '@who-ruined/scoring';
 import {
   PARTICIPATION_SIDECAR_POLICIES,
@@ -196,15 +196,7 @@ async function writeCompressed(
 }
 
 function project(value: ParticipationSidecar) {
-  const profiles: ParticipationRatingPreparedProfile[] = value.profiles.map((profile) => ({
-    profileKey: profile.profileKey,
-    playerId: profile.playerId,
-    teamId: profile.teamId,
-    status: profile.status,
-    reason: profile.reason,
-    prepared: profile.prepared,
-  }));
-  return projectParticipationRatings(profiles);
+  return projectParticipationRatings(toParticipationRatingPreparedProfiles(value.profiles));
 }
 
 describe('player participation state machine', () => {

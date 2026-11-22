@@ -7,6 +7,7 @@ import {
   decodeParticipationRow,
   isSource2Header,
   parseDemoMatchSnapshot,
+  parseDemoEquipmentTicks,
   parseDemoReplaySnapshot,
   parseDemoSnapshot,
   readParticipationEvidenceFacts,
@@ -46,6 +47,32 @@ describe("parser boundary", () => {
     expect(asInteger({ team_number: 3 }, ["team_num", "team_number"])).toBe(3);
     expect(asInteger({}, ["tick"])).toBeNull();
     expect(asText({ steamid: 765n }, ["steamid"])).toBe("765");
+  });
+  it('decodes ordered equipment rows without inventing missing values', () => {
+    const calls: Array<{ path: string; props: string[]; ticks: number[] | null | undefined }> = [];
+    const parser: DemoParserPort = {
+      parseHeader: () => null,
+      parsePlayerInfo: () => null,
+      listGameEvents: () => [],
+      parseEvents: () => [],
+      parseTicks(path, props, ticks) {
+        calls.push({ path, props, ticks });
+        return [
+          { tick: 42, steamid: 76561198000000001n, team_num: 3, current_equip_value: 0, is_alive: false, inventory: ['knife', null] },
+          { tick: 42, steamid: null, team_num: 1, has_defuser: true },
+        ];
+      },
+    };
+    expect(parseDemoEquipmentTicks('synthetic.dem', [], parser)).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(parseDemoEquipmentTicks('synthetic.dem', [42], parser)).toMatchObject([
+      { rowIndex: 0, tick: 42, steamId: '76561198000000001', side: 'CT', equipmentValue: 0, alive: false, inventory: ['knife'] },
+      { rowIndex: 1, tick: 42, steamId: null, side: null, equipmentValue: null, alive: null, inventory: null, hasDefuser: true },
+    ]);
+    expect(calls).toEqual([{ path: 'synthetic.dem', props: [
+      'team_num', 'is_alive', 'current_equip_value', 'round_start_equip_value', 'inventory', 'active_weapon_name', 'active_weapon',
+      'armor_value', 'has_helmet', 'has_defuser', 'balance', 'cash_spent_this_round', 'total_cash_spent',
+    ], ticks: [42] }]);
   });
   it("decodes participation aliases inside the parser boundary", () => {
     expect(decodeParticipationRow({

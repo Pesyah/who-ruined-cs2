@@ -2,7 +2,8 @@ import type { ParticipationSidecar } from '@who-ruined/contracts';
 import type { ParticipationFamily } from './participation-family-kernel.js';
 import type { ParticipationRatingPreparedProfile } from './participation-rating.js';
 
-type PersistedProfile = ParticipationSidecar['profiles'][number];
+type PersistedProfile = Pick<ParticipationSidecar['profiles'][number],
+  'profileKey' | 'playerId' | 'teamId' | 'status' | 'reason' | 'prepared'>;
 
 function compactFamilies(
   value: { [K in ParticipationFamily]?: number | undefined } | null | undefined,

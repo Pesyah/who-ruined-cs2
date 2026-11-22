@@ -5,7 +5,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NORMALIZER_VERSION } from '@who-ruined/parser-adapter';
-import { canonicalMatchResultSchema, evpReportSchema, participationExplanationReportSchema, playerRadarAxisIds, playerRadarReportSchema } from '@who-ruined/contracts';
+import { historicalMatchResultSchema, h3ExplanationReportSchema, h3RadarReportSchema, h3RatingReportSchema, evpReportSchema, participationExplanationReportSchema, playerRadarAxisIds, playerRadarReportSchema, type MatchAnalytics, type MatchArtifact, type MatchData, type ParticipationSidecar } from '@who-ruined/contracts';
+import { buildH3MatchResult } from '@who-ruined/scoring/h3';
 import { evpReportBinding } from '@who-ruined/artifacts';
 import { computeMatchAnalytics } from '@who-ruined/features';
 import {
@@ -61,7 +62,7 @@ function fixture(absentPlayerIndex: number | null = null) {
   const b = Array.from({ length: 5 }, (_, index) => `player-b-${index + 1}`);
   const teamA = 'team-a'; const teamB = 'team-b';
   const identities = [...a.map((id, index) => ({ id, steamId: null, displayName: `Synthetic A${index + 1}`, teamId: teamA })), ...b.map((id, index) => ({ id, steamId: null, displayName: `Synthetic B${index + 1}`, teamId: teamB }))];
-  const match = {
+  const match: MatchData = {
     schemaVersion: '1' as const, matchId: 'synthetic-participation-match', fileSha256: 'a'.repeat(64), map: 'de_synthetic', tickRate: 64,
     teams: [{ id: teamA, playerIds: a, label: 'A' }, { id: teamB, playerIds: b, label: 'B' }], players: identities,
     rounds: [{ id: 'round-1', ordinal: 1, startTick: 0, freezeEndTick: 10, endTick: 100, winnerTeamId: teamA, winnerSide: 'T' as const, sideByTeamId: { [teamA]: 'T' as const, [teamB]: 'CT' as const }, scoreBefore: { [teamA]: 0, [teamB]: 0 }, scoreAfter: { [teamA]: 13, [teamB]: 8 }, isValid: true, issues: [] }],
@@ -76,8 +77,8 @@ function fixture(absentPlayerIndex: number | null = null) {
     grenades: { flashesThrown: 0, enemiesFlashed: 0, teammatesFlashed: 0, enemyBlindSeconds: 0, teamBlindSeconds: 0, heThrown: 0, heEnemyDamage: 0, heTeamDamage: 0, infernosStarted: 0, infernoEnemyDamage: 0, infernoTeamDamage: 0, smokesThrown: 0, smokeEffectiveness: null },
     economy: { availability: 'AVAILABLE' as const, freezeEquipmentValueTotal: 0, freezeRoundsObserved: 1, money: null }, facts: []
   }));
-  const analytics = { schemaVersion: 'm2-1' as const, featureVersion: 'm2-0.1.0' as const, matchId: match.matchId, generatedAt: '2026-10-24T00:00:00.000Z', tradeWindowSeconds: 5 as const, availability: { damage: 'AVAILABLE' as const, flashes: 'AVAILABLE' as const, economy: 'AVAILABLE' as const, aliveContext: 'AVAILABLE' as const }, players: analyticsPlayers, limitations: [] };
-  const artifact = { schemaVersion: 'm2-artifact-1' as const, match, analytics };
+  const analytics: MatchAnalytics = { schemaVersion: 'm2-1', featureVersion: 'm2-0.1.0', matchId: match.matchId, generatedAt: '2026-10-24T00:00:00.000Z', tradeWindowSeconds: 5, availability: { damage: 'AVAILABLE', flashes: 'AVAILABLE', economy: 'AVAILABLE', aliveContext: 'AVAILABLE' }, players: analyticsPlayers, limitations: [] };
+  const artifact: MatchArtifact = { schemaVersion: 'm2-artifact-1', match, analytics };
   const profiles = identities.map((player, index) => {
     const profileKey = `${match.matchId}:P${String(index + 1).padStart(2, '0')}`;
     const absent = index === absentPlayerIndex;
@@ -104,7 +105,7 @@ function fixture(absentPlayerIndex: number | null = null) {
     scenario: 'BOMB' as const, participation: [], profiles,
     provenance: { source: 'RAW_DEMO_EVENTS_AND_TICKS' as const, lifecycleEvents: [], contextTags: ['OPENING','TRADE','FAST_TRADE','MULTI_KILL','DISADVANTAGE','ALIVE_LEAD_TAKEN','POSTPLANT','FLASH_ASSIST','FLASH_TEAM_KILL_WINDOW','FLASH_TEAM_DAMAGE_WINDOW','LOW_EQUIP_COMBAT'], s2AppliedBy: '@who-ruined/scoring scoreC2S2PreparedProfiles' }
   };
-  const sidecar = { schemaVersion: 'm3c8-participation-prepared@1.0.0-experimental' as const, createdAt: '2026-10-24T00:00:00.000Z', fingerprint: createHash('sha256').update(canonical(stable)).digest('hex'), ...stable };
+  const sidecar: ParticipationSidecar = { schemaVersion: 'm3c8-participation-prepared@1.0.0-experimental', createdAt: '2026-10-24T00:00:00.000Z', fingerprint: createHash('sha256').update(canonical(stable)).digest('hex'), ...stable };
   return { match, analytics, artifact, sidecar };
 }
 
@@ -178,14 +179,15 @@ function mockCanonical(data: ReturnType<typeof fixture>, absentPlayerIndex: numb
   return { source, result, stored };
 }
 
-function mockEvp(data = fixture(), reportOverride?: Record<string, unknown>) {
-  const result = buildCanonicalMatchResult({
+function mockEvp(data = fixture(), reportOverride?: Record<string, unknown>, useH3 = false) {
+  const options = {
     artifact: data.artifact,
     sidecar: data.sidecar,
     productionReports: [],
     sourceDemoRetained: false,
     createdAt: '2026-10-26T00:00:00.000Z',
-  });
+  };
+  const result = useH3 ? buildH3MatchResult({ ...options, roundStarts: [], equipment: [] }) : buildCanonicalMatchResult(options);
   const binding = evpReportBinding(result);
   const report = { ...buildEvpReport(result, binding), ...reportOverride };
   const resultBytes = gzipSync(Buffer.from(JSON.stringify(result)));
@@ -197,8 +199,8 @@ function mockEvp(data = fixture(), reportOverride?: Record<string, unknown>) {
     rawFilePath: null,
     resultFilePath: 'results/synthetic/result.json.gz',
     resultSha256: createHash('sha256').update(resultBytes).digest('hex'),
-    resultPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
-    resultPolicyDigest: H2_PARTICIPATION_RATING_POLICY.digest,
+    resultPolicyId: result.internal.selectedPolicyId,
+    resultPolicyDigest: result.internal.selectedPolicyDigest,
     evpFilePath: 'experimental/evp/synthetic/report.json.gz',
     evpSchemaVersion: 'evp-report@1',
     evpSha256: createHash('sha256').update(evpBytes).digest('hex'),
@@ -215,7 +217,7 @@ function mockEvp(data = fixture(), reportOverride?: Record<string, unknown>) {
 }
 
 function withHistoricalH1Identity(result: ReturnType<typeof buildCanonicalMatchResult>) {
-  return canonicalMatchResultSchema.parse({
+  return historicalMatchResultSchema.parse({
     ...result,
     internal: {
       ...result.internal,
@@ -249,14 +251,14 @@ describe('P7.2-F participation rating API', () => {
     expect(legacy.awards).toEqual(active.awards);
   });
 
-  it('is default-off and performs no data access while disabled', async () => {
-    delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
+  it('performs no data access when explicitly disabled', async () => {
+    process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '0';
     await expect(createTestApiFacade().participationRating('match')).rejects.toMatchObject({ code: 'EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', status: 404 });
     expect(findUnique).not.toHaveBeenCalled();
   });
 
-  it('keeps the explanation endpoint default-off and requires a stored canonical result', async () => {
-    delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
+  it('allows explicit disabling and requires a stored canonical result', async () => {
+    process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '0';
     await expect(createTestApiFacade().participationExplanation('match')).rejects.toMatchObject({ code: 'EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', status: 404 });
     expect(findUnique).not.toHaveBeenCalled();
     process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '1';
@@ -660,7 +662,7 @@ describe('P7.2-F participation rating API', () => {
       const ok = await request(app.getHttpServer()).get(`/api/v1/matches/${data.match.matchId}/experimental-participation-rating`).expect(200);
       expect(ok.body.schemaVersion).toBe('m4.3-participation-rating@1');
       expect(ok.body.policy).toBeUndefined();
-      delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
+      process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '0';
       const disabled = await request(app.getHttpServer()).get(`/api/v1/matches/${data.match.matchId}/experimental-participation-rating`).expect(404);
       expect(disabled.body.error.code).toBe('EXPERIMENTAL_PARTICIPATION_RATING_DISABLED');
       expect(JSON.stringify(disabled.body)).not.toContain('Who Ruined CS2');
@@ -677,9 +679,43 @@ describe('P7.2-F participation rating API', () => {
       expect(ok.body.players).toHaveLength(10);
       expect(ok.body.recomputeSeed).toBeUndefined();
       await request(app.getHttpServer()).get(`/api/v1/matches/${data.match.matchId}/experimental-participation-explanation?policy=H1`).expect(422);
-      delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
+      process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING = '0';
       const disabled = await request(app.getHttpServer()).get(`/api/v1/matches/${data.match.matchId}/experimental-participation-explanation`).expect(404);
       expect(disabled.body.error.code).toBe('EXPERIMENTAL_PARTICIPATION_RATING_DISABLED');
+    } finally { await app.close(); }
+  });
+
+  it('serves bound synthetic H3 rating, explanation, Radar and EVP without requesting the demo', async () => {
+    delete process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING;
+    const data = fixture();
+    mockEvp(data, undefined, true);
+    const app = await NestFactory.create(AppModule, { logger: false });
+    app.setGlobalPrefix('api/v1'); app.useGlobalFilters(new SafeExceptionFilter()); await app.init();
+    try {
+      const base = `/api/v1/matches/${data.match.matchId}`;
+      const raw = await Promise.all([
+        request(app.getHttpServer()).get(base + '/experimental-participation-rating').expect(200),
+        request(app.getHttpServer()).get(base + '/experimental-participation-explanation').expect(200),
+        request(app.getHttpServer()).get(base + '/radar').expect(200),
+        request(app.getHttpServer()).get(base + '/evp').expect(200),
+      ]);
+      const rating = h3RatingReportSchema.parse(raw[0]!.body);
+      const explanation = h3ExplanationReportSchema.parse(raw[1]!.body);
+      const radar = h3RadarReportSchema.parse(raw[2]!.body);
+      const evp = evpReportSchema.parse(raw[3]!.body);
+      expect(explanation.policy).toEqual(rating.policy);
+      expect(radar.sourceBinding.ratingPolicy).toEqual(rating.policy);
+      expect(radar.sourceBinding.evpInputDigest).toBe(evp.binding.inputDigest);
+      expect(evp.mvpPlayerId).toBe(rating.awards.mvp.playerId);
+      expect(evp.awards.every((award) => award.playerId !== evp.mvpPlayerId)).toBe(true);
+      expect(radar.players.find((player) => player.awardState === 'MVP')?.playerId).toBe(evp.mvpPlayerId);
+      const first = explanation.players[0]!.rating!;
+      expect(first.families).toHaveLength(7);
+      expect(first.families.find((family) => family.family === 'ROUND_IMPACT')).toMatchObject({
+        rawInput: null, finalAttribution: null, coverage: { availability: 'UNAVAILABLE' },
+      });
+      expect(JSON.stringify(raw.map((response) => response.body))).not.toContain('recomputeSeed');
+      expect(readFile.mock.calls.some(([path]) => String(path).endsWith('.dem'))).toBe(false);
     } finally { await app.close(); }
   });
 

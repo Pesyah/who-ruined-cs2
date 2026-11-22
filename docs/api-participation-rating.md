@@ -1,16 +1,13 @@
 # Active participation rating API
 
-**Status:** current detailed H2-only contract. Explanation and replay routes are indexed in [API](api.md).
+The same route serves H3 for `match-result@2` and H2 for historical `match-result@1`. The H3 rating, explanation and Radar contracts are documented in the [frontend handoff](h3-frontend-handoff.md). The arithmetic and examples below describe historical H2 unless otherwise noted.
 
 > M4.5 retirement note: the earlier
 > `GET /api/v1/matches/{matchId}/experimental-rating` P2/C2+S2 endpoint is no
 > longer registered and is absent from OpenAPI. This document describes the
-> sole remaining experimental rating endpoint. H2 is the only executable
-> policy; HTTP policy selection is rejected.
+> remaining participation-rating endpoint. HTTP policy selection is rejected.
 
-This backend-only, local-first endpoint exposes the active H2 participation
-rating. It remains experimental, uncalibrated and non-causal; an
-ordinary death or low score is not proof of a tactical mistake or intent.
+The stored rating remains experimental, uncalibrated and non-causal. Ordinary deaths and low scores do not establish tactical mistakes or intent.
 
 ## Route and activation
 
@@ -18,12 +15,11 @@ ordinary death or low score is not proof of a tactical mistake or intent.
 GET /api/v1/matches/{matchId}/experimental-participation-rating
 ```
 
-Set `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1` on API. H2 is fixed by the
-backend and has no environment or CLI selector. Every HTTP query parameter
+The rating and explanation are enabled by default. Set `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=0` to disable those routes. Every HTTP query parameter
 named `policy`, including legacy `H1` and `H2` values, is rejected with
 `422 INVALID_POLICY_SELECTOR`.
 
-The response schema is `m4.3-participation-rating@1`. It contains one rating
+The historical response schema is `m4.3-participation-rating@1`. It contains one rating
 per player (or `null` plus a typed reason), all six families, K/D/A and factual
 M2 analytics, coverage, ordering, MVP and Who Ruined pools. It deliberately
 does not contain a policy selector, policy digest, alternative rating,
@@ -41,7 +37,7 @@ g(z) = z                                  when z <= 0.25
 rating = 1 + 10P - g(5N) + 2*H_S2
 ```
 
-The active frozen identity is unchanged:
+The historical H2 identity is frozen:
 
 | Policy | Policy ID | SHA-256 digest | direct-harm multiplier |
 | --- | --- | --- | ---: |
@@ -134,7 +130,7 @@ not treated as a draw. Pool sizes, incomplete-pool state and ties are explicit.
 | 404 | `MATCH_NOT_FOUND` | Match is absent or deleting. |
 | 409 | `REPORT_NOT_READY` | Canonical result is not ready. |
 | 409 | `REPORT_CORRUPT` | File missing, invalid, wrong schema/checksum or wrong DB binding. |
-| 409 | `REPORT_POLICY_MISMATCH` | Stored result is not H2; owner must run the H2 rebuild. |
+| 409 | `REPORT_POLICY_MISMATCH` | The historical result uses an unreadable rating policy such as H1. |
 | 422 | `INVALID_POLICY_SELECTOR` | Public policy selection is forbidden. |
 
 Legacy matches not yet migrated retain the older typed sidecar/backfill errors.
@@ -143,12 +139,8 @@ No GET parses a demo, creates files, queues a backfill or modifies PostgreSQL.
 ## Owner rebuild
 
 ```powershell
-npm.cmd run rating:rebuild -- --dry-run
-npm.cmd run rating:rebuild -- --apply
+npm.cmd run rating:rebuild -- --dry-run --match=<match-id>
+npm.cmd run rating:rebuild -- --apply --match=<match-id>
 ```
 
-The command always targets H2. It reads the private recompute seed, validates
-the existing artifact and publishes a new immutable result without reparsing a
-demo. Verify the dry-run summary before `--apply`; no mass rebuild runs
-automatically. Full storage and lifecycle details are in
-`docs/storage-lifecycle.md`.
+The command targets H3. For existing H3 it validates the private seed and can republish the result and its bound EVP report without reparsing. Historical upgrades require an explicit match ID, a retained demo matching the original SHA-256 and compatible parser and normalizer versions. If evidence is unavailable, the command reports `BLOCKED` and leaves the historical pointer intact. Review the dry-run summary before applying. [Storage lifecycle](storage-lifecycle.md).

@@ -8,6 +8,9 @@ const sourceRoots = ['apps', 'packages'];
 const ignoredDirectories = new Set(['dist', 'generated', 'node_modules', '.turbo', 'coverage']);
 const sourceFilePattern = /\.(?:[cm]?[jt]s|tsx)$/u;
 const testFilePattern = /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/u;
+const h3WorkerConsumers = new Set([
+  'apps/worker/src/parse-pipeline.ts', 'apps/worker/src/process-job.ts', 'apps/worker/src/rebuild-rating-policy.ts',
+]);
 
 const allowedProductionDependencies = new Map([
   ['@who-ruined/contracts', new Set()],
@@ -152,6 +155,16 @@ for (const workspacePackage of packages) {
     for (const importedFile of preprocessed.importedFiles) {
       const specifier = importedFile.fileName;
       const internalTarget = resolvedInternalTarget(file, specifier);
+      const isComparison = repositoryPath.startsWith('apps/worker/src/rating-comparison/');
+      const comparisonTarget = internalTarget?.startsWith('apps/worker/src/rating-comparison/');
+      const h3Target = specifier === '@who-ruined/scoring/h3' || internalTarget?.startsWith('packages/scoring/src/h3/');
+      if (!isTestOnly && internalTarget && testFilePattern.test(internalTarget)) {
+        violations.push(`${repositoryPath}: runtime code depends on test implementation via ${specifier}; move shared code under src`);
+      }
+      if (!isTestOnly && !isComparison && (comparisonTarget
+        || (h3Target && !h3WorkerConsumers.has(repositoryPath) && !repositoryPath.startsWith('packages/scoring/src/h3/')))) {
+        violations.push(`${repositoryPath}: H3 calculation is owned by the worker scoring pipeline; forbidden import ${specifier}`);
+      }
       if (!isTestOnly && repositoryPath.startsWith('apps/web/src/') && internalTarget !== null) {
         if (repositoryPath.startsWith('apps/web/src/shared/')
           && internalTarget.startsWith('apps/web/src/features/')) {
@@ -225,7 +238,9 @@ for (const workspacePackage of packages) {
         }
       }
       const packageSpecifierTarget = workspaceTarget(specifier, packageNames);
-      if (packageSpecifierTarget && specifier !== packageSpecifierTarget) {
+      const isDeclaredH3Entry = specifier === '@who-ruined/scoring/h3'
+        && Object.hasOwn(packageByName.get('@who-ruined/scoring')?.manifest.exports ?? {}, './h3');
+      if (packageSpecifierTarget && specifier !== packageSpecifierTarget && !isDeclaredH3Entry) {
         violations.push(`${repositoryPath}: workspace deep import bypasses the public package entry point via ${specifier}`);
       }
       const relativeTarget = relativeWorkspaceTarget(internalTarget, packages);

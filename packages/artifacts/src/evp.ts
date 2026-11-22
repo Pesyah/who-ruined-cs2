@@ -30,6 +30,7 @@ export function evpReportBinding(canonical: CanonicalMatchResult): EvpReportBind
       })),
       scenario: rating.scenario,
       mvpPlayerId: rating.awards.mvp.playerId,
+      ...(canonical.schemaVersion === 'match-result@2' ? { ratingPolicy: canonical.activeRating.policy } : {}),
     }),
   };
 }
@@ -52,6 +53,7 @@ export function assertEvpReportBinding(
     || report.binding.fileSha256 !== expected.fileSha256
     || report.binding.sourceBindingDigest !== expected.sourceBindingDigest
     || report.binding.inputDigest !== expected.inputDigest
+    || report.mvpPlayerId !== canonical.activeRating.awards.mvp.playerId
   ) {
     throw new ArtifactError('BINDING_MISMATCH');
   }

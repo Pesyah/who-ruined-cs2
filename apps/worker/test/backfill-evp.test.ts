@@ -2,12 +2,11 @@ import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { matchArtifactSchema } from '@who-ruined/contracts';
+import { matchArtifactSchema, type CanonicalMatchResult } from '@who-ruined/contracts';
 import { computeMatchAnalytics } from '@who-ruined/features';
 import {
   buildCanonicalMatchResult,
   HISTORICAL_H1_PARTICIPATION_POLICY_IDENTITY,
-  type CanonicalMatchResult,
 } from '@who-ruined/scoring';
 import { syntheticValidMatch } from '@who-ruined/testkit';
 import {

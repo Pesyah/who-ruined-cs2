@@ -71,9 +71,10 @@ export async function runEvpBackfill(options: EvpBackfillOptions): Promise<EvpBa
         match.resultSha256,
       );
       if (
+        canonical.schemaVersion === 'match-result@1' && (
         canonical.internal.selectedPolicySelector !== H2_PARTICIPATION_RATING_POLICY.selector
         || canonical.internal.selectedPolicyId !== H2_PARTICIPATION_RATING_POLICY.id
-        || canonical.internal.selectedPolicyDigest !== H2_PARTICIPATION_RATING_POLICY.digest
+        || canonical.internal.selectedPolicyDigest !== H2_PARTICIPATION_RATING_POLICY.digest)
       ) {
         throw new Error('CANONICAL_POLICY_NOT_H2_RUN_RATING_REBUILD_FIRST');
       }

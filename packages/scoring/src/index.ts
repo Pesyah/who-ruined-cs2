@@ -9,6 +9,7 @@ import { V1_CONFIG } from './presets.js';
 export * from './participation-family-kernel.js';
 export * from './participation-policy.js';
 export * from './participation-rating.js';
+export { toParticipationRatingPreparedProfiles } from './participation-profile-input.js';
 export * from './active-match-result.js';
 export * from './important-moments.js';
 export * from './participation-explanation.js';

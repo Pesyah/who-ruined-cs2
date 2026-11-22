@@ -10,7 +10,8 @@ import {
 } from '@who-ruined/database';
 import { type ScoringConfig, type ScoringReport } from '@who-ruined/contracts';
 import { NORMALIZER_VERSION, PARSER_LIBRARY_VERSION } from '@who-ruined/parser-adapter';
-import { buildCanonicalMatchResult, scoreMatch, SUCCESSOR_75_25_CONFIG, V1_CONFIG } from '@who-ruined/scoring';
+import { scoreMatch, SUCCESSOR_75_25_CONFIG, V1_CONFIG } from '@who-ruined/scoring';
+import { buildH3MatchResult } from '@who-ruined/scoring/h3';
 import { resolveWorkerRuntimeConfig, type WorkerRuntimeConfig } from './runtime-config.js';
 import { publishCanonicalMatchResult } from './match-result-storage.js';
 import { persistReplayArtifacts } from './replay-artifact.js';
@@ -88,6 +89,8 @@ export async function processJob(
     const {
       artifact,
       preparedSidecar,
+      roundStarts,
+      equipment,
       replaySnapshot,
     } = await runParsePipeline({
       dataRoot,
@@ -117,9 +120,9 @@ export async function processJob(
     if (!defaultReport) throw new Error('SCORING_REPORT_UNAVAILABLE');
     const validated = artifact.match;
     const terminal = validated.quality === 'VALID' ? 'COMPLETED' : 'PARTIAL';
-    const canonical = buildCanonicalMatchResult({
+    const canonical = buildH3MatchResult({
       artifact, sidecar: preparedSidecar, productionReports: reports,
-      sourceDemoRetained: config.retainSourceDemo
+      sourceDemoRetained: config.retainSourceDemo, roundStarts, equipment,
     });
     const published = await publishCanonicalMatchResult(dataRoot, canonical, assertOwned);
     const publishedEvp = await publishEvpReport(dataRoot, canonical, assertOwned);

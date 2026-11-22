@@ -127,9 +127,9 @@ function makeFixture(options: {
     eventName: string;
     round: MatchRound;
     tick: number;
-    actorId?: string | null;
-    targetId?: string | null;
-    assisterId?: string | null;
+    actorId?: string | null | undefined;
+    targetId?: string | null | undefined;
+    assisterId?: string | null | undefined;
     attrs?: MatchEvent['attrs'];
   }): void => {
     const actorId = input.actorId ?? null;
