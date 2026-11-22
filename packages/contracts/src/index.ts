@@ -5,6 +5,7 @@ export * from './match-relations.js';
 export * from './replay.js';
 export * from './analytics.js';
 export * from './participation.js';
+export * from './h3.js';
 export * from './evp.js';
 export * from './player-radar.js';
 export * from './scoring.js';

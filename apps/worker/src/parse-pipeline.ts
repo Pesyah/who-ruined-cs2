@@ -2,10 +2,13 @@ import {
   matchArtifactSchema,
   matchDataSchema,
   type MatchArtifact,
+  type H3RoundStartEvidence,
+  type H3EquipmentObservation,
   type ParticipationSidecar,
 } from '@who-ruined/contracts';
 import { computeMatchAnalytics } from '@who-ruined/features';
 import { assertMatchRelations, normalizeSnapshot } from '@who-ruined/match-domain';
+import { roundStartEvidenceFromSidecars } from '@who-ruined/scoring/h3';
 import {
   toNormalizationInput,
   type ParsedReplaySnapshot,
@@ -14,7 +17,8 @@ import {
   parseInKillableProcess,
   parseReplayInKillableProcess,
 } from './parser-boundary.js';
-import { buildParticipationSidecar } from './participation-sidecar.js';
+import { prepareParticipationSidecar } from './participation-sidecar.js';
+import { readRatingEquipment } from './rating-equipment.js';
 import { REPLAY_SAMPLE_RATE_HZ } from './replay-artifact.js';
 import type { WorkerRuntimeConfig } from './runtime-config.js';
 import {
@@ -25,6 +29,8 @@ import {
 export interface ParsedMatchPipelineResult {
   artifact: MatchArtifact;
   preparedSidecar: ParticipationSidecar;
+  roundStarts: H3RoundStartEvidence[];
+  equipment: H3EquipmentObservation[];
   replaySnapshot: ParsedReplaySnapshot | null;
 }
 
@@ -79,11 +85,17 @@ export async function runParsePipeline(options: {
   assertMatchRelations(validated);
   await options.assertOwned();
 
-  const preparedSidecar = buildParticipationSidecar(
+  const { sidecar: preparedSidecar, base } = prepareParticipationSidecar(
     snapshot,
     validated,
     participation,
   );
+  const roundStarts = roundStartEvidenceFromSidecars(preparedSidecar, base);
+  const equipment = await readRatingEquipment(validated, {
+    dataRoot: options.dataRoot, rawRelative: options.rawFilePath,
+    outputRelative: 'worker-tmp/' + options.jobId + '/' + options.leaseToken + '.equipment-snapshot.json.gz',
+    config: options.config, ...(options.signal ? { signal: options.signal } : {}),
+  });
   await options.assertOwned();
 
   await reach('FEATURIZING');
@@ -129,5 +141,5 @@ export async function runParsePipeline(options: {
     }
   }
 
-  return { artifact, preparedSidecar, replaySnapshot };
+  return { artifact, preparedSidecar, replaySnapshot, roundStarts, equipment };
 }

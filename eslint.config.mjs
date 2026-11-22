@@ -7,6 +7,10 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ['scripts/**/*.mjs', 'eslint.config.mjs'],
+    languageOptions: { globals: globals.node }
+  },
+  {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
     rules: { '@typescript-eslint/no-explicit-any': 'error' }

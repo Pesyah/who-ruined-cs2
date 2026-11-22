@@ -32,11 +32,12 @@ export function resolveParserChildLaunch(moduleUrl: string): {
 const parserChildLaunch = resolveParserChildLaunch(import.meta.url);
 
 type ParseChildRequest = {
-  kind: 'PARSE' | 'REPLAY';
+  kind: 'PARSE' | 'REPLAY' | 'EQUIPMENT';
   rawRelative: string;
   outputRelative: string;
   maxArtifactBytes: number;
   maxArtifactOutputBytes: number;
+  ticks?: number[];
   replay?: {
     tickRate: number;
     sampleRateHz: number;
@@ -110,7 +111,7 @@ async function runParserChild(options: {
   console.log(JSON.stringify({
     level: 'info',
     event: 'childSpawned',
-    kind: options.request.kind === 'PARSE' ? 'parser-child' : 'replay-parser-child',
+    kind: options.request.kind === 'PARSE' ? 'parser-child' : options.request.kind === 'REPLAY' ? 'replay-parser-child' : 'equipment-parser-child',
   }));
   try {
     const result = await runOwnedChild({
@@ -218,4 +219,27 @@ export async function parseReplayInKillableProcess(options: {
   } catch (error) {
     throw new Error('PARSE_CHILD_OUTPUT_INVALID', { cause: error });
   }
+}
+import { h3EquipmentTicksSchema } from '@who-ruined/contracts';
+
+export async function parseEquipmentInKillableProcess(options: {
+  dataRoot: string;
+  rawRelative: string;
+  outputRelative: string;
+  ticks: number[];
+  config: WorkerRuntimeConfig;
+  signal?: AbortSignal;
+}) {
+  const value = await runParserChild({
+    dataRoot: options.dataRoot, outputRelative: options.outputRelative,
+    request: {
+      kind: 'EQUIPMENT', rawRelative: options.rawRelative, outputRelative: options.outputRelative,
+      ticks: options.ticks, maxArtifactBytes: options.config.maxParseArtifactBytes,
+      maxArtifactOutputBytes: options.config.maxParseArtifactOutputBytes,
+    },
+    timeoutMs: options.config.parseTimeoutMs, killGraceMs: options.config.childKillGraceMs,
+    compressedLimit: options.config.maxParseArtifactBytes, decompressedLimit: options.config.maxParseArtifactOutputBytes,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+  return h3EquipmentTicksSchema.parse(value);
 }

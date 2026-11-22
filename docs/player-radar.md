@@ -2,7 +2,7 @@
 
 **Status:** backend contract `player-radar@1`; frontend integration is a later stage.
 
-`GET /api/v1/matches/:id/radar` projects stored `match-result@1` M2/H2 data and, when present, the validated `evp-report@1`. The GET does not reopen a demo, run H2/EVP, publish an artifact or write PostgreSQL. A radar is a view of factual match metrics, not a new rating of overall player strength.
+`GET /api/v1/matches/:id/radar` projects stored M2 facts and, when present, the validated `evp-report@1`. It returns `player-radar@2` for H3 `match-result@2` and retains `player-radar@1` for historical H2. Both versions use the same eight axes and normalization. [H3 fields and award highlights](h3-frontend-handoff.md#radar-and-evp).
 
 ## Axis registry and normalization
 
@@ -83,7 +83,7 @@ The standard `api-error@1` envelope is used:
 | 404 | `MATCH_NOT_FOUND` | no readable match exists for the opaque ID |
 | 409 | `REPORT_NOT_READY` | the canonical result or required EVP state is not ready |
 | 409 | `REPORT_CORRUPT` | stored bytes, bindings, relations or the radar projection fail integrity checks |
-| 409 | `REPORT_POLICY_MISMATCH` | the stored canonical/EVP policy is incompatible with active H2/EVP |
+| 409 | `REPORT_POLICY_MISMATCH` | the stored canonical/EVP policy is incompatible |
 | 422 | `INVALID_QUERY` | an unexpected query parameter was supplied |
 
 The anonymized, schema-valid frontend fixture is [`examples/player-radar-anonymized.json`](examples/player-radar-anonymized.json). It intentionally contains one participant with confirmed zero values so a consumer can test all fields without using a real SteamID, nickname, match ID or evidence identifier.

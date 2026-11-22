@@ -15,7 +15,7 @@ export class RuntimeApiSettings implements ApiSettingsPort {
   }
 
   participationRatingEnabled(): boolean {
-    return process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING === '1';
+    return (process.env.ENABLE_EXPERIMENTAL_PARTICIPATION_RATING ?? '1') === '1';
   }
 
 }

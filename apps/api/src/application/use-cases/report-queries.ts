@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  type ActiveParticipationRatingReport,
+  type StoredParticipationRating,
   type MatchAnalytics,
   type MatchArtifact,
-  type ParticipationExplanationReport,
-  type PlayerRadarReport,
+  type StoredParticipationExplanation,
+  type StoredPlayerRadarReport,
   type ScoringReport,
 } from '@who-ruined/contracts';
 import { buildActiveParticipationRating, buildParticipationExplanation, buildPlayerRadar, scoringConfigHash } from '@who-ruined/scoring';
@@ -39,7 +39,7 @@ export class ReportQueries {
     return { schemaVersion: analytics.schemaVersion, featureVersion: analytics.featureVersion, matchId: id, player };
   }
 
-  async participationRating(id: string, policy?: string): Promise<ActiveParticipationRatingReport> {
+  async participationRating(id: string, policy?: string): Promise<StoredParticipationRating> {
     if (!this.settings.participationRatingEnabled()) {
       throw new ApplicationError('EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', 'Экспериментальный participation rating отключён конфигурацией сервера.', 404);
     }
@@ -64,7 +64,7 @@ export class ReportQueries {
     return buildActiveParticipationRating(artifact, sidecar);
   }
 
-  async participationExplanation(id: string): Promise<ParticipationExplanationReport> {
+  async participationExplanation(id: string): Promise<StoredParticipationExplanation> {
     if (!this.settings.participationRatingEnabled()) {
       throw new ApplicationError('EXPERIMENTAL_PARTICIPATION_RATING_DISABLED', 'Экспериментальное объяснение participation rating отключено конфигурацией сервера.', 404);
     }
@@ -98,7 +98,7 @@ export class ReportQueries {
     return this.artifacts.readEvpReport(databaseMatch, canonical);
   }
 
-  async radar(id: string): Promise<PlayerRadarReport> {
+  async radar(id: string): Promise<StoredPlayerRadarReport> {
     const databaseMatch = await this.storedMatches.requireRecord(id);
     if (!databaseMatch.resultFilePath) {
       throw new ApplicationError('REPORT_NOT_READY', 'Канонический результат матча ещё не готов.', 409);

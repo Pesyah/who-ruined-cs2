@@ -5,9 +5,10 @@ import { idSchema as id, nullableCountSchema as nullableCount, nullableMetricSch
 
 export const experimentalScenarioSchema = z.enum(['BOMB','HOSTAGE','UNKNOWN']);
 
-const c2s2FamilyContributionsSchema = z.object({
+export const participationFamilyInputsSchema = z.object({
   COMBAT: z.number(), SUPPORT: z.number(), DEATH_RELATED: z.number(), DIRECT_HARM: z.number(), CONTEXT: z.number(), OBJECTIVES: z.number()
 });
+const c2s2FamilyContributionsSchema = participationFamilyInputsSchema;
 const c2s2PreparedRowSchema = z.object({
   status: z.enum(['CALCULATED_RESEARCH_ONLY','WITHHELD_REQUIRED_INPUT','UNKNOWN_APPLICABILITY']),
   reason: z.string().nullable().optional(), familyContributions: c2s2FamilyContributionsSchema.partial().nullable().optional(),
@@ -107,7 +108,7 @@ const participationRatingAggregatesSchema = z.object({
   positiveMass: z.number().nonnegative(), negativeMass: z.number().nonnegative(),
   positiveTerm: z.number().nonnegative(), negativeTerm: z.number().nonpositive(), harmTerm: z.number().nonpositive()
 });
-const participationRatingValueSchema = z.object({
+export const participationRatingValueSchema = z.object({
   value: z.number(), rank: z.number().int().positive(), losingTeamRank: z.number().int().positive().nullable(),
   rawFamilyInputs: c2s2FamilyContributionsSchema,
   aggregates: participationRatingAggregatesSchema,

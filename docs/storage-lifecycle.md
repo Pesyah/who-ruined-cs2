@@ -10,7 +10,7 @@ PostgreSQL 17 stores metadata, state and relative pointers. Large/versioned payl
 | --- | --- |
 | `uploads/<matchId>/<sha256>.dem` | streamed source demo while retained |
 | `artifacts/<matchId>/...` | normalized/compatibility artifacts where applicable |
-| `results/<matchId>/<sha256>.match-result@1.json.gz` | canonical result |
+| `results/<matchId>/<sha256>.match-result@2.json.gz` | canonical H3 result. The `match-result@1` suffix remains readable for H2 |
 | `reports/<matchId>/...` | legacy scoring reports |
 | `replays/<matchId>/<fileSha256>/index.m4.7-replay@1.json.gz` | replay index |
 | `replays/<matchId>/<fileSha256>/rounds/<roundId>.m4.7-replay-round@1.json.gz` | replay rounds |
@@ -21,15 +21,15 @@ Paths stored in PostgreSQL are relative to the configured root. Artifact code re
 
 ## Canonical result
 
-`match-result@1` contains:
+`match-result@2` contains:
 
 - normalized match data and M2 analytics;
 - compatible production scoring reports;
-- one active H2 participation rating;
-- private recompute seed and selected policy identity;
+- one H3 participation rating and its seven-family explanation;
+- frozen H3 policy identity and a private recompute seed with prepared profiles, verified round starts and equipment observations;
 - source-retention metadata.
 
-The private `internal` block is persisted for deterministic rebuilds but is not returned by public rating/explanation endpoints.
+Public endpoints return the rating's version and policy. The private `internal` block is for deterministic rebuilds. Historical `match-result@1` stores the H2 rating and its original seed, from which the read path verifies the six-family explanation.
 
 ## Safe reads
 
@@ -107,12 +107,12 @@ The native parser is synchronous inside the child, but it cannot block the worke
 
 ## RESCORE and policy rebuilds
 
-The HTTP `RESCORE` job recalculates a requested compatible scoring report from the `artifact` embedded in `match-result@1`; it does not read the original demo. A legacy normalized artifact can support the older report-only path. If neither stored form is sufficient, the request fails instead of fabricating evidence.
+The HTTP `RESCORE` job recalculates a compatible report from the embedded normalized artifact. It preserves the stored participation policy and its EVP binding. An older normalized artifact can support the report-only path. [Scoped H3 rebuild](api-participation-rating.md#owner-rebuild).
 
 Transitioning a historical non-H2 result is a separate `rating:rebuild` operation. It reconstructs H2 from the private recompute seed inside the canonical result, publishes a new immutable result, conditionally swaps the database pointer, then removes the old owned version. The demo is not required.
 
 EVP is a sibling immutable artifact bound to canonical M2 data, participation
-coverage, scenario and the active H2 MVP. Compatible report-only RESCORE
+coverage, scenario and the stored participation MVP. For H3 it also binds the H3 policy ID and digest. Compatible report-only RESCORE
 verifies and reuses it. `rating:rebuild` validates or republishes EVP and swaps
 both pointers atomically. Historical rows with all EVP fields null remain
 readable; the owner-only `evp:backfill` command can add EVP from the canonical

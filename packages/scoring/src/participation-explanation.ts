@@ -1,6 +1,8 @@
 import {
   participationExplanationReportSchema,
   type CanonicalMatchResult,
+  type HistoricalMatchResult,
+  type StoredParticipationExplanation,
   type MatchEvent,
   type ParticipationExplanationFamilyRow,
   type ParticipationExplanationReport
@@ -34,7 +36,7 @@ type Calculated = CalculatedParticipationRating | ExplanationProjection;
 type Source = ParticipationExplanationFamilyRow['sources'][number];
 type Transform = ParticipationExplanationFamilyRow['transformations'][number];
 
-function assertH2CanonicalResult(result: CanonicalMatchResult): void {
+function assertH2CanonicalResult(result: HistoricalMatchResult): void {
   if (
     result.internal.selectedPolicySelector !== H2_PARTICIPATION_RATING_POLICY.selector
     || result.internal.selectedPolicyId !== H2_PARTICIPATION_RATING_POLICY.id
@@ -226,16 +228,24 @@ function transforms(family: ParticipationFamily, projection: Calculated): Transf
   return rows;
 }
 
-function familyRows(result: CanonicalMatchResult, projection: Calculated): ParticipationExplanationFamilyRow[] {
+function familyRows(result: HistoricalMatchResult, projection: Calculated): ParticipationExplanationFamilyRow[] {
   const profile = result.internal.recomputeSeed.profiles.find((item) =>
     'profileKey' in projection && projection.profileKey !== undefined
       ? item.profileKey === projection.profileKey
       : item.playerId === projection.playerId
   );
   if (!profile) throw new Error('EXPLANATION_PROFILE_NOT_FOUND');
-  const eventById = new Map(result.artifact.match.events.map((event) => [event.id, event]));
-  const roundIds = result.artifact.match.rounds.map((round) => round.id);
   const episodes = profile.prepared.p4CPlus.episodeContributions ?? profile.prepared.p4BPlus.episodeContributions ?? [];
+  return explainBaseFamilies(result.artifact.match, projection, episodes);
+}
+
+export function explainBaseFamilies(
+  match: HistoricalMatchResult['artifact']['match'],
+  projection: Calculated,
+  episodes: ParticipationEpisodeContribution[],
+): ParticipationExplanationFamilyRow[] {
+  const eventById = new Map(match.events.map((event) => [event.id, event]));
+  const roundIds = match.rounds.map((round) => round.id);
   return FAMILY_ORDER.map((family) => {
     let sources: Source[];
     if (family === 'COMBAT' || family === 'SUPPORT' || family === 'DEATH_RELATED') {
@@ -243,7 +253,7 @@ function familyRows(result: CanonicalMatchResult, projection: Calculated): Parti
     } else if (family === 'DIRECT_HARM') {
       sources = directHarmSources(projection, episodes, eventById, roundIds);
     } else {
-      sources = aggregateSources(family, projection, projection.playerId, result.artifact.match.events, roundIds);
+      sources = aggregateSources(family, projection, projection.playerId, match.events, roundIds);
     }
     return {
       family,
@@ -255,7 +265,7 @@ function familyRows(result: CanonicalMatchResult, projection: Calculated): Parti
   });
 }
 
-function explanationFromStoredRatings(result: CanonicalMatchResult): ParticipationExplanationReport {
+function explanationFromStoredRatings(result: HistoricalMatchResult): ParticipationExplanationReport {
   assertH2CanonicalResult(result);
   const moments = buildImportantMoments(result.artifact);
   const players = result.activeRating.players.map((activePlayer) => {
@@ -303,11 +313,14 @@ function explanationFromStoredRatings(result: CanonicalMatchResult): Participati
 }
 
 /** Builds the explanation projection from values already persisted in match-result@1. */
-export function buildStoredParticipationExplanation(result: CanonicalMatchResult): ParticipationExplanationReport {
-  return explanationFromStoredRatings(result);
+export function buildStoredParticipationExplanation(result: CanonicalMatchResult): StoredParticipationExplanation {
+  return result.schemaVersion === 'match-result@2' ? result.explanation : explanationFromStoredRatings(result);
 }
 
-export function buildParticipationExplanation(result: CanonicalMatchResult): ParticipationExplanationReport {
+export function buildParticipationExplanation(result: HistoricalMatchResult): ParticipationExplanationReport;
+export function buildParticipationExplanation(result: CanonicalMatchResult): StoredParticipationExplanation;
+export function buildParticipationExplanation(result: CanonicalMatchResult): StoredParticipationExplanation {
+  if (result.schemaVersion === 'match-result@2') return result.explanation;
   assertH2CanonicalResult(result);
   const profiles = toParticipationRatingPreparedProfiles(result.internal.recomputeSeed.profiles);
   const projections = new Map(projectParticipationRatings(profiles).map((projection) => [projection.playerId, projection]));

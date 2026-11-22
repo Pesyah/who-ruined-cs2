@@ -69,6 +69,28 @@ test('architecture gate rejects a relative cross-workspace import', async () => 
   assert.match(result.stderr, /relative import crosses a workspace boundary/u);
 });
 
+test('H3 entry point is limited to the offline CLI and tests', async () => {
+  const result = await runFixture(async (root) => {
+    await packageFixture(root, 'packages/scoring', '@who-ruined/scoring');
+    await writeFile(join(root, 'packages/scoring/package.json'), JSON.stringify({ name: '@who-ruined/scoring', exports: { './h3': './dist/h3/index.js' } }));
+    await packageFixture(root, 'apps/worker', '@who-ruined/worker', { '@who-ruined/scoring': 'workspace:*' });
+    await mkdir(join(root, 'apps/worker/src/rating-comparison'));
+    await writeFile(join(root, 'apps/worker/src/rating-comparison/cli.ts'), "import '@who-ruined/scoring/h3';\n");
+    await writeFile(join(root, 'apps/worker/src/index.ts'), "import './rating-comparison/cli.js';\nimport '@who-ruined/scoring/h3';\n");
+  });
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.match(/H3 calculation is owned by the worker scoring pipeline/gu)?.length, 2);
+  assert.doesNotMatch(result.stderr, /deep import/u);
+});
+
+test('architecture gate rejects runtime imports of test implementations', async () => {
+  const result = await runFixture(async (root) => {
+    await writeFile(join(root, 'packages/match-domain/src/index.ts'), "import '../test/example.js';\n");
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /runtime code depends on test implementation/u);
+});
+
 test('architecture gate rejects forbidden dependencies and manifest cycles', async () => {
   const result = await runFixture(async (root) => {
     await packageFixture(root, 'packages/parser-adapter', '@who-ruined/parser-adapter', {

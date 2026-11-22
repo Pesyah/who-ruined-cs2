@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import {
   activeParticipationRatingReportSchema,
-  canonicalMatchResultSchema,
+  historicalMatchResultSchema,
   type ActiveParticipationRatingReport,
-  type CanonicalMatchResult,
+  type HistoricalMatchResult,
+  type H3MatchResult,
+  type H3RatingReport,
   type MatchArtifact,
   type ParticipationSidecar,
   type ScoringReport
@@ -56,7 +58,7 @@ function lastScores(artifact: MatchArtifact): Array<{ teamId: string; score: num
   return artifact.match.teams.map((team) => ({ teamId: team.id, score: last?.scoreAfter[team.id] ?? null }));
 }
 
-function resolveMapScenario(artifact: MatchArtifact, sidecar: ParticipationSidecar): ParticipationSidecar {
+export function resolveMapScenario(artifact: MatchArtifact, sidecar: ParticipationSidecar): ParticipationSidecar {
   const scenario = participationScenarioForMap(artifact.match.map);
   if (!scenario || sidecar.scenario !== 'UNKNOWN') return sidecar;
   const objectiveSignals = scenario === 'BOMB'
@@ -93,14 +95,37 @@ export function buildActiveParticipationRating(
   sidecar: ParticipationSidecar
 ): ActiveParticipationRatingReport {
   sidecar = resolveMapScenario(artifact, sidecar);
+  const projected = projectParticipationRatings(toParticipationRatingPreparedProfiles(sidecar.profiles));
+  return activeParticipationRatingReportSchema.parse({
+    ...buildRatingReportFields(artifact, sidecar, projected),
+    schemaVersion: 'm4.3-participation-rating@1', reportVersion: 'match-result@1',
+    scorerVersion: PARTICIPATION_RATING_SCORER_VERSION,
+  });
+}
+
+type H3RatingValue = NonNullable<H3RatingReport['players'][number]['rating']>;
+type H3RatingRow = Pick<CalculatedParticipationRating, 'playerId' | 'teamId' | 'profileKey'> & {
+  status: ReturnType<typeof projectParticipationRatings>[number]['status'];
+  reason: string | null;
+  rating: number | null;
+  rawFamilyInputs: H3RatingValue['rawFamilyInputs'] | null;
+  finalAttribution: H3RatingValue['finalAttribution'] | null;
+  aggregates: H3RatingValue['aggregates'] | null;
+  baseKernel: CalculatedParticipationRating['kernel'] | null;
+};
+type RatingRow = ReturnType<typeof projectParticipationRatings>[number] | H3RatingRow;
+
+export function buildRatingReportFields(
+  artifact: MatchArtifact,
+  sidecar: ParticipationSidecar,
+  projected: readonly RatingRow[],
+) {
   const { match, analytics } = artifact;
   if (match.players.length !== 10 || match.teams.length !== 2 || match.teams.some((team) => team.playerIds.length !== 5)) throw new Error('UNSUPPORTED_ROSTER_SIZE');
   const profileByPlayer = new Map(sidecar.profiles.map((profile) => [profile.playerId, profile]));
   if (profileByPlayer.size !== 10 || match.players.some((player) => !profileByPlayer.has(player.id))) throw new Error('PARTICIPATION_SIDECAR_ROSTER_MISMATCH');
-  const preparedProfiles = toParticipationRatingPreparedProfiles(sidecar.profiles);
-  const projected = projectParticipationRatings(preparedProfiles);
   const projectionByPlayer = new Map(projected.map((row) => [row.playerId, row]));
-  const calculated = projected.filter((row): row is CalculatedParticipationRating => row.status === 'CALCULATED_RESEARCH_ONLY');
+  const calculated = projected.filter((row): row is RatingRow & { rating: number } => row.rating !== null);
   const ordering = [...calculated].sort((left, right) => right.rating - left.rating || left.profileKey.localeCompare(right.profileKey)).map((row) => row.playerId);
   const scores = lastScores(artifact);
   const awards = selectParticipationAwards(projected, scores);
@@ -115,14 +140,15 @@ export function buildActiveParticipationRating(
     if (!profile || !row || !facts || profile.teamId !== identity.teamId) throw new Error('PARTICIPATION_SIDECAR_ROSTER_MISMATCH');
     const rank = ordering.indexOf(identity.id);
     const losingRank = losingTeamOrdering.indexOf(identity.id);
-    const rating = row.status === 'CALCULATED_RESEARCH_ONLY' ? {
+    const kernel = 'baseKernel' in row ? row.baseKernel : 'kernel' in row ? row.kernel : null;
+    const rating = row.rating !== null && row.finalAttribution && row.rawFamilyInputs && row.aggregates && kernel ? {
       value: row.rating, rank: rank + 1,
       losingTeamRank: awards.losingTeamId === identity.teamId || awards.outcome === 'DRAW' ? losingRank + 1 : null,
       rawFamilyInputs: row.rawFamilyInputs, aggregates: row.aggregates, finalAttribution: row.finalAttribution,
-      arithmetic: { origin: 1 as const, reconstructed: 1 + Object.values(row.finalAttribution).reduce((sum, value) => sum + value, 0), tolerance: tolerance as 1e-12, exactWithinTolerance: true as const },
-      kernelDetails: { factorContributions: row.kernel.factorContributions, directHarm: row.kernel.directHarm, context: row.kernel.context, objectives: row.kernel.objectives }
+      arithmetic: { origin: 1 as const, reconstructed: 1 + Object.values(row.finalAttribution).reduce<number>((sum, value) => sum + (value ?? 0), 0), tolerance: tolerance as 1e-12, exactWithinTolerance: true as const },
+      kernelDetails: { factorContributions: kernel.factorContributions, directHarm: kernel.directHarm, context: kernel.context, objectives: kernel.objectives }
     } : null;
-    if (rating && Math.abs(rating.value - rating.arithmetic.reconstructed) > tolerance) throw new Error('P72_ATTRIBUTION_INTEGRITY_MISMATCH');
+    if ((rating === null) !== (row.rating === null) || (rating && Math.abs(rating.value - rating.arithmetic.reconstructed) > tolerance)) throw new Error('PARTICIPATION_ATTRIBUTION_INTEGRITY_MISMATCH');
     return {
       playerId: identity.id, teamId: identity.teamId, displayName: identity.displayName, steamId: identity.steamId,
       steamProfileUrl: identity.steamId ? `https://steamcommunity.com/profiles/${identity.steamId}` : null,
@@ -133,9 +159,9 @@ export function buildActiveParticipationRating(
       analytics: facts
     };
   });
-  return activeParticipationRatingReportSchema.parse({
-    schemaVersion: 'm4.3-participation-rating@1', reportVersion: 'match-result@1', matchId: match.matchId,
-    experimental: true, calibrated: false, causalBlame: false, scorerVersion: PARTICIPATION_RATING_SCORER_VERSION,
+  return {
+    matchId: match.matchId,
+    experimental: true, calibrated: false, causalBlame: false,
     scenario: sidecar.scenario,
     applicability: { status: 'SUPPORTED', reason: sidecar.scenario === 'UNKNOWN' ? 'OBJECTIVES_NOT_APPLIED_SCENARIO_UNKNOWN' : null },
     match: { map: match.map, quality: match.quality, totalRounds: match.rounds.length, validRounds: match.rounds.filter((round) => round.isValid).length, teams: scores },
@@ -143,20 +169,20 @@ export function buildActiveParticipationRating(
     warnings: ['Experimental rating: not a calibrated probability and not proof of intent or causal blame.', ...(awards.incompletePool ? ['Awards were selected from an incomplete calculated-player pool; inspect availability per player.'] : []), ...(awards.mvp.tied || awards.whoRuined.tied ? ['An exact score tie was resolved deterministically by stable profile key.'] : [])],
     limitations: ['BOMB and HOSTAGE ratings are mode-aware but their absolute values are not guaranteed to be cross-mode equivalent.','When the objective mode cannot be confirmed, the OBJECTIVES family contributes zero while the remaining families are still calculated.','Ordinary deaths and low ratings do not prove a tactical mistake.','Excluded, partial, unknown and globally missing rounds are never converted to zero-valued evidence.'],
     provenance: { parserVersion: sidecar.binding.parserVersion, normalizerVersion: sidecar.binding.normalizerVersion, featureVersion: analytics.featureVersion, originalDemoParsedAtRequest: false }
-  });
+  };
 }
 
-export function buildCanonicalMatchResult(options: {
+export type CanonicalBuildOptions = {
   artifact: MatchArtifact;
   sidecar: ParticipationSidecar;
   productionReports: ScoringReport[];
   sourceDemoRetained: boolean;
   createdAt?: string;
-}): CanonicalMatchResult {
+};
+export function buildCanonicalMatchResult(options: CanonicalBuildOptions): HistoricalMatchResult {
   const sidecar = resolveMapScenario(options.artifact, options.sidecar);
-  if (sidecar.binding.matchId !== options.artifact.match.matchId || sidecar.binding.fileSha256 !== options.artifact.match.fileSha256) throw new Error('PARTICIPATION_SIDECAR_STALE');
-  if (sidecar.model.preparedInputModel !== PARTICIPATION_MODEL_VERSION || sidecar.model.preparedInputDigest !== PARTICIPATION_FAMILY_POLICY_DIGEST || sidecar.model.referenceVersion !== PARTICIPATION_REFERENCE_VERSION) throw new Error('PARTICIPATION_SIDECAR_POLICY_MISMATCH');
-  return canonicalMatchResultSchema.parse({
+  assertParticipationSidecar(options.artifact, sidecar);
+  return historicalMatchResultSchema.parse({
     schemaVersion: 'match-result@1', createdAt: options.createdAt ?? new Date().toISOString(),
     internal: {
       selectedPolicyId: H2_PARTICIPATION_RATING_POLICY.id,
@@ -171,18 +197,26 @@ export function buildCanonicalMatchResult(options: {
   });
 }
 
-export function rebuildCanonicalMatchResult(value: CanonicalMatchResult): CanonicalMatchResult {
+export function assertParticipationSidecar(artifact: MatchArtifact, sidecar: ParticipationSidecar): void {
+  if (sidecar.binding.matchId !== artifact.match.matchId || sidecar.binding.fileSha256 !== artifact.match.fileSha256) throw new Error('PARTICIPATION_SIDECAR_STALE');
+  if (sidecar.model.preparedInputModel !== PARTICIPATION_MODEL_VERSION || sidecar.model.preparedInputDigest !== PARTICIPATION_FAMILY_POLICY_DIGEST || sidecar.model.referenceVersion !== PARTICIPATION_REFERENCE_VERSION) throw new Error('PARTICIPATION_SIDECAR_POLICY_MISMATCH');
+}
+
+export function sidecarFromStoredSeed(value: HistoricalMatchResult | H3MatchResult): ParticipationSidecar {
   const seed = value.internal.recomputeSeed;
-  const sidecar = {
+  return {
     schemaVersion: 'm3c8-participation-prepared@1.0.0-experimental' as const,
     createdAt: value.createdAt,
     fingerprint: stableSha256({ binding: seed.binding, model: seed.model, scenario: seed.scenario, participation: [], profiles: seed.profiles, provenance: { source: 'RAW_DEMO_EVENTS_AND_TICKS', lifecycleEvents: [], contextTags: [], s2AppliedBy: '@who-ruined/scoring scoreC2S2PreparedProfiles' } }),
     binding: seed.binding, model: seed.model, scenario: seed.scenario, participation: [], profiles: seed.profiles,
     provenance: { source: 'RAW_DEMO_EVENTS_AND_TICKS' as const, lifecycleEvents: [], contextTags: [], s2AppliedBy: '@who-ruined/scoring scoreC2S2PreparedProfiles' }
   };
+}
+
+export function rebuildCanonicalMatchResult(value: HistoricalMatchResult): HistoricalMatchResult {
   return buildCanonicalMatchResult({
     artifact: value.artifact,
-    sidecar,
+    sidecar: sidecarFromStoredSeed(value),
     productionReports: value.productionReports,
     sourceDemoRetained: value.storage.sourceDemoRetained
   });

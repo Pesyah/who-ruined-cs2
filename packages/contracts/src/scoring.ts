@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { eventPhaseSchema, qualitySchema, sideSchema } from './common.js';
 import { matchArtifactSchema } from './analytics.js';
+import { h3EquipmentObservationSchema, h3ExplanationReportSchema, h3PolicyDigest, h3PolicyId, h3RatingReportSchema, h3RoundStartEvidenceSchema } from './h3.js';
 import { idSchema as id, nullableCountSchema as nullableCount, nullableMetricSchema as nullableMetric } from './internal.js';
 import {
   activeParticipationRatingReportSchema,
@@ -104,7 +105,7 @@ export const scoringReportSchema = z.object({
 });
 export type ScoringReport = z.infer<typeof scoringReportSchema>;
 
-export const canonicalMatchResultSchema = z.object({
+export const historicalMatchResultSchema = z.object({
   schemaVersion: z.literal('match-result@1'),
   createdAt: z.string().datetime(),
   internal: z.object({
@@ -119,6 +120,24 @@ export const canonicalMatchResultSchema = z.object({
   activeRating: activeParticipationRatingReportSchema,
   storage: z.object({ sourceDemoRetained: z.boolean() })
 });
+export const h3MatchResultSchema = historicalMatchResultSchema.extend({
+  schemaVersion: z.literal('match-result@2'),
+  internal: historicalMatchResultSchema.shape.internal.extend({
+    selectedPolicyId: z.literal(h3PolicyId),
+    selectedPolicySelector: z.literal('H3'),
+    selectedPolicyDigest: z.literal(h3PolicyDigest),
+    recomputeSeed: matchResultRecomputeSeedSchema.extend({
+      schemaVersion: z.literal('match-result-recompute-seed@2'),
+      roundStarts: z.array(h3RoundStartEvidenceSchema),
+      equipment: z.array(h3EquipmentObservationSchema),
+    }),
+  }),
+  activeRating: h3RatingReportSchema,
+  explanation: h3ExplanationReportSchema,
+});
+export const canonicalMatchResultSchema = z.discriminatedUnion('schemaVersion', [historicalMatchResultSchema, h3MatchResultSchema]);
+export type HistoricalMatchResult = z.infer<typeof historicalMatchResultSchema>;
+export type H3MatchResult = z.infer<typeof h3MatchResultSchema>;
 export type CanonicalMatchResult = z.infer<typeof canonicalMatchResultSchema>;
 
 export const playerScoringReportSchema = z.object({

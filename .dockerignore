@@ -1,9 +1,13 @@
 node_modules
 **/node_modules
 **/dist
+**/.turbo
+.pnpm-store
 .git
 data
 _local-dev
+_local-archive
+*.zip
 tests/golden/*.dem
 docs/research
 documentation

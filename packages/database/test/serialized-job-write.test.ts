@@ -14,7 +14,8 @@ function clientWithTransaction(
 describe('PostgreSQL serialized job writes', () => {
   it('acquires the transaction-scoped advisory lock before the action', async () => {
     const order: string[] = [];
-    const queryRaw = vi.fn(async () => { order.push('lock'); return [{ locked: 1 }]; });
+    const queryRaw = vi.fn<(template: TemplateStringsArray, namespace: number, key: number) => Promise<Array<{ locked: number }>>>()
+      .mockImplementation(async () => { order.push('lock'); return [{ locked: 1 }]; });
     const client = clientWithTransaction(async (action) => action({ $queryRaw: queryRaw }));
 
     await expect(runSerializedJobWrite(client, async () => {
@@ -25,7 +26,7 @@ describe('PostgreSQL serialized job writes', () => {
     expect(order).toEqual(['lock', 'action']);
     expect(queryRaw).toHaveBeenCalledOnce();
     const [template, namespace, key] = queryRaw.mock.calls[0]!;
-    const sql = Array.from(template as readonly string[]).join('?');
+    const sql = template.join('?');
     expect(sql).toContain('WITH advisory_lock AS MATERIALIZED');
     expect(sql).toContain('?::int4');
     expect(sql).toContain('SELECT 1::int4 AS locked');

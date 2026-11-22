@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { evpEvidenceQualitySchema, evpSpecializationIdSchema } from './evp.js';
 import { idSchema } from './internal.js';
+import { h3ExplanationFamilySchema, h3FamilySchema, h3PolicySchema } from './h3.js';
 import {
   participationExplanationFamilyRowSchema,
   participationExplanationFamilySchema,
@@ -142,7 +143,7 @@ export const playerRadarPlayerSchema = z.object({
   h2Explanation: playerRadarH2ExplanationSchema,
 }).strict();
 
-export const playerRadarReportSchema = z.object({
+const historicalRadar = z.object({
   schemaVersion: z.literal(playerRadarSchemaVersion),
   matchId: idSchema,
   normalizationVersion: z.literal(radarNormalizationVersion),
@@ -157,7 +158,32 @@ export const playerRadarReportSchema = z.object({
   axisDefinitions: z.array(playerRadarAxisDefinitionSchema).length(playerRadarAxisIds.length),
   matchComparisons: z.array(playerRadarComparisonSchema).length(playerRadarAxisIds.length),
   players: z.array(playerRadarPlayerSchema).max(64),
-}).strict().superRefine((report, context) => {
+}).strict();
+const h3RadarAxis = playerRadarAxisSchema.omit({ relatedH2Families: true }).extend({
+  relatedRatingFamilies: z.array(h3FamilySchema).max(7),
+  mvpAttribution: radarMvpAttributionSchema.extend({
+    reasonCode: z.literal('CONFIRMED_POSITIVE_H3_EVIDENCE'),
+    terminologyCode: z.literal('POSITIVE_H3_FACTOR_NOT_DECISIVE_CAUSE'),
+    families: z.array(radarMvpAttributionSchema.shape.families.element.extend({ family: h3FamilySchema })).min(1).max(7),
+  }).nullable(),
+});
+const h3Radar = historicalRadar.extend({
+  schemaVersion: z.literal('player-radar@2'),
+  sourceBinding: historicalRadar.shape.sourceBinding.omit({ h2ReportSchemaVersion: true }).extend({
+    matchResultSchemaVersion: z.literal('match-result@2'),
+    ratingReportSchemaVersion: z.literal('m4.3-participation-rating@2'),
+    ratingPolicy: h3PolicySchema,
+  }),
+  players: z.array(playerRadarPlayerSchema.omit({ h2Explanation: true }).extend({
+    axes: z.array(h3RadarAxis).length(playerRadarAxisIds.length),
+    ratingExplanation: playerRadarH2ExplanationSchema.extend({
+      families: z.array(h3ExplanationFamilySchema).max(7),
+      reasonIfUnavailable: z.literal('PLAYER_RATING_UNAVAILABLE').nullable(),
+    }),
+  })).max(64),
+});
+
+function checkRadar(report: z.infer<typeof historicalRadar> | z.infer<typeof h3Radar>, context: z.RefinementCtx) {
   const expected = playerRadarAxisIds.join('\u0000');
   if (report.axisDefinitions.map((row) => row.axisId).join('\u0000') !== expected) {
     context.addIssue({ code: 'custom', path: ['axisDefinitions'], message: 'radar axes must use the stable registry order' });
@@ -181,11 +207,13 @@ export const playerRadarReportSchema = z.object({
       context.addIssue({ code: 'custom', path: ['players', playerIndex, 'playerId'], message: 'duplicate radar player' });
     }
     playerIds.add(player.playerId);
+    const historical = 'h2Explanation' in player;
+    const explanation = historical ? player.h2Explanation : player.ratingExplanation;
     if (
-      (player.h2Explanation.availability === 'AVAILABLE' && (player.h2Explanation.ratingValue === null || player.h2Explanation.reasonIfUnavailable !== null || player.h2Explanation.families.length !== 6))
-      || (player.h2Explanation.availability === 'UNAVAILABLE' && (player.h2Explanation.ratingValue !== null || player.h2Explanation.reasonIfUnavailable === null || player.h2Explanation.families.length !== 0))
+      (explanation.availability === 'AVAILABLE' && (explanation.ratingValue === null || explanation.reasonIfUnavailable !== null || explanation.families.length !== (historical ? 6 : 7)))
+      || (explanation.availability === 'UNAVAILABLE' && (explanation.ratingValue !== null || explanation.reasonIfUnavailable === null || explanation.families.length !== 0))
     ) {
-      context.addIssue({ code: 'custom', path: ['players', playerIndex, 'h2Explanation'], message: 'H2 explanation availability fields are inconsistent' });
+      context.addIssue({ code: 'custom', path: ['players', playerIndex], message: 'Rating explanation availability fields are inconsistent' });
     }
     if (player.axes.map((row) => row.axisId).join('\u0000') !== expected) {
       context.addIssue({ code: 'custom', path: ['players', playerIndex, 'axes'], message: 'player axes must use the stable registry order' });
@@ -224,9 +252,15 @@ export const playerRadarReportSchema = z.object({
   if ((report.sourceBinding.evpReportSchemaVersion === null) !== (report.sourceBinding.evpInputDigest === null)) {
     context.addIssue({ code: 'custom', path: ['sourceBinding'], message: 'EVP source binding must be complete or absent' });
   }
-}).strict();
+}
+
+export const playerRadarReportSchema = historicalRadar.superRefine(checkRadar);
+export const h3RadarReportSchema = h3Radar.superRefine(checkRadar);
+export const storedPlayerRadarReportSchema = z.discriminatedUnion('schemaVersion', [playerRadarReportSchema, h3RadarReportSchema]);
 
 export const playerRadarOpenApiSchema = z.toJSONSchema(playerRadarReportSchema, { target: 'openapi-3.0' });
+export const storedPlayerRadarOpenApiSchema = z.toJSONSchema(storedPlayerRadarReportSchema, { target: 'openapi-3.0' });
 export type PlayerRadarAxisId = z.infer<typeof playerRadarAxisIdSchema>;
 export type PlayerRadarReport = z.infer<typeof playerRadarReportSchema>;
+export type StoredPlayerRadarReport = z.infer<typeof storedPlayerRadarReportSchema>;
 export type PlayerRadarAxis = z.infer<typeof playerRadarAxisSchema>;

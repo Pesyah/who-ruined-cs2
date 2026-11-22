@@ -59,6 +59,7 @@ function fullFixture() {
     rating: {
       value: 1,
       rank: index + 1,
+      rawFamilyInputs: attribution,
       finalAttribution: attribution,
       arithmetic: { origin: 1, reconstructed: 1, tolerance: 1e-12, exactWithinTolerance: true },
     },

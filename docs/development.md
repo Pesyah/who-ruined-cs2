@@ -20,7 +20,7 @@ Use the pinned pnpm launcher after setup. The routine repository gate needs no D
 npm.cmd run quality:fast
 ~~~
 
-It performs fresh architecture (including guardrail negative tests), lint, typecheck, workspace/frontend tests, build, i18n and contrast checks. A non-zero nested command is propagated.
+It performs fresh architecture (including guardrail negative tests), workspace and tooling lint, source and test typecheck, workspace/frontend tests, build, i18n and contrast checks. A non-zero nested command is propagated. Use `npm.cmd run typecheck:tests` after building the affected workspace dependencies to check only the standalone test projects.
 
 PostgreSQL integration is intentionally separate and fail-closed. Create a disposable local PostgreSQL 17 database whose name contains a standalone `test` segment, then set its URL explicitly:
 
@@ -167,7 +167,7 @@ A copied `.env` is input to Docker Compose; native Node processes do not load it
 | `API_BIND_HOST`, `API_PORT` | API | bind address/port; `127.0.0.1:3000` default |
 | `API_CORS_ORIGINS` | API | comma-separated exact HTTP origins |
 | `API_URL` | Vite | development proxy target; `http://127.0.0.1:3000` default |
-| `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING` | API | `1` enables rating and explanation routes |
+| `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING` | API | Enabled by default. Use `0` to disable rating and explanation routes |
 | `RETAIN_SOURCE_DEMO` | worker | `0` default; delete only after verified result binding |
 | `MAX_UPLOAD_BYTES`, `MIN_UPLOAD_FREE_BYTES` | API | streamed upload ceiling and disk reserve |
 | `MAX_CONCURRENT_UPLOADS`, `MAX_QUEUED_JOBS` | API | per-process upload admission and shared queue guard |
@@ -255,6 +255,13 @@ Never solve a port conflict by attaching a refactor worktree to an already-runni
 
 ## Troubleshooting
 
+### TypeScript or ESLint reports errors only in VS Code
+
+1. Open the repository root as the workspace. After a fresh install, run `npm.cmd run db:generate` and `npm.cmd run build` to create the Prisma client and workspace package declarations. Package exports resolve through `dist`, as they do in the runtime build. Turbo manages their build order.
+2. With a TypeScript file active, run **TypeScript: Select TypeScript Version**, choose **Use Workspace Version** to use the version pinned in `package.json`, then run **TypeScript: Restart TS Server**. Run **TypeScript: Go to Project Configuration** from the affected file. A backend file in `test/` should open that folder’s `tsconfig.json`. A web test in `src/` uses the web project. Root golden tests use `tests/tsconfig.json`.
+3. Compare the Problems panel's source and error code with `npm.cmd run typecheck`, `npm.cmd run typecheck:tests`, `npm.cmd run lint` and `npm.cmd run lint:tooling`. For ESLint-only differences, restart **ESLint: Restart ESLint Server** and check the **ESLint** Output channel for the resolved library and working directory.
+4. For a remaining editor-only TypeScript error, set `typescript.tsserver.log` to `verbose` temporarily in user settings, restart the server, reopen the file and run **TypeScript: Open TS Server Log**. Record the SDK version, selected config, diagnostic and module resolution path, then restore the log setting. Remove personal paths before sharing logs.
+
 ### Vite says the port is already in use
 
 The config uses `strictPort`. Stop the other process or pass a new port as shown in the native setup. Docker web uses 5173; native default uses 5174.
@@ -269,7 +276,7 @@ Confirm PostgreSQL 17 is running, the URL credentials/database/schema are correc
 
 ### Rating endpoint returns disabled or policy errors
 
-Set `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1` in the API. Do not add a `policy` query parameter. `REPORT_POLICY_MISMATCH` means the stored historical result must be explicitly rebuilt to H2 with `rating:rebuild`.
+Check whether `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=0` disabled the routes. The server chooses the policy from the stored result. `REPORT_POLICY_MISMATCH` identifies an incompatible historical policy. Use the scoped H3 rebuild only when the original compatible demo is retained. [Owner rebuild](api-participation-rating.md#owner-rebuild).
 
 ### Report/replay is corrupt or not ready
 

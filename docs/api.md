@@ -37,16 +37,16 @@ Clients branch on `error.code`, not on the localized/backend diagnostic message.
 | GET | `/matches/:id/report` | compatible `m3-score-1` report |
 | GET | `/matches/:id/players/:playerId/report` | compatible player report |
 | POST | `/matches/:id/rescore` | 202; compatible scoring-report RESCORE job |
-| GET | `/matches/:id/experimental-participation-rating` | `m4.3-participation-rating@1` |
-| GET | `/matches/:id/experimental-participation-explanation` | `m4.6-participation-explanation@1` |
-| GET | `/matches/:id/radar` | `player-radar@1` |
+| GET | `/matches/:id/experimental-participation-rating` | `m4.3-participation-rating@2` for H3, `@1` for H2 |
+| GET | `/matches/:id/experimental-participation-explanation` | `m4.6-participation-explanation@2` for H3, `@1` for H2 |
+| GET | `/matches/:id/radar` | `player-radar@2` for H3, `player-radar@1` for historical H2 |
 | GET | `/matches/:id/evp` | `evp-report@1` |
 | GET | `/matches/:id/replay` | `m4.7-replay-metadata@1`; `?version=2` opts into map images and altitude layers |
 | GET | `/matches/:id/replay/rounds/:roundId` | `m4.7-replay-round@1` |
 
 Exact input validation and HTTP response annotations live with the capability controllers in `apps/api/src/modules`.
 
-The rating and explanation routes require `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=1`. H2 is the only runtime policy; any query-string policy selector is rejected with `INVALID_POLICY_SELECTOR`.
+Rating and explanation routes are enabled by default and can be disabled with `ENABLE_EXPERIMENTAL_PARTICIPATION_RATING=0`. They return the policy of the stored result. The server rejects query-string policy selectors with `INVALID_POLICY_SELECTOR`. [H3 DTOs and historical compatibility](h3-frontend-handoff.md).
 
 ## DTO and artifact versions
 
@@ -55,11 +55,11 @@ The rating and explanation routes require `ENABLE_EXPERIMENTAL_PARTICIPATION_RAT
 | `1` | normalized match domain | embedded in analytics/canonical result |
 | `m2-1` / `m2-artifact-1` | factual analytics / match+analytics artifact | read API and canonical result |
 | `m3-score-1` | legacy scoring report | compatibility read API |
-| `match-result@1` | canonical persisted result | private artifact; selected fields projected |
-| `m4.3-participation-rating@1` | active rating DTO | public experimental read API |
-| `m4.6-participation-explanation@1` | rating explanation + important moments | public experimental read API |
+| `match-result@2` / `@1` | canonical persisted H3 / historical H2 result | private artifact |
+| `m4.3-participation-rating@2` / `@1` | H3 / H2 rating DTO | public experimental read API |
+| `m4.6-participation-explanation@2` / `@1` | H3 / H2 explanation and important moments | public experimental read API |
 | `evp-report@1` | experimental EVP awards, candidates and evidence | separate immutable artifact and public read API |
-| `player-radar@1` | eight-axis player projection, match averages and award attribution | read-only projection from stored M2/H2 and optional EVP |
+| `player-radar@2` / `@1` | eight axes, match averages and award attribution | read-only projection from stored M2, H3 or H2, and optional EVP |
 | `m4.7-replay-index@1` | persisted replay index | private artifact |
 | `m4.7-replay-round@1` | persisted round reconstruction | public round read DTO |
 | `m4.7-replay-metadata@1` | replay availability/round metadata | public replay read DTO |

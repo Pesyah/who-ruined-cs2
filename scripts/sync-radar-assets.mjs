@@ -95,7 +95,7 @@ for (const [map, entry] of Object.entries(sourceCatalog.maps).sort(([a], [b]) =>
   const overview = await download(overviewPath, 100_000);
   const text = overview.toString('utf8');
   for (const key of ['pos_x', 'pos_y', 'scale']) {
-    const value = text.match(new RegExp(`"${key}"\\s+"([^\"]+)"`))?.[1];
+    const value = text.match(new RegExp(`"${key}"\\s+"([^"]+)"`))?.[1];
     if (Number(value) !== info[key]) throw new Error(`Overview disagrees with catalogue: ${map}.${key}`);
   }
   const paths = entry.radar_paths.map(url => sourcePath(url, 'images/radars'));

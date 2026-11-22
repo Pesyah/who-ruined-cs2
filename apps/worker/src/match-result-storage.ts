@@ -26,7 +26,7 @@ export async function publishCanonicalMatchResult(
   beforeCommit?: () => Promise<void>
 ): Promise<PublishedMatchResult> {
   const encoded = await encodeCanonicalMatchResult(value);
-  const relativePath = canonicalMatchResultRelativePath(value.artifact.match.matchId, encoded.sha256);
+  const relativePath = canonicalMatchResultRelativePath(value.artifact.match.matchId, encoded.sha256, value.schemaVersion);
   const target = resolveDataPath(dataRoot, relativePath);
   await assertNoSymlinkComponents(dataRoot, target);
   const publication = await publishImmutableBytes(dataRoot, target, encoded.bytes, beforeCommit);

@@ -1,5 +1,7 @@
 import {
   scoreParticipationPreparedProfiles,
+  scoreParticipationResearchProfile,
+  type ResearchContextOverrides,
   type ParticipationFamily,
   type ParticipationPreparedProfile,
   type ParticipationKernelRow
@@ -73,6 +75,29 @@ export function softenNegativeParticipationMass(value: number): number {
   return value <= 0.25 ? value : 0.25 + 0.15 * Math.log1p((value - 0.25) / 0.15);
 }
 
+export type ParticipationProjectionFamily = ParticipationFamily | 'ROUND_IMPACT';
+
+export function projectParticipationFamilyInputs<F extends Exclude<ParticipationProjectionFamily, 'DIRECT_HARM'>>(
+  families: Record<F | 'DIRECT_HARM', number>, orderedNonHarmFamilies: readonly F[],
+): { rating: number; aggregates: CalculatedParticipationRating['aggregates']; finalAttribution: Record<F | 'DIRECT_HARM', number> } {
+  for (const value of Object.values<number>(families)) finite(value, 'PARTICIPATION_FAMILY');
+  const positiveMass = orderedNonHarmFamilies.reduce((sum, family) => sum + Math.max(families[family], 0), 0);
+  const negativeMass = orderedNonHarmFamilies.reduce((sum, family) => sum + Math.max(-families[family], 0), 0);
+  const positiveTerm = 10 * positiveMass;
+  const negativeTerm = -softenNegativeParticipationMass(5 * negativeMass);
+  const harmTerm = H2_PARTICIPATION_RATING_POLICY.harmMultiplier * families.DIRECT_HARM;
+  const finalAttribution = {} as Record<F | 'DIRECT_HARM', number>;
+  for (const family of orderedNonHarmFamilies) {
+    const value = families[family];
+    finalAttribution[family] = value >= 0 ? 10 * value : negativeMass > 0 ? negativeTerm * (-value / negativeMass) : 0;
+  }
+  finalAttribution.DIRECT_HARM = harmTerm;
+  const rating = finite(1 + positiveTerm + negativeTerm + harmTerm, 'P72_RATING');
+  const reconstructed = 1 + Object.values<number>(finalAttribution).reduce((sum, value) => sum + value, 0);
+  if (Math.abs(rating - reconstructed) > epsilon) throw new Error('P72_ATTRIBUTION_INTEGRITY_MISMATCH');
+  return { rating, aggregates: { positiveMass, negativeMass, positiveTerm, negativeTerm, harmTerm }, finalAttribution };
+}
+
 function unavailable(
   profile: ParticipationRatingPreparedProfile,
   status: UnavailableParticipationRating['status'],
@@ -122,8 +147,24 @@ function preparedForProjection(profile: ParticipationRatingPreparedProfile): Par
 export function projectParticipationRatings(
   profiles: ParticipationRatingPreparedProfile[]
 ): ParticipationRatingProjection[] {
-  const kernelRows = new Map(scoreParticipationPreparedProfiles(profiles.map(preparedForProjection)).map((row) => [row.profileKey, row]));
+  return projectKernelRows(profiles, scoreParticipationPreparedProfiles(profiles.map(preparedForProjection)));
+}
 
+export function projectParticipationResearchRatings(
+  profiles: ParticipationRatingPreparedProfile[],
+  overrides: ReadonlyMap<string, ResearchContextOverrides>,
+): ParticipationRatingProjection[] {
+  if (new Set(profiles.map((profile) => profile.profileKey)).size !== profiles.length) {
+    throw new Error('C2S2_DUPLICATE_PROFILE_KEY');
+  }
+  const rows = profiles.map((profile) => scoreParticipationResearchProfile(
+    preparedForProjection(profile), overrides.get(profile.profileKey) ?? new Map(),
+  ));
+  return projectKernelRows(profiles, rows);
+}
+
+function projectKernelRows(profiles: ParticipationRatingPreparedProfile[], rows: ParticipationKernelRow[]): ParticipationRatingProjection[] {
+  const kernelRows = new Map(rows.map((row) => [row.profileKey, row]));
   return profiles.map((profile) => {
     const kernel = kernelRows.get(profile.profileKey) ?? null;
     if (profile.status !== 'ELIGIBLE' && !omitsOnlyUnknownObjectives(profile)) {
@@ -137,22 +178,7 @@ export function projectParticipationRatings(
     }
 
     const families = kernel.familyContributions;
-    const positiveMass = nonHarmFamilies.reduce((sum, family) => sum + Math.max(families[family], 0), 0);
-    const negativeMass = nonHarmFamilies.reduce((sum, family) => sum + Math.max(-families[family], 0), 0);
-    const positiveTerm = 10 * positiveMass;
-    const negativeTerm = -softenNegativeParticipationMass(5 * negativeMass);
-    const harmTerm = H2_PARTICIPATION_RATING_POLICY.harmMultiplier * families.DIRECT_HARM;
-    const finalAttribution = {
-      COMBAT: families.COMBAT >= 0 ? 10 * families.COMBAT : negativeMass > 0 ? negativeTerm * (-families.COMBAT / negativeMass) : 0,
-      SUPPORT: families.SUPPORT >= 0 ? 10 * families.SUPPORT : negativeMass > 0 ? negativeTerm * (-families.SUPPORT / negativeMass) : 0,
-      DEATH_RELATED: families.DEATH_RELATED >= 0 ? 10 * families.DEATH_RELATED : negativeMass > 0 ? negativeTerm * (-families.DEATH_RELATED / negativeMass) : 0,
-      CONTEXT: families.CONTEXT >= 0 ? 10 * families.CONTEXT : negativeMass > 0 ? negativeTerm * (-families.CONTEXT / negativeMass) : 0,
-      OBJECTIVES: families.OBJECTIVES >= 0 ? 10 * families.OBJECTIVES : negativeMass > 0 ? negativeTerm * (-families.OBJECTIVES / negativeMass) : 0,
-      DIRECT_HARM: harmTerm
-    } satisfies Record<ParticipationFamily, number>;
-    const rating = finite(1 + positiveTerm + negativeTerm + harmTerm, 'P72_RATING');
-    const reconstructed = 1 + Object.values(finalAttribution).reduce((sum, value) => sum + value, 0);
-    if (Math.abs(rating - reconstructed) > epsilon) throw new Error('P72_ATTRIBUTION_INTEGRITY_MISMATCH');
+    const { rating, aggregates, finalAttribution } = projectParticipationFamilyInputs(families, nonHarmFamilies);
     return {
       profileKey: profile.profileKey,
       playerId: profile.playerId,
@@ -161,7 +187,7 @@ export function projectParticipationRatings(
       reason: null,
       rating,
       rawFamilyInputs: { ...families },
-      aggregates: { positiveMass, negativeMass, positiveTerm, negativeTerm, harmTerm },
+      aggregates,
       finalAttribution,
       kernel
     };
@@ -179,7 +205,7 @@ export type ParticipationRatingAward = {
 };
 
 export function selectParticipationAwards(
-  rows: ParticipationRatingProjection[],
+  rows: ReadonlyArray<Pick<ParticipationRatingProjection, 'rating' | 'playerId' | 'teamId' | 'profileKey'>>,
   teams: Array<{ teamId: string; score: number | null }>
 ): {
   eligiblePoolSize: number;
@@ -189,7 +215,8 @@ export function selectParticipationAwards(
   mvp: ParticipationRatingAward;
   whoRuined: ParticipationRatingAward & { scope: 'LOSING_TEAM_ELIGIBLE' | 'DRAW_ALL_ELIGIBLE' | 'UNAVAILABLE' };
 } {
-  const calculated = rows.filter((row): row is CalculatedParticipationRating => row.status === 'CALCULATED_RESEARCH_ONLY');
+  type CalculatedAwardRow = Pick<CalculatedParticipationRating, 'rating' | 'playerId' | 'teamId' | 'profileKey'>;
+  const calculated = rows.filter((row): row is CalculatedAwardRow => row.rating !== null);
   const validOutcome = teams.length === 2 && teams.every((team) => team.score !== null);
   const draw = validOutcome && teams[0]!.score === teams[1]!.score;
   const losingTeamId = validOutcome && !draw
@@ -198,7 +225,7 @@ export function selectParticipationAwards(
   const descending = [...calculated].sort((left, right) => right.rating - left.rating || left.profileKey.localeCompare(right.profileKey));
   const whoPool = draw ? calculated : losingTeamId ? calculated.filter((row) => row.teamId === losingTeamId) : [];
   const ascending = [...whoPool].sort((left, right) => left.rating - right.rating || left.profileKey.localeCompare(right.profileKey));
-  const award = (ordered: CalculatedParticipationRating[], reason: string | null): ParticipationRatingAward => {
+  const award = (ordered: CalculatedAwardRow[], reason: string | null): ParticipationRatingAward => {
     const first = ordered[0];
     if (!first) return { playerId: null, awardPoolSize: 0, tied: false, close: false, tiedPlayerIds: [], scoreGap: null, reasonIfUnavailable: reason };
     const tiedRows = ordered.filter((row) => Math.abs(row.rating - first.rating) <= epsilon);

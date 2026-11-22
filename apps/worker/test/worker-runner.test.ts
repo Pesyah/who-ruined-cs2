@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ClaimedJob } from '@who-ruined/database';
 import { resolveWorkerRuntimeConfig } from '../src/runtime-config.js';
 import {
   runWorker,
@@ -75,7 +76,7 @@ describe('worker attempt heartbeat lifecycle', () => {
     const firstRenewal = deferred<boolean>();
     const firstStarted = deferred<void>();
     const secondStarted = deferred<AbortSignal>();
-    const jobs = [
+    const jobs: ClaimedJob[] = [
       { id: 'job-1', matchId: 'match-1', type: 'PARSE', leaseToken: 'lease-1', attempt: 1 },
       { id: 'job-2', matchId: 'match-2', type: 'PARSE', leaseToken: 'lease-2', attempt: 1 },
     ];
@@ -103,7 +104,7 @@ describe('worker attempt heartbeat lifecycle', () => {
     await vi.advanceTimersByTimeAsync(config.heartbeatMs);
     firstWork.resolve();
     await flushMicrotasks();
-    const nextAttemptStartedBeforeHeartbeatSettled = mocked.processJob.mock.calls.length > 1;
+    const nextAttemptStartedBeforeHeartbeatSettled = vi.mocked(mocked.processJob).mock.calls.length > 1;
 
     firstRenewal.reject(new Error('late heartbeat failure'));
     const secondSignal = await secondStarted.promise;
@@ -120,7 +121,7 @@ describe('worker attempt heartbeat lifecycle', () => {
     const started = deferred<AbortSignal>();
     let claimed = false;
     const mocked = dependencies({
-      claimNextJob: vi.fn(async () => {
+      claimNextJob: vi.fn(async (): Promise<ClaimedJob | null> => {
         if (claimed) return null;
         claimed = true;
         return {
@@ -154,7 +155,7 @@ describe('worker attempt heartbeat lifecycle', () => {
     const started = deferred<AbortSignal>();
     let claimed = false;
     const mocked = dependencies({
-      claimNextJob: vi.fn(async () => {
+      claimNextJob: vi.fn(async (): Promise<ClaimedJob | null> => {
         if (claimed) return null;
         claimed = true;
         return {
@@ -178,11 +179,11 @@ describe('worker attempt heartbeat lifecycle', () => {
     process.emit('SIGTERM');
     await flushMicrotasks();
     const settledBeforeHeartbeat = settled;
-    const releasedBeforeHeartbeat = mocked.releaseJobLeaseForRetry.mock.calls.length > 0;
+    const releasedBeforeHeartbeat = vi.mocked(mocked.releaseJobLeaseForRetry).mock.calls.length > 0;
 
     renewal.resolve(true);
     await running;
-    const renewalCount = mocked.renewJobLease.mock.calls.length;
+    const renewalCount = vi.mocked(mocked.renewJobLease).mock.calls.length;
     await vi.advanceTimersByTimeAsync(config.heartbeatMs * 5);
 
     expect(settledBeforeHeartbeat).toBe(false);
@@ -196,13 +197,7 @@ describe('worker attempt heartbeat lifecycle', () => {
 
   it('does not start a job claimed after shutdown has begun', async () => {
     const claimStarted = deferred<void>();
-    const claim = deferred<{
-      id: string;
-      matchId: string;
-      type: string;
-      leaseToken: string;
-      attempt: number;
-    } | null>();
+    const claim = deferred<ClaimedJob | null>();
     let claimCount = 0;
     const mocked = dependencies({
       claimNextJob: vi.fn(async () => {

@@ -101,6 +101,7 @@ export class StoredArtifactReader implements ArtifactReaderPort {
 
     if (
       requireActivePolicy
+      && result.schemaVersion === 'match-result@1'
       && (
         result.internal.selectedPolicySelector !== H2_PARTICIPATION_RATING_POLICY.selector
         || result.internal.selectedPolicyId !== H2_PARTICIPATION_RATING_POLICY.id

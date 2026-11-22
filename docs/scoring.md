@@ -8,9 +8,11 @@
 
 Ordinary deaths, low ratings and negative family values are not automatically tactical errors. Missing evidence remains unavailable and can withhold a rating.
 
-## Active H2 participation rating
+## Production H3 participation rating
 
-H2 is the only executable participation-rating policy for new and rebuilt results.
+The worker publishes `match-result@2` under `h3-seven-family@1` and selects MVP and Who Ruined from that rating. EVP excludes the same persisted MVP. H3 evaluates six non-harm inputs including `ROUND_IMPACT` and uses the same outer projection described below. `ROUND_IMPACT` covers verified clutch conversions, recoveries from a disadvantage and post-plant conversions. Its missing evidence stays `null`. [H3 model and validation](h3-comparison.md).
+
+## Historical H2 participation rating
 
 For the five non-harm family inputs \(v_i\) and the already softened direct-harm input \(H\):
 
@@ -33,9 +35,9 @@ The invariant is:
 tolerance = 1e-12
 ~~~
 
-The active DTO records the reconstructed value and requires `exactWithinTolerance: true`.
+Both rating versions record the reconstructed value and require `exactWithinTolerance: true`.
 
-## Six families
+## Six shared families
 
 | Family | Meaning | Important caveat |
 | --- | --- | --- |
@@ -50,19 +52,16 @@ T/CT exposure is coverage context. Player `teamId` remains roster-based across s
 
 ## Production call path
 
-New canonical results use one arithmetic path:
+New canonical results use the same projector as the comparison CLI:
 
 ~~~text
-buildCanonicalMatchResult
-  -> buildActiveParticipationRating
-  -> projectParticipationRatings
-  -> scoreParticipationPreparedProfiles
-  -> scoreParticipationPreparedProfile
+buildH3MatchResult
+  -> prepareJointEvidence
+  -> projectH3
+  -> projectParticipationFamilyInputs
 ~~~
 
-The active API reads the stored active DTO. Its compatibility builder `buildParticipationRatingReport` delegates to `buildActiveParticipationRating` after validating the same sidecar.
-
-The explanation reprojects the private seed through `projectParticipationRatings`. It first requires the canonical result to carry the frozen H2 ID/digest, then verifies raw inputs, final attributions and the reconstruction against the stored active rating before returning a DTO.
+The API reads the stored H3 rating and its explanation together. For historical H2, it verifies the stored rating and reconstructs the six-family explanation through the frozen H2 projector. The private seeds stay in the canonical artifact. [Versioned API mapping](h3-frontend-handoff.md).
 
 ## Availability and awards
 
@@ -110,7 +109,7 @@ When no qualifying moment exists, the DTO contains an empty list.
 
 The canonical result still embeds compatible `m3-score-1` reports for existing consumers and RESCORE. They are deterministic rule-based reports from explicit configuration hashes. They are not substituted for the active participation rating.
 
-`POST /rescore` recomputes a requested compatible legacy report from stored normalized data. `rating:rebuild` is a separate owner CLI operation that always rebuilds H2 from the canonical recompute seed.
+`POST /rescore` recomputes the requested legacy report and preserves the saved participation rating and EVP binding. `rating:rebuild` targets H3 from the stored H3 seed. An explicit historical upgrade requires `--match` and its retained SHA-matching demo.
 
 ## Compatibility identities
 

@@ -50,7 +50,7 @@ export const evpEvidenceGroupSchema = z.enum([
 ]);
 
 export const evpReportBindingSchema = z.object({
-  matchResultSchemaVersion: z.literal('match-result@1'),
+  matchResultSchemaVersion: z.enum(['match-result@1', 'match-result@2']),
   fileSha256: sha256Schema,
   sourceBindingDigest: sha256Schema,
   inputDigest: sha256Schema,

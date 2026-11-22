@@ -18,6 +18,9 @@
 
 ## Design and compatibility rules
 
+- Before adding a module, helper, script or dependency, search for its responsibility, callers and existing entry points. Reuse or extend the canonical implementation when the semantics match.
+- When promoting an experiment, move the supported implementation and update its consumers. Remove superseded executable copies and temporary runners after verifying parity. Keep evidence, regression fixtures and necessary historical documentation.
+- Before removing a file, export or dependency, check imports, dynamic entry points, scripts, configuration and documented workflows. Preserve migrations, historical contracts and compatibility until their documented removal conditions are met.
 - Prefer an existing module and public entry point. Add a module/package only for a distinct responsibility, not to bypass an inconvenient API.
 - New internal names describe domain roles. Do not introduce historical M3/M3C8/P72/C2S2 names except immutable schema/version IDs, policy IDs/digests and documented compatibility adapters.
 - Use classes for stateful lifecycles/external dependencies; use pure functions for formulas, normalization and deterministic transformations. Do not add interfaces/abstract bases without a real substitution or lifecycle boundary.
@@ -37,11 +40,13 @@ Use the smallest evidence set covering the changed package, its direct consumers
 - Shared contracts, database, parser, scoring, worker or artifact lifecycle: check the changed package, immediate consumers and exact version/compatibility fixtures.
 - Frontend: relevant Vitest/typecheck; add `i18n:check` for user strings/keys/locales and `design:contrast` for colors/tokens. Layout/interaction changes require representative narrow/wide, RTL, keyboard and `prefers-reduced-motion` checks.
 - Persisted DTO/artifact changes require old/new fixtures and a migration/version plan.
-- `npm.cmd run quality:fast` is the fresh, infrastructure-free repository gate: architecture guardrails and their negative tests, lint, typecheck, package/frontend tests, build, i18n and contrast. Use narrower package checks while iterating, then this gate for a repository-wide handoff.
+- Check TypeScript and ESLint in each affected source and test project. Keep editor and CLI on the workspace TypeScript version. Fix project ownership and module resolution before changing compiler flags. Do not hide diagnostics with suppressions or exclusions.
+- `npm.cmd run quality:fast` is the fresh, infrastructure-free repository gate: architecture guardrails and their negative tests, workspace and tooling lint, source and test project typecheck, package/frontend tests, build, i18n and contrast. Use narrower package checks while iterating, then this gate for a repository-wide handoff.
 - `npm.cmd run quality:integration` is fail-closed and requires `TEST_DATABASE_URL` to name a local PostgreSQL 17 test database with a standalone `test` segment. It applies/checks migrations and runs required database/API/worker integration tests with no availability SKIP. Never point it at production or an owner database.
 - `npm.cmd run quality:golden` is the strict external-corpus gate. All manifest demo/info paths and exact demo SHA-256 values must be present; missing fixtures are `BLOCKED` (exit 2), not PASS. `npm.cmd run test:golden` remains the diagnostic partial runner that may report individual SKIP.
 - `npm.cmd run quality:real-demo -- --demo=<approved.dem>` is a real API/worker/replay/H2/RESCORE smoke, not golden verification. It requires an already authorized running dev stack. `--match=<id>` rechecks persisted results after a restart without uploading or rescoring.
 - Root `npm.cmd run test` runs workspace tests only. Real demos, golden fixtures, Docker and PostgreSQL remain separate explicit gates.
+- At handoff, list modified, added, moved and deleted files, explain removals, and state which checks passed, failed or were blocked. Separate existing workspace changes from the current task.
 
 ## Frontend structure
 

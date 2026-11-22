@@ -17,7 +17,7 @@ legacy-report RESCORE does not rewrite either H2 or EVP. PostgreSQL stores a
 nullable path, SHA-256, schema version, policy ID and input-binding digest.
 
 The input digest covers the canonical M2 artifact, roster-bound participation
-availability/coverage, scenario and current H2 MVP. It deliberately excludes
+availability/coverage, scenario and the stored participation MVP. For H3 it also covers the production rating policy ID and digest. It deliberately excludes
 canonical creation time and mutable legacy production reports. Consequently a
 compatible RESCORE reuses the exact EVP artifact, while a rating rebuild must
 validate or republish EVP before atomically changing both pointers.
